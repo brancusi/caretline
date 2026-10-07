@@ -1493,6 +1493,10 @@ The walkthrough crate, built before the engine hooks (E1–E6), so a host keeps 
 itself. It reads the format of 6.1 (`{id, version, title, kind, step[]}`; `layers` or the
 single-layer shorthand; `narration`; the opaque `host`). Where it differs from 6 and 8.3:
 
+- **`meta` (added after the first host read its files).** A walkthrough may carry an opaque
+  top-level `meta` (author, dates, audience…), carried and never read, like a step's `host`.
+  Host-only presentation (a line one host shows in one mode) goes in the step's `host`, not
+  in `narration`, which stays `{title?, text}`.
 - **No `install`, no `LayerSource`.** The host keeps a `TourState` in its own single state and
   calls `apply(&mut state, op, now_ms)` and `observe(&mut state, &host, now_ms)`. Both return
   effects in order: `Host { patch }`, `Layers { layers }` (replace the `guide` layers;

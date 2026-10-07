@@ -117,6 +117,7 @@ error, except inside `data` and `host`, which are opaque. The same walkthrough i
 | `kind` | The content kind of a layer that names none. Default `hint`, the kind every host renders ([layers.md](layers.md#the-hint-kind)) |
 | `reoffer` | Offer this version to someone who stopped or finished an earlier one ([Seen-state](#seen-state-is-the-hosts)) |
 | `step` | The steps, in order (TOML's `[[step]]`) |
+| `meta` | The host's own metadata about the walkthrough (author, dates, audience…). Opaque, like a step's `host`: carried, never read, left out when absent. Every other unknown field is refused |
 
 **A step:**
 
