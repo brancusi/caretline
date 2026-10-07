@@ -294,8 +294,11 @@ impl Default for Ring {
     }
 }
 
-/// What a layer draws.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// What a layer draws. `Arrow`, `Spotlight` and `Ring` are geometry the crate places;
+/// `Content` is the host's: an opaque payload under a kind the host renders (as mark payloads
+/// are), sized by the host's [`Measure`](crate::Measure). `Callout`, `Keys` and `Steps` are the
+/// built-in text content the cell renderer draws.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Item {
     Callout(Callout),
@@ -309,10 +312,16 @@ pub enum Item {
         of: u16,
         at: u16,
     },
+    /// Host content: `{"content": {"kind": "badge.count", "data": {…}}}`.
+    Content {
+        kind: String,
+        #[serde(default)]
+        data: serde_json::Value,
+    },
 }
 
 /// One overlay: what it points at and what it draws there.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Layer {
     /// Given by [`apply`] when pushed empty.
@@ -341,6 +350,10 @@ pub struct Layer {
     /// Off-screen, show only the edge chip, not the callout.
     #[serde(default, skip_serializing_if = "is_false")]
     pub hide_off_screen: bool,
+    /// The sides to try for the box, in order (else a callout's `place`, else below, above,
+    /// right, left).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub place: Vec<Side>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -361,6 +374,7 @@ impl Layer {
             dim: false,
             capture: false,
             hide_off_screen: false,
+            place: Vec::new(),
         }
     }
 
@@ -369,6 +383,27 @@ impl Layer {
             Item::Callout(c) => Some(c),
             _ => None,
         })
+    }
+
+    /// Whether it has a box to place: a callout, key badges, step dots or host content.
+    pub fn has_box(&self) -> bool {
+        self.items.iter().any(|i| {
+            matches!(
+                i,
+                Item::Callout(_) | Item::Keys(_) | Item::Steps { .. } | Item::Content { .. }
+            )
+        })
+    }
+
+    /// The sides to try, in order.
+    pub fn sides(&self) -> Vec<Side> {
+        if !self.place.is_empty() {
+            return self.place.clone();
+        }
+        match self.callout() {
+            Some(c) if !c.place.is_empty() => c.place.clone(),
+            _ => Side::DEFAULT.to_vec(),
+        }
     }
 
     /// Whether it dims the screen (a spotlight item or `dim`).
@@ -463,6 +498,8 @@ pub struct Limits {
     pub body_chars: usize,
     pub body_lines: usize,
     pub title_chars: usize,
+    /// The largest host content payload an agent may send, as JSON bytes.
+    pub content_bytes: usize,
     pub agent_dim: AgentDim,
 }
 
@@ -487,6 +524,7 @@ impl Default for Limits {
             body_chars: 280,
             body_lines: 6,
             title_chars: 40,
+            content_bytes: 1_024,
             agent_dim: AgentDim::Never,
         }
     }
@@ -715,6 +753,19 @@ fn push(
                 Reason::DimNotAllowed,
                 "agents can't dim the screen unless the person allows it",
             );
+        }
+        for i in &layer.items {
+            if let Item::Content { kind, data } = i {
+                if kind.chars().count() > limits.title_chars
+                    || serde_json::to_string(data).map_or(usize::MAX, |j| j.len())
+                        > limits.content_bytes
+                {
+                    return refuse(
+                        Reason::TooLong,
+                        format!("content is at most {} bytes of JSON", limits.content_bytes),
+                    );
+                }
+            }
         }
         if let Some(c) = layer.callout() {
             if c.body.chars().count() > limits.body_chars

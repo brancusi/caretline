@@ -20,8 +20,12 @@ const THIRD_BEND: u32 = 20;
 /// How far the corridor reaches past the box edge and the anchor.
 const CORRIDOR: u16 = 4;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum Dir {
+/// A direction on the grid: which way an arrow enters or leaves a cell.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Dir {
     Up,
     Down,
     Left,

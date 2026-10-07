@@ -30,6 +30,7 @@ mod frame;
 mod geom;
 mod layout;
 mod model;
+mod place;
 mod resolve;
 mod route;
 mod text;
@@ -41,14 +42,19 @@ pub use compose::{CellGrid, Flags, TestCell, TestGrid, compose, put, put_str};
 pub use frame::{FrameResolver, changes_between, map_anchors, observe};
 pub use geom::{Rect, Side};
 pub use layout::{
-    Arrowed, CellKind, Glyphs, Grid, NARROW_COLS, NARROW_ROWS, Opts, Panel, PanelKind, Placed,
-    Region, RingMark, RouteCell, Run, Scene, Span, Spot, hit, layout, role,
+    Arrowed, Glyphs, Opts, Panel, PanelKind, Placed, RingMark, RouteCell, Run, Scene, Span,
+    TextMeasure, hit, layout, role,
 };
 pub use model::{
     AgentDim, Anchor, Applied, Arrow, BlockId, Callout, Chip, Item, Layer, LayerOp, Layers, Limits,
     Owner, Part, Pulse, Reason, Refusal, Ring, ScreenPos, Selector, Spotlight, apply, expire,
 };
+pub use place::{
+    CellKind, Grid, MAX_WIDTH, Measure, Mode, NARROW_COLS, NARROW_ROWS, Plan, Planned, Region,
+    Route, Spot, Step, hit_regions, plan,
+};
 pub use resolve::{AnchorKey, AnchorMap, Chain, Off, Resolve, Resolved};
+pub use route::Dir;
 pub use text::{KeyLabels, NoKeys, str_width, width};
 #[cfg(feature = "ratatui")]
 pub use tui::{Theme, Themed};
