@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = ["crates/caretline", "crates/caretline-cli", "crates/caretline-mcp"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/brancusi/caretline"
+
+[workspace.dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+libc = "0.2"
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

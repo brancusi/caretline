@@ -1,4 +1,4 @@
-//! The examples in docs/caretline run: structure.md (decorations), markdown.md (a list edit),
+//! The examples in docs/ run: structure.md (decorations), markdown.md (a list edit),
 //! embedding.md (a host command, and the case study's cycle built on tags).
 
 use caretline::outline::markdown;

@@ -1,7 +1,7 @@
 # caretline
 
 A terminal text editor for plain text and Markdown, built on the
-[`caretline`](https://github.com/brancusi/thought-control/blob/main/crates/caretline/README.md) engine. Every state can be saved as JSON,
+[`caretline`](https://github.com/brancusi/caretline/blob/main/crates/caretline/README.md) engine. Every state can be saved as JSON,
 reopened exactly, and every session replayed message by message.
 
 ## Try it in one line
@@ -15,17 +15,17 @@ A prebuilt binary for macOS or Linux, checked against its sha256 and installed t
 `caretline demo scenes` (ASCII animations running inside the editor) and `caretline demo agent`
 (a scripted agent co-editing beside you over the editor's socket). With Rust instead:
 `cargo install caretline-cli`.
-See the [Quickstart](https://github.com/brancusi/thought-control/blob/main/docs/caretline/quickstart.md).
+See the [Quickstart](https://github.com/brancusi/caretline/blob/main/docs/quickstart.md).
 
 From a checkout:
 
 ```sh
 cargo run -p caretline-cli -- notes.md         # or, installed: caretline notes.md
-cargo install --locked --path crates/caretline-app
+cargo install --locked --path crates/caretline-cli
 ```
 
-Full documentation: [the `caretline` command](https://github.com/brancusi/thought-control/blob/main/docs/caretline/cli.md), and
-[docs/caretline](https://github.com/brancusi/thought-control/blob/main/docs/caretline/README.md) for the engine, its API and embedding.
+Full documentation: [the `caretline` command](https://github.com/brancusi/caretline/blob/main/docs/cli.md), and
+[docs](https://github.com/brancusi/caretline/blob/main/docs/README.md) for the engine, its API and embedding.
 
 ## How it works
 
@@ -129,7 +129,7 @@ caretline --replay t.jsonl --snapshot 80x24
 ### Example
 
 ```console
-$ caretline --state crates/caretline-app/fixtures/wrapped-paragraph.state.json \
+$ caretline --state crates/caretline-cli/fixtures/wrapped-paragraph.state.json \
     --keys '<up><up><s-a-right><s-a-right>' --snapshot 44x14
 # Field notes
 
@@ -165,7 +165,7 @@ caretline bench                                  # throughput and latency
 
 Pushed messages' effects (saves, the clipboard, quit) are returned to the client, not
 performed, unless the request asks. The library side is `caretline::Session`. See
-[docs/caretline/protocol.md](https://github.com/brancusi/thought-control/blob/main/docs/caretline/protocol.md) for every operation, with examples.
+[docs/protocol.md](https://github.com/brancusi/caretline/blob/main/docs/protocol.md) for every operation, with examples.
 
 ## Fixtures
 
@@ -182,7 +182,7 @@ each still renders the same):
 | `session.trace.jsonl` | A recorded session; `session.snapshot.txt` is its replay at 36x8 |
 
 ```sh
-caretline --state crates/caretline-app/fixtures/emoji-line.state.json --snapshot 40x6 --format ansi
+caretline --state crates/caretline-cli/fixtures/emoji-line.state.json --snapshot 40x6 --format ansi
 ```
 
 ## Limits

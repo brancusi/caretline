@@ -2,7 +2,7 @@
 // key script, one frame per step, converted from ANSI to HTML spans. Writes
 // public/tour/frames.json (committed, so the site builds without the binary).
 //
-//   node scripts/tour-frames.mjs            # uses ../../target/release/caretline, else `caretline`
+//   node scripts/tour-frames.mjs            # uses ../target/release/caretline, else `caretline`
 //   CARETLINE=/path/to/caretline node scripts/tour-frames.mjs
 import { execFileSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const local = join(here, '../../../target/release/caretline');
+const local = join(here, '../../target/release/caretline');
 const bin = process.env.CARETLINE || (existsSync(local) ? local : 'caretline');
 const SIZE = '72x16';
 

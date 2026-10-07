@@ -11,7 +11,7 @@ which lines start blocks and what their markers are, is Markdown's: see [markdow
 Without it the document is plain text and nothing here applies.
 
 ```console
-$ caretline --outline crates/caretline-app/fixtures/trip.md
+$ caretline --outline crates/caretline-cli/fixtures/trip.md
 ```
 
 ## Marks: identity

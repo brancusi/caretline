@@ -4,8 +4,9 @@
 #   curl -fsSL https://caretline.app/install.sh | sh && caretline demo
 #
 # Downloads the newest caretline release for this machine (macOS or Linux, arm64 or x86_64)
-# from https://github.com/brancusi/thought-control/releases, checks its sha256 and installs
-# the `caretline` binary to ~/.local/bin.
+# from https://github.com/brancusi/caretline/releases, checks its sha256 and installs
+# the `caretline` binary to ~/.local/bin. Releases made before caretline had its own repo
+# (caretline-v* tags on brancusi/thought-control) are the fallback.
 #
 # Environment:
 #   CARETLINE_INSTALL_DIR      where to put the binary (default: ~/.local/bin)
@@ -17,7 +18,9 @@
 
 set -eu
 
-REPO="brancusi/thought-control"
+REPO="brancusi/caretline"
+# Where releases up to 0.3.0 were first published, as caretline-v<version>.
+OLD_REPO="brancusi/thought-control"
 
 say() { printf '%s\n' "$*"; }
 err() { printf 'caretline install: %s\n' "$*" >&2; exit 1; }
@@ -62,13 +65,18 @@ target() {
 }
 
 latest() {
-	# The newest caretline-v* release (the repo publishes other things too).
-	tag="$(fetch "https://api.github.com/repos/$REPO/releases?per_page=50" 2>/dev/null |
-		grep -o '"tag_name": *"caretline-v[0-9][^"]*"' | head -n 1 | sed 's/.*"caretline-v\([^"]*\)"/\1/' || true)"
+	# The newest v* release of brancusi/caretline.
+	tag="$(fetch "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null |
+		grep -o '"tag_name": *"v[0-9][^"]*"' | head -n 1 | sed 's/.*"v\([^"]*\)"/\1/' || true)"
 	if [ -z "$tag" ] && has curl; then
-		# The API can be rate limited: fall back to the repo's latest release.
+		# The API can be rate limited: follow the latest-release redirect instead.
 		tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" 2>/dev/null |
-			sed -n 's#.*/tag/caretline-v\(.*\)$#\1#p' || true)"
+			sed -n 's#.*/tag/v\([0-9].*\)$#\1#p' || true)"
+	fi
+	if [ -z "$tag" ]; then
+		# Fallback: the newest caretline-v* release on the repo caretline came from.
+		tag="$(fetch "https://api.github.com/repos/$OLD_REPO/releases?per_page=50" 2>/dev/null |
+			grep -o '"tag_name": *"caretline-v[0-9][^"]*"' | head -n 1 | sed 's/.*"caretline-v\([^"]*\)"/\1/' || true)"
 	fi
 	[ -n "$tag" ] || err "couldn't find a caretline release; set CARETLINE_VERSION, like CARETLINE_VERSION=0.3.0"
 	printf '%s' "$tag"
@@ -107,12 +115,16 @@ main() {
 	dir="${CARETLINE_INSTALL_DIR:-$HOME/.local/bin}"
 
 	name="caretline-$version-$target"
-	base="https://github.com/$REPO/releases/download/caretline-v$version"
+	base="https://github.com/$REPO/releases/download/v$version"
+	old_base="https://github.com/$OLD_REPO/releases/download/caretline-v$version"
 	tmp="$(mktemp -d 2>/dev/null || mktemp -d -t caretline)"
 	trap 'rm -rf "$tmp"' EXIT INT TERM
 
 	say "caretline $version for $target"
-	fetch "$base/$name.tar.gz" "$tmp/$name.tar.gz" || err "couldn't download $base/$name.tar.gz"
+	if ! fetch "$base/$name.tar.gz" "$tmp/$name.tar.gz" 2>/dev/null; then
+		base="$old_base"
+		fetch "$base/$name.tar.gz" "$tmp/$name.tar.gz" || err "couldn't download $name.tar.gz from $REPO or $OLD_REPO"
+	fi
 	fetch "$base/$name.tar.gz.sha256" "$tmp/$name.tar.gz.sha256" || err "couldn't download the checksum"
 	want="$(cut -d' ' -f1 <"$tmp/$name.tar.gz.sha256")"
 	got="$(sha256 "$tmp/$name.tar.gz")"

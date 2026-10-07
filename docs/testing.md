@@ -7,20 +7,20 @@ keys or messages, and the expected result. No terminal, no timing, no mocks.
 
 | File | What it checks |
 |---|---|
-| [`caretline/tests/goldens.rs`](../../crates/caretline/tests/goldens.rs) | Behaviour goldens: text and selection before, keys, text and selection after (and frames where it matters). The baseline is a macOS text field |
-| [`caretline/tests/rehydrate.rs`](../../crates/caretline/tests/rehydrate.rs) | A state survives JSON exactly; a recorded session replays to the live result |
-| [`caretline/tests/fuzz.rs`](../../crates/caretline/tests/fuzz.rs) | Property tests: seeded random documents and messages, with invariants checked after every step |
-| [`caretline/tests/marks.rs`](../../crates/caretline/tests/marks.rs) | Block marks: each mapping rule, undo and redo restoring marks exactly, cut and paste keeping ids, serialization; random sessions with marks at line starts and unique ids after every step, every undo restoring the marks |
-| [`caretline/tests/outline.rs`](../../crates/caretline/tests/outline.rs) | Block goldens in block notation (` ‖ ` blocks with a blank row between, ` ¦ ` without, `⏎` a soft break), with block ids: Enter, Backspace and Delete at block edges, Tab, tags, moves, atomic images, copy and paste, blank rows, host messages and effects |
-| [`caretline/tests/host.rs`](../../crates/caretline/tests/host.rs) | The extension points with a made-up host: commands (undo, traces, replay with the host, the protocol), input rules, mark payloads through cut, paste, undo and JSON, decorations and hit-testing, tags |
-| [`caretline/tests/commands.rs`](../../crates/caretline/tests/commands.rs) | The command catalog and the keymap as data: ids, messages, bindings, agreement with the hand-written keymap it replaced, the protocol ops |
-| [`caretline/tests/scope.rs`](../../crates/caretline/tests/scope.rs) | No host concept (task, status vocabulary, journal…) named in the engine's sources |
-| [`caretline/tests/docs.rs`](../../crates/caretline/tests/docs.rs) | The examples in these docs run |
-| [`caretline/tests/outline_fuzz.rs`](../../crates/caretline/tests/outline_fuzz.rs) | Outline properties over random outlines and messages: blocks and marks agree, ids unique, no caret in a marker or an image, undo and redo exact (marks included), kind changes move no other block, host commands (a made-up retagging host) included, cut and paste in place keeps ids, Markdown files round-trip. `CARETLINE_OUTLINE_SEEDS` runs more seeds |
-| [`caretline/tests/keymap.rs`](../../crates/caretline/tests/keymap.rs) | Key bindings and the key-script parser |
-| [`caretline/tests/common/mod.rs`](../../crates/caretline/tests/common/mod.rs) | Shared helpers: caret notation, `golden`, `keys`, `send`, `frame`, random generators |
+| [`caretline/tests/goldens.rs`](../crates/caretline/tests/goldens.rs) | Behaviour goldens: text and selection before, keys, text and selection after (and frames where it matters). The baseline is a macOS text field |
+| [`caretline/tests/rehydrate.rs`](../crates/caretline/tests/rehydrate.rs) | A state survives JSON exactly; a recorded session replays to the live result |
+| [`caretline/tests/fuzz.rs`](../crates/caretline/tests/fuzz.rs) | Property tests: seeded random documents and messages, with invariants checked after every step |
+| [`caretline/tests/marks.rs`](../crates/caretline/tests/marks.rs) | Block marks: each mapping rule, undo and redo restoring marks exactly, cut and paste keeping ids, serialization; random sessions with marks at line starts and unique ids after every step, every undo restoring the marks |
+| [`caretline/tests/outline.rs`](../crates/caretline/tests/outline.rs) | Block goldens in block notation (` ‖ ` blocks with a blank row between, ` ¦ ` without, `⏎` a soft break), with block ids: Enter, Backspace and Delete at block edges, Tab, tags, moves, atomic images, copy and paste, blank rows, host messages and effects |
+| [`caretline/tests/host.rs`](../crates/caretline/tests/host.rs) | The extension points with a made-up host: commands (undo, traces, replay with the host, the protocol), input rules, mark payloads through cut, paste, undo and JSON, decorations and hit-testing, tags |
+| [`caretline/tests/commands.rs`](../crates/caretline/tests/commands.rs) | The command catalog and the keymap as data: ids, messages, bindings, agreement with the hand-written keymap it replaced, the protocol ops |
+| [`caretline/tests/scope.rs`](../crates/caretline/tests/scope.rs) | No host concept (task, status vocabulary, journal…) named in the engine's sources |
+| [`caretline/tests/docs.rs`](../crates/caretline/tests/docs.rs) | The examples in these docs run |
+| [`caretline/tests/outline_fuzz.rs`](../crates/caretline/tests/outline_fuzz.rs) | Outline properties over random outlines and messages: blocks and marks agree, ids unique, no caret in a marker or an image, undo and redo exact (marks included), kind changes move no other block, host commands (a made-up retagging host) included, cut and paste in place keeps ids, Markdown files round-trip. `CARETLINE_OUTLINE_SEEDS` runs more seeds |
+| [`caretline/tests/keymap.rs`](../crates/caretline/tests/keymap.rs) | Key bindings and the key-script parser |
+| [`caretline/tests/common/mod.rs`](../crates/caretline/tests/common/mod.rs) | Shared helpers: caret notation, `golden`, `keys`, `send`, `frame`, random generators |
 | `caretline/src/helix/**` | Helix's own unit tests, vendored with the code |
-| [`caretline-app/tests/cli.rs`](../../crates/caretline-app/tests/cli.rs) | The binary: fixtures render to their saved snapshots, traces replay, `--keys` and `--dump-state` round-trip, effects are reported and never performed |
+| [`caretline-cli/tests/cli.rs`](../crates/caretline-cli/tests/cli.rs) | The binary: fixtures render to their saved snapshots, traces replay, `--keys` and `--dump-state` round-trip, effects are reported and never performed |
 
 Run them:
 
@@ -123,13 +123,13 @@ seed fails the same way every time. To focus on it, temporarily run only that se
 
 ## Snapshot fixtures
 
-[`crates/caretline-app/fixtures`](../../crates/caretline-app/fixtures) holds
+[`crates/caretline-cli/fixtures`](../crates/caretline-cli/fixtures) holds
 `NAME.state.json` files with `NAME.snapshot.txt` and `NAME.snapshot.ansi` beside them.
 `fixtures_render_their_snapshots` finds every `*.state.json`, renders it at its own
 viewport in both formats, and compares. Adding a fixture needs no code:
 
 ```sh
-cd crates/caretline-app/fixtures
+cd crates/caretline-cli/fixtures
 printf 'First line\nA second line that is long enough to wrap.\n' > my-case.md
 caretline --new-state my-case.md --size 30x6 > my-case.state.json && rm my-case.md
 caretline --state my-case.state.json --keys '<down><s-end>' --dump-state my-case.state.json
@@ -189,12 +189,12 @@ use caretline::view;
 
 #[test]
 fn recorded_session_replays_to_the_saved_frame() {
-    let trace = include_str!("../../caretline-app/fixtures/session.trace.jsonl");
+    let trace = include_str!("../../caretline-cli/fixtures/session.trace.jsonl");
     let (state, _) = replay_trace(trace).unwrap();
     // The trace ends with a resize to 36x8, the snapshot's size.
     assert_eq!(
         view(&state).to_text(),
-        include_str!("../../caretline-app/fixtures/session.snapshot.txt")
+        include_str!("../../caretline-cli/fixtures/session.snapshot.txt")
     );
 }
 ```

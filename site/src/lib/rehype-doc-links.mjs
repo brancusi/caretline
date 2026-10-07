@@ -1,9 +1,9 @@
-// Rewrites the links in docs/caretline/*.md so they work on the site:
+// Rewrites the links in docs/*.md so they work on the site:
 //   architecture.md#x      → /docs/architecture/#x
 //   README.md              → /docs/
-//   ../../crates/…         → the file or folder on GitHub (main)
+//   ../crates/…            → the file or folder on GitHub (main)
 // and marks external links. Runs on every Markdown file the site renders.
-const REPO = 'https://github.com/brancusi/thought-control';
+const REPO = 'https://github.com/brancusi/caretline';
 
 function rewrite(href) {
   if (!href || /^[a-z]+:/i.test(href) || href.startsWith('#') || href.startsWith('/')) return href;
@@ -14,8 +14,8 @@ function rewrite(href) {
     const slug = doc[1].toLowerCase();
     return (slug === 'readme' ? '/docs/' : `/docs/${slug}/`) + frag;
   }
-  if (path.startsWith('../../')) {
-    const rel = path.slice(6).replace(/\/$/, '');
+  if (path.startsWith('../')) {
+    const rel = path.slice(3).replace(/\/$/, '');
     const isFile = /\.[A-Za-z0-9]+$/.test(rel.split('/').pop() || '');
     return `${REPO}/${isFile ? 'blob' : 'tree'}/main/${rel}${frag}`;
   }

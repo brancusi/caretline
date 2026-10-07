@@ -1,10 +1,10 @@
-# sites/caretline: caretline.app
+# site: caretline.app
 
 The public site for caretline: the landing page, the docs and the brand page. Astro, static
 output, served from Cloudflare Workers static assets.
 
 ```sh
-cd sites/caretline
+cd site
 mise exec -- npm install
 mise exec -- npm run dev        # http://localhost:4321
 mise exec -- npm run build      # → dist/, then the Pagefind search index
@@ -12,9 +12,9 @@ mise exec -- npm run scan       # fails on anything private in dist/
 npx wrangler deploy --config ./wrangler.jsonc   # from this directory, after build + scan
 ```
 
-- **Docs** are `docs/caretline/*.md`, read in place at build time (`src/content.config.ts`).
+- **Docs** are `docs/*.md` (the repo root's docs), read in place at build time (`src/content.config.ts`).
   Order and sidebar titles are in `src/lib/docs.ts`. `src/lib/rehype-doc-links.mjs` rewrites
-  `x.md#y` to `/docs/x/#y` and `../../crates/…` to GitHub. Mermaid renders in the browser.
+  `x.md#y` to `/docs/x/#y` and `../crates/…` to GitHub. Mermaid renders in the browser.
 - **The ASCII scenes** (warp, torus, cube, tunnel, plasma, fire) are `public/js/field.js`: a
   pure function of time per scene, drawn two-tone on a canvas. Lit cells are the selection
   colour with the glyph knocked out, the way caretline draws a selection.

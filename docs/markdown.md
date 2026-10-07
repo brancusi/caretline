@@ -5,13 +5,13 @@ fences start blocks, and Enter, Backspace and paste follow Markdown list editing
 that grammar and its rules. The blocks themselves (identity, the caret, block operations, the
 layout, decorations, folds) are on [structure.md](structure.md).
 
-It lives in [`src/outline`](../../crates/caretline/src/outline) (`markdown.rs` and the rules in
+It lives in [`src/outline`](../crates/caretline/src/outline) (`markdown.rs` and the rules in
 `rules.rs`) and is on when `state.doc.outline` is set. Nothing in it gives a line a meaning
 beyond its Markdown shape: a host that gives `[x]` a meaning does that itself, with a
 [host command](embedding.md#host-commands).
 
 ```console
-$ caretline --outline crates/caretline-app/fixtures/trip.md
+$ caretline --outline crates/caretline-cli/fixtures/trip.md
 ```
 
 ## Markers
@@ -154,15 +154,15 @@ An outline document's keymap is the plain one with these on top (see [keys.md](k
 ## Try it
 
 ```console
-$ caretline --outline crates/caretline-app/fixtures/trip.md --keys '<down><down><down><down><end><cr><tab>Call Ana' --snapshot 50x18
-$ caretline --state crates/caretline-app/fixtures/outline-edited.state.json --snapshot 50x18
-$ caretline --outline crates/caretline-app/fixtures/trip.md --keys '<d-down>!<c-s>' --effects
+$ caretline --outline crates/caretline-cli/fixtures/trip.md --keys '<down><down><down><down><end><cr><tab>Call Ana' --snapshot 50x18
+$ caretline --state crates/caretline-cli/fixtures/outline-edited.state.json --snapshot 50x18
+$ caretline --outline crates/caretline-cli/fixtures/trip.md --keys '<d-down>!<c-s>' --effects
 ```
 
 `--layout` adds the outline layout, with plain hang glyphs:
 
 ```console
-$ caretline --layout crates/caretline-app/fixtures/trip.md --snapshot 50x16 --no-status-bar
+$ caretline --layout crates/caretline-cli/fixtures/trip.md --snapshot 50x16 --no-status-bar
   #   Lisbon trip
 
       Booked the flat in Lisbon.

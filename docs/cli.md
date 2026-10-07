@@ -8,7 +8,7 @@ It comes from the `caretline-cli` crate. Every output on this page is from a rea
 ```sh
 curl -fsSL https://caretline.app/install.sh | sh && caretline demo   # a prebuilt binary, then the tour
 cargo install caretline-cli   # or build it
-cargo install --locked --path crates/caretline-app   # from a checkout
+cargo install --locked --path crates/caretline-cli   # from a checkout
 cargo run -p caretline-cli -- draft.md                # or run it from the checkout
 ```
 
@@ -204,7 +204,7 @@ the in-memory trace. `--replay` reads any trace: a full file, the output of
 middle (a `state.set` or checkpoint) restarts the replay from that state. The fixture `session.trace.jsonl` is a recorded session:
 
 ```console
-$ caretline --replay crates/caretline-app/fixtures/session.trace.jsonl --snapshot 36x8
+$ caretline --replay crates/caretline-cli/fixtures/session.trace.jsonl --snapshot 36x8
 
 Shift and the arrows grow one from
 the caret's end,
@@ -230,7 +230,7 @@ Here `^[[7;4m` marks the caret cell and `^[[30;46m` the rest of the selection.
 
 ## Fixtures
 
-[`crates/caretline-app/fixtures`](../../crates/caretline-app/fixtures) holds saved states
+[`crates/caretline-cli/fixtures`](../crates/caretline-cli/fixtures) holds saved states
 with their text and ANSI snapshots. The CLI tests check that each one still renders the
 same.
 
@@ -246,7 +246,7 @@ same.
 | `outline-edited` | The same after keys: a nested item added under another, an item moved up |
 
 ```console
-$ caretline --state crates/caretline-app/fixtures/emoji-line.state.json --keys '<s-right><s-right>' --snapshot 40x6
+$ caretline --state crates/caretline-cli/fixtures/emoji-line.state.json --keys '<s-right><s-right>' --snapshot 40x6
 Emoji 👍🏽 and family 👨‍👩‍👧, accents café
 and résumé, wide 漢字かな, flags 🇫🇷🇯🇵.
 Second line: ½ ⅓ → ✓
@@ -256,7 +256,7 @@ Second line: ½ ⅓ → ✓
 ```
 
 ```console
-$ caretline --state crates/caretline-app/fixtures/no-wrap-table.state.json --keys '<home>' --snapshot 48x6
+$ caretline --state crates/caretline-cli/fixtures/no-wrap-table.state.json --keys '<home>' --snapshot 48x6
 | Name | Role | Notes |
 |---|---|---|
 | Ada | engine | Wrapping is off here, so long t

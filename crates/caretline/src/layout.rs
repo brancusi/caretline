@@ -19,7 +19,7 @@ use crate::state::{Config, Document, Follow, Scroll, State, View};
 
 /// The outline layout a host gives a view: column geometry as data. With it, an outline
 /// document's markers move out of the text into a hang, nested blocks get their own
-/// columns, and folds hide children (see `docs/caretline/structure.md`).
+/// columns, and folds hide children (see `docs/structure.md`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OutlineLayout {

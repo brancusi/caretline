@@ -90,7 +90,7 @@ const scope = [
   ['State, messages, replay, the protocol', 'File I/O: it returns effects'],
 ];
 
-// From docs/caretline/performance.md: release builds on an Apple-silicon Mac.
+// From docs/performance.md: release builds on an Apple-silicon Mac.
 const perf = [
   { v: '1.6 µs', l: 'one edit, in process' },
   { v: '13.4 µs', l: 'one edit over the socket' },
@@ -111,7 +111,7 @@ const compare = [
 const mark = { yes: '●', part: '◐', no: '○' } as const;
 const word = { yes: 'yes', part: 'partly', no: 'no' } as const;
 
-const tour = `// The pieces, end to end (docs/caretline/architecture.md)
+const tour = `// The pieces, end to end (docs/architecture.md)
 use caretline::{keymap, update, view, Key, KeyCode, State, Viewport};
 
 let mut state = State::new("hi", None, Viewport { width: 20, height: 3 });

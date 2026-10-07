@@ -190,7 +190,7 @@ sequenceDiagram
 ```
 
 The interactive `caretline` binary is exactly this loop
-([`runtime.rs`](../../crates/caretline-app/src/runtime.rs)). Before each batch of messages
+([`runtime.rs`](../crates/caretline-cli/src/runtime.rs)). Before each batch of messages
 from a terminal event, it sends a `Tick` with the wall clock.
 
 ## Why purity
@@ -342,7 +342,7 @@ time (outside `update`, as for keys), so the trace still replays exactly.
 ## Helix inside State
 
 The vendored Helix files live in
-[`crates/caretline/src/helix`](../../crates/caretline/src/helix). Here is how they
+[`crates/caretline/src/helix`](../crates/caretline/src/helix). Here is how they
 map into caretline.
 
 | Helix | In caretline | How it's used |
@@ -357,7 +357,7 @@ map into caretline.
 | `LineEnding` | `Config.line_ending` | Detected from the text on load. Enter inserts it and pasted text is normalized to it |
 
 What changed from upstream Helix is listed in
-[`src/helix/README.md`](../../crates/caretline/src/helix/README.md): module paths, no
+[`src/helix/README.md`](../crates/caretline/src/helix/README.md): module paths, no
 tree-sitter or regex, caller-supplied timestamps, serde derives, and resuming the formatter
 at a row.
 

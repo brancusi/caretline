@@ -104,9 +104,9 @@ caretline --replay t.jsonl --snapshot 80x24                    # …and replay i
 
 ## Releases
 
-Each `caretline-v*` tag builds the binary for `aarch64-apple-darwin`, `x86_64-apple-darwin`,
+Each `v*` tag on [brancusi/caretline](https://github.com/brancusi/caretline) builds the binary for `aarch64-apple-darwin`, `x86_64-apple-darwin`,
 `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl` (static) and publishes it on the
-[releases page](https://github.com/brancusi/thought-control/releases), as
+[releases page](https://github.com/brancusi/caretline/releases), as
 `caretline-<version>-<target>.tar.gz` with a `.sha256` beside it. The installer takes
 `CARETLINE_INSTALL_DIR` (default `~/.local/bin`), `CARETLINE_VERSION` (default the newest) and
 `CARETLINE_NO_MODIFY_PATH=1`. The macOS builds aren't signed: a binary fetched with `curl`

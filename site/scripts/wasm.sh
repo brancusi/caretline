@@ -4,7 +4,7 @@
 #   rustup target add wasm32-unknown-unknown
 set -euo pipefail
 cd "$(dirname "$0")/../wasm"
-repo="$(cd ../../.. && pwd)"
+repo="$(cd ../.. && pwd)"
 # Keep local paths out of the binary (panic locations): the repo becomes ., home becomes ~.
 export RUSTFLAGS="--remap-path-prefix=$repo=. --remap-path-prefix=$HOME=~ ${RUSTFLAGS:-}"
 cargo build --release --target wasm32-unknown-unknown

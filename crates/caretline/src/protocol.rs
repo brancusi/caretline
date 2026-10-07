@@ -1,5 +1,5 @@
 //! The state protocol: JSON requests in, JSON responses out, one per line. See
-//! `docs/caretline/protocol.md` for the wire format with examples.
+//! `docs/protocol.md` for the wire format with examples.
 //!
 //! [`Session::handle`] answers one request line. Transport concerns (subscriptions, who
 //! receives events, performing effects) belong to the caller: the response carries a

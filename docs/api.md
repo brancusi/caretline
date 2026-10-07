@@ -2,7 +2,7 @@
 
 The `caretline` crate, by job. Every snippet here compiles against the crate on `main`.
 The complete program at the end is also in the repo as
-[`examples/basic.rs`](../../crates/caretline/examples/basic.rs):
+[`examples/basic.rs`](../crates/caretline/examples/basic.rs):
 
 ```sh
 cargo run -p caretline --example basic
@@ -22,7 +22,7 @@ caretline = "0.3"
 ```
 
 Its library is `caretline::`; this repository's crate is the same code. A few things on `main` are newer than the latest release;
-for those, use a git dependency (`caretline = { git = "https://github.com/brancusi/thought-control" }`).
+for those, use a git dependency (`caretline = { git = "https://github.com/brancusi/caretline" }`), ideally pinned with `rev = "…"`.
 
 Its dependencies are ropey, smallvec, smartstring, the unicode crates, serde, serde_json and
 log. There's no terminal crate and no ratatui.
@@ -428,7 +428,7 @@ println!("{}", reply.response); // {"id":1,"result":{"rev":3,"w":30,…}}
 
 ## A complete program
 
-This is [`examples/basic.rs`](../../crates/caretline/examples/basic.rs). It builds a
+This is [`examples/basic.rs`](../crates/caretline/examples/basic.rs). It builds a
 state, drives it with messages and keys, handles effects, renders, round-trips the state
 through JSON and replays the trace.
 

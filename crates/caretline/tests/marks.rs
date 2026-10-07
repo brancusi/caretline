@@ -325,7 +325,7 @@ fn cut_and_paste_in_place_is_the_identity_for_marks() {
     }
 }
 
-/// The example in docs/caretline/api.md.
+/// The example in docs/api.md.
 #[test]
 fn the_api_example_runs() {
     use caretline::{MarkAttrs, By, Dir};

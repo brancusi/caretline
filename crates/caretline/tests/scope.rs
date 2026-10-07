@@ -1,5 +1,5 @@
 //! caretline is a text-editing engine: its own code names no host concept. What a line means
-//! (a task, a status, a due date) is the host's, added through `Host` (see docs/caretline).
+//! (a task, a status, a due date) is the host's, added through `Host` (see docs/).
 
 const WORDS: &[&str] = &[
     "task", "tasks", "todo", "done", "doing", "waiting", "cancelled", "completed", "checkbox", "checkboxes", "journal",

@@ -1,5 +1,5 @@
 // Site-wide constants. Everything here is public.
-export const REPO = 'https://github.com/brancusi/thought-control';
+export const REPO = 'https://github.com/brancusi/caretline';
 export const REPO_MAIN = `${REPO}/blob/main`;
 export const CRATE = 'https://crates.io/crates/caretline';
 export const INSTALL = 'cargo add caretline';

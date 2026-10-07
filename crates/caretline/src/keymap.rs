@@ -58,7 +58,7 @@ impl Key {
 /// and a printable key without Ctrl, Alt or ⌘ types itself. Pure; unknown keys map to `None`.
 ///
 /// macOS text-field keys come first, with Ctrl twins for terminals that don't forward Cmd
-/// (see docs/caretline/keys.md for the table).
+/// (see docs/keys.md for the table).
 pub fn keymap(key: &Key) -> Option<Msg> {
     crate::commands::lookup(false, key)
 }

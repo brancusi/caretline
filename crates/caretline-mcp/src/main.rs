@@ -1,5 +1,5 @@
 //! caretline-mcp: an MCP server (stdio) that lets an agent read and edit caretline editors,
-//! live ones a person is using and headless ones it starts itself. See docs/caretline/mcp.md.
+//! live ones a person is using and headless ones it starts itself. See docs/mcp.md.
 
 mod engine;
 mod server;

@@ -7,7 +7,7 @@ export async function getStaticPaths() {
   const entries = await getCollection('docs');
   return DOCS.map((d) => {
     const entry = entries.find((e) => e.id === d.id);
-    if (!entry) throw new Error(`docs/caretline has no ${d.id}.md`);
+    if (!entry) throw new Error(`docs/ has no ${d.id}.md`);
     return { params: { slug: d.slug || undefined }, props: { entry, doc: d } };
   });
 }

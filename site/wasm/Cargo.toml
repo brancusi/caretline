@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [dependencies]
-caretline = { path = "../../../crates/caretline" }
+caretline = { path = "../../crates/caretline" }
 
 [profile.release]
 opt-level = "s"

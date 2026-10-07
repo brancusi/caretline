@@ -39,7 +39,7 @@ const toc = headings.filter((h) => h.depth === 2);
         {prev ? <a href={docHref(prev.slug)}><span class="dim">previous</span>{prev.title}</a> : <span></span>}
         {next && <a class="next" href={docHref(next.slug)}><span class="dim">next</span>{next.title}</a>}
       </nav>
-      {source && <p class="docs__edit" data-pagefind-ignore><a href={`${REPO}/blob/main/docs/caretline/${source}`}>This page on GitHub: docs/caretline/{source}</a></p>}
+      {source && <p class="docs__edit" data-pagefind-ignore><a href={`${REPO}/blob/main/docs/${source}`}>This page on GitHub: docs/{source}</a></p>}
     </article>
     {toc.length > 1 && (
       <aside class="docs__toc" aria-label="On this page">

@@ -108,7 +108,7 @@ pub enum Msg {
     /// doesn't end an edit run or disarm a pending quit.
     ShowStatus { text: String },
 
-    // Outline documents (see docs/caretline/structure.md). Elsewhere these only set a status
+    // Outline documents (see docs/structure.md). Elsewhere these only set a status
     // message, except `soft_break` (a line break), `select_word_at` and `paste_plain`.
     /// A line break inside the block (a list item's second line). In a paragraph it is
     /// Enter.
@@ -138,7 +138,7 @@ pub enum Msg {
         text: Option<String>,
     },
 
-    // Views (see docs/caretline/architecture.md#documents-and-views).
+    // Views (see docs/architecture.md#documents-and-views).
     /// Scroll the view by rows (negative is up) without moving the caret. The view stays
     /// where it is put (`free`) until the next caret motion or edit.
     ScrollView { rows: i32 },
@@ -159,7 +159,7 @@ pub enum Msg {
     },
     /// Changes from elsewhere (another device, a daemon, an agent), applied in order to the
     /// document outside the undo history: every view is mapped through them, and undo never
-    /// takes them back (see docs/caretline/messages.md#external-changes). Passive: it
+    /// takes them back (see docs/messages.md#external-changes). Passive: it
     /// doesn't end an edit run or clear the status.
     External { changes: Vec<ExtChange> },
 

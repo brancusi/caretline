@@ -25,7 +25,7 @@ use clap::Parser;
     name = "caretline",
     version,
     about = "A terminal text editor with serializable state and exact replay",
-    after_help = "Try it:\n  caretline demo                       a guided tour (also: demo scenes, demo agent)\n  caretline keys [--outline]           every key and what it does (F1 in the editor)\n\nExamples:\n  caretline notes.md\n  caretline --outline notes.md\n  caretline --new-state notes.md > s.json\n  caretline --state s.json --keys 'hello<cr>' --snapshot 80x24\n  caretline --state s.json --msgs m.jsonl --snapshot 80x24 --format ansi\n  caretline notes.md --trace t.jsonl   (then: caretline --replay t.jsonl --snapshot 80x24)\n\nState protocol (see docs/caretline/protocol.md):\n  caretline notes.md --listen          serve it from the running editor\n  caretline serve [FILE] [--socket P]  a headless engine on stdio or a socket\n  caretline send --latest state.get    a client (render WxH, keys S, msgs F, set-state F)\n  caretline bench                      protocol benchmarks"
+    after_help = "Try it:\n  caretline demo                       a guided tour (also: demo scenes, demo agent)\n  caretline keys [--outline]           every key and what it does (F1 in the editor)\n\nExamples:\n  caretline notes.md\n  caretline --outline notes.md\n  caretline --new-state notes.md > s.json\n  caretline --state s.json --keys 'hello<cr>' --snapshot 80x24\n  caretline --state s.json --msgs m.jsonl --snapshot 80x24 --format ansi\n  caretline notes.md --trace t.jsonl   (then: caretline --replay t.jsonl --snapshot 80x24)\n\nState protocol (see docs/protocol.md):\n  caretline notes.md --listen          serve it from the running editor\n  caretline serve [FILE] [--socket P]  a headless engine on stdio or a socket\n  caretline send --latest state.get    a client (render WxH, keys S, msgs F, set-state F)\n  caretline bench                      protocol benchmarks"
 )]
 struct Args {
     /// The file to edit (created on first save if it doesn't exist).
@@ -90,7 +90,7 @@ struct Args {
     no_status_bar: bool,
 
     /// Edit FILE as an outline: Markdown blocks, lists and headings with their own keys (Tab,
-    /// Shift-Tab, Alt-Up/Down…), and Markdown in and out. See docs/caretline/structure.md.
+    /// Shift-Tab, Alt-Up/Down…), and Markdown in and out. See docs/structure.md.
     #[arg(long)]
     outline: bool,
 
@@ -110,7 +110,7 @@ struct Args {
     max_fps: u32,
 
     /// Interactive: start with a frame clock of this many frames per second (a `frame`
-    /// message each frame; see docs/caretline/messages.md). Off by default.
+    /// message each frame; see docs/messages.md). Off by default.
     #[arg(long, value_name = "FPS")]
     frame_clock: Option<u16>,
 
@@ -124,7 +124,7 @@ struct Args {
 #[command(
     name = "caretline serve",
     about = "Serve the state protocol (JSON lines) on stdin/stdout, or on a Unix socket",
-    after_help = "Examples:\n  echo '{\"op\":\"hello\"}' | caretline serve notes.md\n  caretline serve --state s.json --socket /tmp/cl.sock\n\nSee docs/caretline/protocol.md."
+    after_help = "Examples:\n  echo '{\"op\":\"hello\"}' | caretline serve notes.md\n  caretline serve --state s.json --socket /tmp/cl.sock\n\nSee docs/protocol.md."
 )]
 struct ServeArgs {
     /// The document to load (empty when it doesn't exist).
@@ -148,7 +148,7 @@ struct ServeArgs {
     /// Hide the status bar: every row shows text.
     #[arg(long)]
     no_status_bar: bool,
-    /// Serve FILE as an outline document (see docs/caretline/structure.md).
+    /// Serve FILE as an outline document (see docs/structure.md).
     #[arg(long)]
     outline: bool,
     /// With --outline: the outline layout, with plain hang glyphs.

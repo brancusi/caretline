@@ -1,5 +1,5 @@
 //! A connection to one caretline engine: a live editor over its Unix socket, or a headless
-//! engine in process. Both answer the same JSON requests (docs/caretline/protocol.md) and
+//! engine in process. Both answer the same JSON requests (docs/protocol.md) and
 //! feed the same event buffer, so the tools above never care which one they have.
 
 use std::collections::VecDeque;

@@ -161,7 +161,7 @@ fn main() -> std::io::Result<()> {
 
 For a fuller runtime (mouse, the system clipboard, atomic saves, kitty keyboard flags,
 traces), read the `caretline` binary's
-[`runtime.rs`](../../crates/caretline-app/src/runtime.rs).
+[`runtime.rs`](../crates/caretline-cli/src/runtime.rs).
 
 For your own renderer:
 

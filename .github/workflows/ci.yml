@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: No conflict markers
+        run: |
+          if git grep -nE '^(<<<<<<< |>>>>>>> |=======$)' -- ':!*.md'; then
+            echo "conflict markers in tracked files" >&2; exit 1
+          fi
+
+      - name: Build
+        run: cargo build --workspace --all-targets --locked
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Scope (the engine names no host concept)
+        # crates/caretline/tests/scope.rs: no task, status, journal, vault, thc... in the engine's
+        # own sources. What a line means belongs to the host (docs/embedding.md).
+        run: cargo test -p caretline --test scope --locked
+
+      - name: The engine depends on no host or terminal crate
+        run: |
+          deps="$(cargo tree -p caretline --prefix none -e normal --locked)"
+          if echo "$deps" | grep -E '^(thc|ratatui|crossterm|tokio)'; then
+            echo "caretline (the engine) must not depend on a host, terminal or async crate" >&2; exit 1
+          fi
+
+      - name: Format (report only until the one-time reformat lands)
+        continue-on-error: true
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked
+
+  site:
+    # The docs are read in place by the site: a doc that breaks the build breaks here.
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run scan
+
+  changelog:
+    # A change to the engine's public API files needs a CHANGELOG entry (AGENTS.md, the flow).
+    # Purely internal changes can carry the `no-changelog` label instead.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: CHANGELOG entry for API changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: scripts/check-changelog.sh "$BASE" "$HEAD"

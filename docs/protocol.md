@@ -125,7 +125,7 @@ highlight and no history.
 It is much cheaper than `state.set` with the same text: no state to parse, and nothing to
 repair. A live editor answers a 10 KB frame in 30–100 µs. See
 [performance.md](performance.md#animation) and the demo client,
-`caretline demo scenes` ([`src/demo/scenes.rs`](../../crates/caretline-app/src/demo/scenes.rs)).
+`caretline demo scenes` ([`src/demo/scenes.rs`](../crates/caretline-cli/src/demo/scenes.rs)).
 
 ### Traces
 

@@ -43,7 +43,7 @@ can use safely:
 ## Install
 
 ```sh
-cargo install --locked --path crates/caretline-app   # the editor: `caretline`
+cargo install --locked --path crates/caretline-cli   # the editor: `caretline`
 cargo install --locked --path crates/caretline-mcp   # the server: `caretline-mcp`
 ```
 
