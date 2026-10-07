@@ -1,0 +1,55 @@
+{
+  "width": 80,
+  "height": 24,
+  "layers": [
+    {
+      "id": "L-1",
+      "z": 20,
+      "agent": true,
+      "anchor": {
+        "rects": [
+          {
+            "x": 0,
+            "y": 17,
+            "w": 27,
+            "h": 1
+          }
+        ]
+      },
+      "rect": {
+        "x": 0,
+        "y": 19,
+        "w": 49,
+        "h": 4
+      },
+      "mode": "box",
+      "side": "below",
+      "route": {
+        "junction": [
+          15,
+          19
+        ],
+        "steps": [
+          {
+            "x": 15,
+            "y": 18,
+            "enter": "up",
+            "leave": "up"
+          }
+        ]
+      }
+    }
+  ],
+  "spots": [],
+  "regions": [
+    {
+      "rect": {
+        "x": 0,
+        "y": 19,
+        "w": 49,
+        "h": 4
+      },
+      "id": "L-1"
+    }
+  ]
+}

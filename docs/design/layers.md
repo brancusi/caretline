@@ -1181,3 +1181,34 @@ going past the edge of the window.
 - Whether pulses move to kitty animation once a Ghostty release ships it.
 - `t=s` (shared memory), if `t=t` proves not enough locally.
 - When a second host wants the CLI's look: the shape of a shared renderer crate.
+
+## 12. As built: step 1a (`caretline-layers`)
+
+The first step built the screen-level half (mode B) as its own crate, with
+the scope narrowed. Where it differs from the sections above:
+
+- **Name and scope.** `caretline-overlay` became **`caretline-layers`**: placement, tracking
+  and lifecycle only. It draws nothing: no `Theme`, glyph sets, roles, `compose` or
+  `CellGrid`. `plan(&layers, &anchors, &grid, &renderers) -> Plan` returns geometry (each
+  box or strip, the edge chip, the arrow's route as cells with directions, ring cells,
+  spotlight holes, click regions) and the host draws it. The engine is unchanged; E1–E6 are
+  step 1c.
+- **Content is opaque.** The typed `Item` became layer fields: `content: {kind, data}`
+  (measured by a `Renderer` the host registers per kind), `arrow: bool`, `ring`, `spotlight`.
+  The conventional kind is `hint` (`{"title"?, "text"}`); `{{key:…}}` markup, key badges and
+  step dots are a host's content now.
+- **Dimming is a flag, not a role prefix** (decision 2): a host asks `Plan::dimmed(x,
+  y)` or reads `Plan.spots`.
+- **No screen-cell anchors.** `{"cells": …}` was dropped: anchors store chars, mark ids
+  and host keys only.
+- **Owners and bands.** `person` layers take z 30–39, above agents.
+- **Routing costs.** A text cell costs 16 (not 6) and a blank cell between words 6, so an
+  arrow goes round words when a blank way exists; placement adds 300 per word cell an arrow
+  would cross. The arrow may leave the box anywhere within 10 cells of the anchor's middle.
+  The third-bend penalty is added to the finished route, not searched.
+- **Ops** are protocol-neutral: `ops::parse` and `ops::reply` serve any host's JSON
+  protocol; `layer.list` parses to a listing, not an op.
+- **Performance:** at 100×40, placing a hint box costs about 10 µs; with its arrow
+  about 90 µs, and a spotlight with an arrow about 150 µs (release build), over the 30 and
+  60 µs budgets. The routes for the candidate boxes dominate; a cost grid built once per
+  plan and reusing the chosen box's route are the next steps.

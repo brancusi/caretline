@@ -62,6 +62,16 @@ jobs:
             echo "caretline (the engine) must not enable serde_json's preserve_order or arbitrary_precision" >&2; exit 1
           fi
 
+      - name: caretline-layers depends on no host, terminal or async crate (hosts draw)
+        run: |
+          deps="$(cargo tree -p caretline-layers --prefix none -e normal --locked)"
+          if echo "$deps" | grep -E '^(thc|ratatui|crossterm|termion|termwiz|tokio)'; then
+            echo "caretline-layers must not depend on a host, terminal or async crate" >&2; exit 1
+          fi
+
+      - name: caretline-layers without the caretline feature
+        run: cargo clippy -p caretline-layers --no-default-features --all-targets --locked
+
       - name: Format (report only until the one-time reformat lands)
         continue-on-error: true
         run: cargo fmt --all --check

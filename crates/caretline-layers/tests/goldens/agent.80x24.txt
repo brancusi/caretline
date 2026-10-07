@@ -1,0 +1,49 @@
+# Getting around
+
+This page is a short tour of the editor. Read it from top to bottom and
+try each key as you go: nothing here can break.
+
+## Moving by words
+
+Hold Option and press an arrow key to jump a word at a time. The caret
+stops at the start of each word, so a long line is quick to cross.
+
+## Selecting
+
+Hold Shift with any motion to select as you move. Shift and Option
+together select whole words, and the selection grows from where you began.
+
+## Undo
+
+Every change can be undone. Undo steps follow the way you typed: a word
+at a time while^you type, and one step for a paste.
++--------------+--------------------------------+
+| ◆ helper · tip                                |
+| Each undo step is one word while you type.    |
++-----------------------------------------------+u type, and Enter jumps
+ guide.md                                                                   1:1
+--- map
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+               >
+#################################################
+#################################################
+#################################################
+#################################################
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss

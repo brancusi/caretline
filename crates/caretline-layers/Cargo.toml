@@ -1,0 +1,32 @@
+[package]
+name = "caretline-layers"
+description = "Placement, tracking and lifecycle for hints, callouts, arrows and spotlights over a caretline host's screen: layers as data, anchors that follow edits, pure placement; the host draws"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT"
+repository.workspace = true
+homepage = "https://caretline.app"
+readme = "README.md"
+keywords = ["overlay", "tui", "hints", "editor", "caretline"]
+categories = ["command-line-interface", "text-editors"]
+
+# Pure: no clock, randomness, I/O, terminal or async. Hosts draw.
+[lib]
+doctest = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+unicode-segmentation = "1.13"
+# The engine's pinned width table, so wide graphemes measure as in the editor.
+unicode-width = "=0.1.12"
+caretline = { path = "../caretline", version = "0.3", optional = true }
+
+[features]
+default = ["caretline"]
+# Resolve anchors from a caretline `Frame` and map text anchors through a `ChangeSet`.
+caretline = ["dep:caretline"]
+
+[dev-dependencies]
+# The example is a ratatui host that draws its own hint box.
+ratatui = "0.30"
