@@ -41,6 +41,9 @@
 //! for l in &plan.layers { /* draw l.rect, l.route, l.ring, l.chip; dim plan.spots */ }
 //! ```
 
+// `ops::schema` is one `json!` literal, deeper than the default limit.
+#![recursion_limit = "256"]
+
 #[cfg(feature = "caretline")]
 mod frame;
 mod geom;

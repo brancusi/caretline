@@ -60,6 +60,12 @@
   which view an anchor resolved in. `map_anchors` maps scoped anchors too, whichever view
   the edit came through.
 - `Resolve::is_focused` (default `false`).
+- `ops::schema() -> serde_json::Value`: a JSON Schema (draft 2020-12) for every request
+  `ops::parse` accepts (`$defs/request`, one per op, with `op`, `id`, `view` and `actor`)
+  and every reply (`$defs/reply`, `resolved`, `list`, `error`), with `anchor` (and its
+  `in`), `layer`, `content`, `hint` and `owner`. A test checks the ops tests' requests (those
+  `parse` refuses must fail it too), real replies, and the design's protocol examples
+  against it.
 - `Renderer::measure(data, avail)` is called once per candidate side with that side's real
   room (below and above: the rows past the arrow's gap, at most the width cap; right and
   left: the columns past the gap, at most the cap), so a renderer can return a narrow, tall

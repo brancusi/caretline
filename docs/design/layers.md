@@ -628,31 +628,41 @@ person's screen is the point. Each becomes `Msg::Ext` lines in the trace, with t
 {"id":0,"op":"hello"}
 {"id":0,"result":{"proto":1,"layer_kinds":[{"kind":"hint","agent":true},{"kind":"cli.guide","agent":false}],…}}
 
-{"id":1,"op":"layer.push","actor":"claude","layer":{"anchor":{"block":7},"content":{"kind":"hint","data":{"text":"…"}},"ttl_ms":8000}}
-{"id":1,"result":{"rev":42,"layer":"L-4","resolved":[{"rect":{"x":0,"y":19,"w":15,"h":1}}]}}
+{"id":1,"op":"layer.push","actor":"claude","layer":{"anchor":[{"block":7}],"content":{"kind":"hint","data":{"text":"This block moved."}},"ttl_ms":8000}}
+{"id":1,"result":{"rev":42,"layer":"L-4","resolved":{"rects":[{"x":0,"y":19,"w":15,"h":1}]}}}
 
 {"id":2,"op":"layer.pop","layer":"L-4"}            // or {"owner":"agent:claude"} or {"all":true}
 {"id":2,"result":{"rev":43,"popped":["L-4"]}}
 
 {"id":3,"op":"layer.list"}
-{"id":3,"result":{"rev":43,"layers":[…]}}
+{"id":3,"result":{"rev":43,"layers":[{"id":"L-5","owner":"agent:claude","z":20,"since_ms":1000,"ttl_ms":8000,"anchor":[{"caret":true}],"content":{"kind":"hint","data":{"text":"Here."}}}],"hidden":false}}
 
-{"id":4,"op":"hint.show","actor":"claude","anchor":{"text":{"from":412,"to":421}},
- "title":"Jump by word","text":"⌥← and ⌥→ move one word.","ttl_ms":8000,"place":{"sides":["below","above"]}}
-{"id":4,"result":{"rev":44,"layer":"h-5","resolved":{"rect":{"x":17,"y":13,"w":4,"h":1}}}}
-// not visible: "resolved": {"off":"below"}; missing: "resolved": {"off":"missing"}, "reason": "not_found"
+{"id":4,"op":"hint.show","actor":"claude","anchor":{"text":{"from":412,"to":421}},"title":"Jump by word","text":"⌥← and ⌥→ move one word.","ttl_ms":8000,"place":["below","above"]}
+{"id":4,"result":{"rev":44,"layer":"L-6","resolved":{"rects":[{"x":17,"y":13,"w":4,"h":1}]}}}
+{"id":4,"result":{"rev":44,"layer":"L-6","resolved":{"off":"below"}}}                  // not visible
+{"id":4,"result":{"rev":44,"layer":"L-6","resolved":null,"reason":"not_found"}}     // no anchor resolved
 
-{"id":5,"op":"hint.hide","layer":"h-5"}            // or {"all":true}: this actor's hints only
+{"id":5,"op":"hint.show","actor":"claude","anchor":{"text":{"from":4,"to":9},"in":"panel:2"},"text":"In the side panel."}
+{"id":5,"result":{"rev":45,"layer":"L-7","resolved":{"rects":[{"x":66,"y":3,"w":5,"h":1}],"in":"panel:2"}}}
 
-{"id":6,"op":"tour.start","tour":"caretline.guide"}  // or "tour": {…inline TOML-shaped JSON…}, optional "at": "move"
-{"id":6,"result":{"rev":45,"step":"type","of":11}}
+{"id":6,"op":"hint.hide","layer":"L-6"}            // or {"all":true}: this actor's hints only
+{"id":6,"result":{"rev":46,"popped":["L-6"]}}
+{"id":6,"error":{"reason":"not_allowed","detail":"layer \"L-6\" isn't this actor's"}}   // under a host's policy
 
-{"id":7,"op":"tour.step","to":"next"}             // "back" | "stop" | {"id":"fold"}
-{"id":7,"result":{"rev":46,"step":"move","of":11}}
+{"id":7,"op":"tour.start","tour":"caretline.guide"}  // or "tour": {…inline TOML-shaped JSON…}, optional "at": "move"
+{"id":7,"result":{"rev":47,"step":"type","of":11}}
 
-{"id":8,"op":"render","format":"layers"}          // the placements, as JSON
-{"id":8,"result":{"rev":46,"w":80,"h":24,"placements":[…]}}
+{"id":8,"op":"tour.step","to":"next"}             // "back" | "stop" | {"id":"fold"}
+{"id":8,"result":{"rev":48,"step":"move","of":11}}
+
+{"id":9,"op":"render","format":"layers"}          // the placements, as JSON
+{"id":9,"result":{"rev":48,"w":80,"h":24,"placements":[…]}}
 ```
+
+As built (12), the `hint.*` and `layer.*` lines above are `caretline_layers::ops`: a host
+passes a request to `ops::parse` and answers with `ops::reply`, `ops::list` or `ops::error`
+inside its own envelope (`id`, `rev`). `ops::schema()` is their JSON Schema (draft
+2020-12), and a test checks every such line here against it.
 
 `hint.show` is `layer.push` with `content: {kind: "hint", data: {title, text}}`. A push of a kind
 the host doesn't list is refused with `unknown_kind`.
