@@ -1,0 +1,87 @@
+{
+  "width": 44,
+  "height": 16,
+  "glyphs": "rounded",
+  "spots": [],
+  "rings": [],
+  "layers": [
+    {
+      "id": "L-1",
+      "z": 10,
+      "agent": false,
+      "anchor": {
+        "off": {
+          "below": {
+            "x": null
+          }
+        }
+      },
+      "panels": [
+        {
+          "kind": "chip",
+          "rect": {
+            "x": 32,
+            "y": 14,
+            "w": 12,
+            "h": 1
+          },
+          "fill": "overlay.chip",
+          "runs": [
+            {
+              "x": 32,
+              "y": 14,
+              "spans": [
+                {
+                  "text": " ↓ 6/6 here ",
+                  "role": "overlay.chip"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "strip",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "w": 44,
+            "h": 1
+          },
+          "fill": "overlay.strip",
+          "runs": [
+            {
+              "x": 0,
+              "y": 0,
+              "spans": [
+                {
+                  "text": " 6/6 Save · ↓ below",
+                  "role": "overlay.strip"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "regions": [
+    {
+      "rect": {
+        "x": 32,
+        "y": 14,
+        "w": 12,
+        "h": 1
+      },
+      "id": "L-1/reveal"
+    },
+    {
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 44,
+        "h": 1
+      },
+      "id": "L-1"
+    }
+  ]
+}

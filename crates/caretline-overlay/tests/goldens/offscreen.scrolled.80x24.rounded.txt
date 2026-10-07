@@ -1,0 +1,49 @@
+Hold Option and press an arrow key to jump a word at a time. The caret
+stops at the start of each word, so a long line is quick to cross.
+
+## Selecting
+
+Hold Shift with any motion to select as you move. Shift and Option
+together select whole words, and the selection grows from where you began.
+
+## Undo
+
+Every change can be undone. Undo steps follow the way you typed: a word
+at a time while you type, and one step for a paste.
+
+## Search
+
+Press Control F to search. M╭──────────────────────────────────────────────────╮
+to the next one.            │ Save                              6 of 6  ●●●●●● │
+                            │ Press  ⌃F  to search, and Control S to save.     │
+## Saving                   ╰──────────────────────────────────────────────────╯
+
+Your work is saved when you press Control S. The status bar shows a mark
+while there are changes to save.
+
+ guide.md                                                                   1:1
+--- roles
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                            ####################################################
+                            ####################################oooooooooooooo##
+                            ########kkkk########################################
+                            ####################################################
+
+                                  *********
+
+
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss

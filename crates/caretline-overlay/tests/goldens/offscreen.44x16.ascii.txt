@@ -1,0 +1,33 @@
+ 6/6 Save - v below
+
+This page is a short tour of the editor.
+Read it from top to bottom and
+try each key as you go: nothing here can
+break.
+
+## Moving by words
+
+Hold Option and press an arrow key to jump
+a word at a time. The caret
+stops at the start of each word, so a long
+line is quick to cross.
+
+## Selecting                     v 6/6 here
+ guide.md                               1:1
+--- roles
+============================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                cccccccccccc
+ssssssssssssssssssssssssssssssssssssssssssss
