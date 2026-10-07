@@ -31,6 +31,7 @@ pub mod msg;
 pub mod outline;
 pub mod protocol;
 pub mod session;
+mod single_line;
 pub mod state;
 pub mod trace;
 pub mod update;

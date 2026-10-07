@@ -27,11 +27,24 @@ pub struct Config {
     /// What a change from elsewhere ([`crate::Msg::External`]) does to the undo history.
     #[serde(default, skip_serializing_if = "ExternalUndo::is_default")]
     pub external_undo: ExternalUndo,
+    /// A one-line field: the text never holds a line break. Enter changes nothing, line breaks
+    /// typed, pasted or put in from elsewhere become spaces (those at the end are dropped),
+    /// lines never wrap, and Up and Down go to the start and the end. Ignored (and cleared by
+    /// [`Document::sanitize`]) in an outline document. After turning it on directly, call
+    /// [`State::sanitize`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub single_line: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { tab_width: 4, soft_wrap: true, line_ending: LineEnding::LF, external_undo: ExternalUndo::default() }
+        Config {
+            tab_width: 4,
+            soft_wrap: true,
+            line_ending: LineEnding::LF,
+            external_undo: ExternalUndo::default(),
+            single_line: false,
+        }
     }
 }
 
@@ -422,9 +435,11 @@ impl Document {
     }
 
     /// Repairs what a hand-edited state could get wrong: a history whose current revision
-    /// doesn't exist, marks off line starts. Recomputes `dirty`.
+    /// doesn't exist, marks off line starts, line breaks in a one-line document. Recomputes
+    /// `dirty`.
     pub fn sanitize(&mut self) {
         self.config.tab_width = self.config.tab_width.max(1);
+        self.flatten_text();
         if self.history.current_revision() >= self.history.len() {
             self.history = History::default();
             self.mark_log.clear();
@@ -437,6 +452,58 @@ impl Document {
             crate::outline::mint_missing(self);
         }
         self.dirty = self.compute_dirty();
+    }
+
+    /// Whether the document is one line ([`Config::single_line`], never in an outline).
+    pub fn single_line(&self) -> bool {
+        self.config.single_line && self.outline.is_none()
+    }
+
+    /// Keeps a one-line document on one line: an outline document is never one (the setting
+    /// is cleared); otherwise line breaks in the text are flattened (as typed ones are), and a
+    /// history whose undo or redo could bring one back starts again. Returns the change made
+    /// to the text, to map selections through.
+    pub(crate) fn flatten_text(&mut self) -> Option<ChangeSet> {
+        use crate::single_line::{flatten, has_break, rope_has_break};
+        if self.outline.is_some() {
+            self.config.single_line = false;
+        }
+        if !self.config.single_line {
+            return None;
+        }
+        let in_text = rope_has_break(&self.text);
+        let in_history = self.history.transactions().any(|(t, i)| {
+            [t, i].iter().any(|x| {
+                x.changes().changes().iter().any(|op| matches!(op, crate::helix::transaction::Operation::Insert(s) if has_break(s)))
+            })
+        });
+        if !in_text && !in_history {
+            return None;
+        }
+        let clean = !self.compute_dirty() && !in_text;
+        let mut cs = None;
+        if in_text {
+            let old = self.text.clone();
+            let new = flatten(&old.to_string());
+            // The least change: what both share stays, so marks and carets there keep still.
+            let changes = crate::diff::changes(&old.to_string(), &new);
+            let txn = crate::helix::Transaction::change(
+                &old,
+                changes.into_iter().map(|(a, b, t)| (a, b, (!t.is_empty()).then(|| t.as_str().into()))),
+            );
+            txn.apply(&mut self.text);
+            self.marks.map(old.slice(..), self.text.slice(..), txn.changes());
+            cs = Some(txn.changes().clone());
+        }
+        self.history = History::default();
+        self.mark_log = vec![MarkDelta::default()];
+        self.saved_revision = clean.then_some(0);
+        self.saving = None;
+        self.run = None;
+        self.undo_floor = false;
+        self.touched = Touched::all();
+        self.derived.clear();
+        cs
     }
 
     /// Sets the host's extensions (commands, input rules, decorator) for this document and
@@ -547,6 +614,8 @@ pub struct ConfigInput {
     pub status_bar: Option<bool>,
     pub follow: Option<Follow>,
     pub external_undo: Option<ExternalUndo>,
+    #[serde(default)]
+    pub single_line: Option<bool>,
 }
 
 /// Tells a field that is present (even as `null`) from one that is absent.
@@ -581,6 +650,7 @@ impl From<StateInput> for State {
             soft_wrap: c.soft_wrap.unwrap_or(d.soft_wrap),
             line_ending: c.line_ending.or_else(|| auto_detect_line_ending(&text)).unwrap_or(d.line_ending),
             external_undo: c.external_undo.unwrap_or_default(),
+            single_line: c.single_line.unwrap_or(d.single_line),
         };
         let view_config = ViewConfig {
             status_bar: c.status_bar.unwrap_or(vd.status_bar),
@@ -708,6 +778,8 @@ struct ConfigOut<'a> {
     page_overlap: u16,
     #[serde(skip_serializing_if = "ExternalUndo::is_default")]
     external_undo: &'a ExternalUndo,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    single_line: bool,
 }
 
 impl Serialize for State {
@@ -786,6 +858,7 @@ impl State {
                 follow: v.config.follow,
                 page_overlap: v.config.page_overlap,
                 external_undo: &d.config.external_undo,
+                single_line: d.config.single_line,
             },
             status: &v.status,
             now_ms: d.now_ms,
@@ -837,6 +910,9 @@ impl State {
     /// Clamps the selection and view to the document. A no-op on any state `update` made
     /// (apart from forgetting the layout memo, which changes nothing visible).
     pub fn sanitize(&mut self) {
+        if let Some(cs) = self.doc.flatten_text() {
+            self.view.selection = self.view.selection.clone().map(&cs);
+        }
         self.doc.sanitize();
         self.view.wrap.clear();
         self.view.fit(&self.doc);

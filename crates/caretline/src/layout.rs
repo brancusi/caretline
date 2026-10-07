@@ -198,7 +198,7 @@ pub struct RowPos {
 pub fn text_format(config: &Config, width: u16, wrap: bool) -> TextFormat {
     let width = width.max(1);
     TextFormat {
-        soft_wrap: wrap && config.soft_wrap && width > 10,
+        soft_wrap: wrap && config.soft_wrap && !config.single_line && width > 10,
         tab_width: config.tab_width.max(1),
         max_wrap: 20.min(width / 4),
         max_indent_retain: 40.min(width * 2 / 5),

@@ -107,7 +107,11 @@ pub(crate) fn apply(doc: &mut Document, views: &mut [View], msg: Msg) -> Vec<Eff
 /// it was skipped.
 fn one(doc: &mut Document, change: &ExtChange) -> Result<Option<ChangeSet>, String> {
     let le = doc.config.line_ending.as_str().to_string();
-    let lines = |t: &str| crate::update::normalize_line_endings(t, &le);
+    let single = doc.single_line();
+    let lines = |t: &str| {
+        let t = crate::update::normalize_line_endings(t, &le);
+        if single { crate::single_line::flatten(&t) } else { t }
+    };
     let rope = doc.text.clone();
     let text = rope.slice(..);
     let len = text.len_chars();

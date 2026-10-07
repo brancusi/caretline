@@ -2,7 +2,7 @@
 // at commit ba40e547426b0f9896c8bdc699a4ab11f2b37dbc.
 // SPDX-License-Identifier: MPL-2.0. This file is under the Mozilla Public License 2.0;
 // see LICENSE-MPL-2.0 in the `helix` directory.
-// Changes from upstream: `current_transaction` and `current_inversion` accessors; module paths; revision timestamps are caller-supplied milliseconds (`Timestamp`) instead of `std::time::Instant`, so no clock is read; removed `commit_revision` (it read the clock) and the regex-based duration parser; serde derives; added `amend_current_revision`, `len`, `is_empty`, `can_redo` and `rebase_over` (operational transform over a change made elsewhere).
+// Changes from upstream: `current_transaction` and `current_inversion` accessors; module paths; revision timestamps are caller-supplied milliseconds (`Timestamp`) instead of `std::time::Instant`, so no clock is read; removed `commit_revision` (it read the clock) and the regex-based duration parser; serde derives; added `amend_current_revision`, `len`, `is_empty`, `can_redo`, `transactions` and `rebase_over` (operational transform over a change made elsewhere).
 
 use crate::helix::{Assoc, ChangeSet, Range, Rope, Selection, Transaction};
 use std::num::NonZeroUsize;
@@ -227,6 +227,14 @@ impl History {
     /// The current revision's inversion (from it back to its parent).
     pub fn current_inversion(&self) -> &Transaction {
         &self.revisions[self.current].inversion
+    }
+
+    /// Every revision's transaction and inversion, root first (an undo or redo applies one
+    /// of them).
+    ///
+    /// caretline addition: not in upstream Helix.
+    pub fn transactions(&self) -> impl Iterator<Item = (&Transaction, &Transaction)> {
+        self.revisions.iter().map(|r| (&r.transaction, &r.inversion))
     }
 
     /// The number of revisions, including the root.

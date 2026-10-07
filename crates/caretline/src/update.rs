@@ -121,10 +121,13 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
     match msg {
         Msg::InsertText { text } => {
             let text = normalize_line_endings(&text, state.doc.config.line_ending.as_str());
+            let text = if state.doc.single_line() { crate::single_line::flatten(&text) } else { text };
             if !text.is_empty() {
                 insert(state, &text, Some(RunKind::Typing));
             }
         }
+        // A one-line document has no line to break: Enter is the host's (its submit).
+        Msg::InsertNewline | Msg::SoftBreak if state.doc.single_line() => {}
         Msg::InsertNewline | Msg::SoftBreak => {
             let le = state.doc.config.line_ending.as_str().to_string();
             insert(state, &le, Some(RunKind::Typing));
@@ -276,8 +279,13 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
                 }
                 None => (state.doc.clipboard.text.clone(), state.doc.clipboard.marks.clone()),
             };
+            let flat = if state.doc.single_line() { crate::single_line::flatten(&text) } else { text.clone() };
             if text.is_empty() {
                 state.view.status = Some("the clipboard is empty".into());
+            } else if flat.is_empty() {
+                // Only line breaks: nothing to put on one line.
+            } else if flat != text {
+                paste_text(state, &flat, &[]);
             } else {
                 paste_text(state, &text, &marks);
             }
@@ -403,6 +411,8 @@ pub(crate) fn commit_with(
     step: Step,
     fix: impl FnOnce(&mut Marks, RopeSlice),
 ) -> Vec<Mark> {
+    // A one-line document: whatever the edit inserts goes in flattened.
+    let txn = if state.doc.single_line() { crate::single_line::flatten_txn(&state.doc.text, txn) } else { txn };
     let marks_before = state.doc.marks.clone();
     let old_text = state.doc.text.clone();
     let text_changed = !txn.changes().is_empty();
@@ -824,6 +834,15 @@ fn vertical(layout: &Layout, origin: usize, n: isize, goal: usize) -> usize {
 fn motion(state: &mut State, dir: Dir, by: By, extend: bool) {
     // Outside an outline, moving by block is moving by a document line.
     let by = if by == By::Block && state.doc.outline.is_none() { By::Line } else { by };
+    // On one line, up and down (by a line, a row or a page) go to its start and end, as in a
+    // one-line text field.
+    let by = match by {
+        By::Line | By::VisualLine | By::Page | By::Block if state.doc.single_line() => match dir {
+            Dir::Backward => By::DocStart,
+            Dir::Forward => By::DocEnd,
+        },
+        _ => by,
+    };
     // The direction a selection collapses towards.
     let dir = match by {
         By::LineStart | By::DocStart => Dir::Backward,

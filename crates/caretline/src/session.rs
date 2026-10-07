@@ -335,6 +335,7 @@ impl Session {
         use crate::external::ExtChange;
         let doc = &self.state.doc;
         let text = crate::update::normalize_line_endings(text, doc.config.line_ending.as_str());
+        let text = if doc.single_line() { crate::single_line::flatten(&text) } else { text };
         let changes = crate::diff::changes(&doc.text.to_string(), &text);
         if changes.is_empty() {
             return None;
@@ -377,6 +378,7 @@ impl Session {
         doc.config = crate::state::Config { line_ending: doc.config.line_ending, ..old.doc.config.clone() };
         doc.now_ms = old.doc.now_ms;
         doc.host = old.doc.host.clone();
+        doc.flatten_text();
         let mut view = crate::state::View::new(old.view.viewport);
         view.config = old.view.config.clone();
         view.scroll = old.view.scroll;

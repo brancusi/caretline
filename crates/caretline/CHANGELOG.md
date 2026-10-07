@@ -7,6 +7,21 @@
 - `Layout::click_at`: where a click puts the caret.
 - `ViewConfig::page_overlap`: rows of the previous screen a page motion keeps on screen (a page
   moves the text rows less this). Default 0, as before.
+- `Config::single_line` (`"config": {"single_line": true}`, left out of JSON while false): a
+  one-line text field. The text never holds a line break: `InsertNewline` and `SoftBreak`
+  change nothing; line breaks typed, pasted, edited in by a host or an input rule, or put in
+  from elsewhere (`Msg::External`, `text.set`) become spaces, `\r\n` counted once, and those at
+  the end of the inserted text are dropped; lines never wrap; motion by a line, row or page goes
+  to the start or the end. `State::sanitize` flattens line breaks already in the text and starts
+  the history again when its undo or redo could bring one back. Ignored (and cleared) in an
+  outline document. `Document::single_line()` says whether it applies.
+- `History::transactions`: every revision's transaction and inversion.
+
+### Breaking
+
+- `Config` and `ConfigInput` gain a public field (`single_line`); neither is
+  `#[non_exhaustive]`, so a struct literal that names every field needs `single_line` (or
+  `..Default::default()`). The next release is a minor bump (0.4).
 
 ### Fixed
 
