@@ -512,14 +512,18 @@ fn plan_one(
     out.layers.push(p);
 }
 
-/// The strip's row: the area's top, or its bottom when the anchor is on the top row or lies
-/// above; failing that (another layer, a hole or protected cells there), the nearest free row
-/// inward from it.
+/// The strip's row, on the edge nearest the anchor: the area's top for an anchor that lies
+/// above, its bottom for one below; for an anchor on screen (or left or right), the top,
+/// unless the anchor is on the top row. Failing that (its chip, another layer, a hole or
+/// protected cells there), the nearest free row inward from that edge.
 fn strip_rect(anchor: &[Rect], off: Option<&Off>, grid: &Grid, taken: &Taken) -> Rect {
     let area = grid.area;
     let row = |y: u16| Rect::new(area.x, y, area.w, 1);
-    let top_first = !(anchor.iter().any(|a| a.intersects(&row(area.y)))
-        || matches!(off, Some(Off::Above { .. })));
+    let top_first = match off {
+        Some(Off::Above { .. }) => true,
+        Some(Off::Below { .. }) => false,
+        _ => !anchor.iter().any(|a| a.intersects(&row(area.y))),
+    };
     let ys: Vec<u16> = if top_first {
         (area.y..area.bottom()).collect()
     } else {

@@ -1,4 +1,4 @@
- Jump by word · ⌥← and ⌥→ move the caret on
+  #   Welcome to caretline
 
       A terminal editor where the whole
       editor is one value you can save,
@@ -11,6 +11,6 @@
       The caret is already at the end of
       this paragraph, so just start typing,
       and keep going past the edge of the
-      window.
+ Jump by word · ⌥← and ⌥→ move the caret on
                                      ↓ here
  layers · cells (snapshot) · ↑↓ scroll · s s

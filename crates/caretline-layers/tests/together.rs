@@ -173,6 +173,53 @@ fn a_docked_box_sits_against_its_chip_and_says_where() {
     assert_eq!(l.no_arrow, Some(NoArrow::Docked));
 }
 
+#[test]
+fn a_strip_falls_back_to_the_edge_the_anchor_lies_beyond() {
+    // The area's last row is protected (a prompt): no chip fits on it, so no box can dock,
+    // and the layer is a strip. It goes on the last free row, nearest the anchor below.
+    let area = Rect::new(0, 0, 80, 23);
+    let grid = Grid::new(80, 24)
+        .with_area(area)
+        .with_protect(vec![Rect::new(0, 22, 80, 1)]);
+    let mut m = AnchorMap::new();
+    let below = off(&mut m, "below", Off::Below { x: Some(12) });
+    let p = plan(
+        &all(vec![Layer::new(below).with_content(card())]),
+        &m,
+        &grid,
+        &sized(20, 3),
+    );
+    let l = &p.layers[0];
+    assert_eq!(l.chip, None);
+    assert_eq!(l.mode, Some(Mode::Strip));
+    assert_eq!(l.rect, Some(Rect::new(0, 21, 80, 1)));
+    // Above, with the top row protected: the first free row under it.
+    let grid = Grid::new(80, 24)
+        .with_area(area)
+        .with_protect(vec![Rect::new(0, 0, 80, 1)]);
+    let above = off(&mut m, "above", Off::Above { x: Some(12) });
+    let p = plan(
+        &all(vec![Layer::new(above).with_content(card())]),
+        &m,
+        &grid,
+        &sized(20, 3),
+    );
+    assert_eq!(p.layers[0].mode, Some(Mode::Strip));
+    assert_eq!(p.layers[0].rect, Some(Rect::new(0, 1, 80, 1)));
+    // On a narrow area with the chip on its edge: the strip sits next to the chip.
+    let narrow = Grid::new(40, 24).with_area(Rect::new(0, 0, 40, 23));
+    let below = off(&mut m, "below", Off::Below { x: Some(12) });
+    let p = plan(
+        &all(vec![Layer::new(below).with_content(card())]),
+        &m,
+        &narrow,
+        &sized(20, 3),
+    );
+    let l = &p.layers[0];
+    assert_eq!(l.chip.map(|c| c.y), Some(22));
+    assert_eq!(l.rect, Some(Rect::new(0, 21, 40, 1)));
+}
+
 /// A docked box touches its chip: they share a stretch of edge, and `dock` names a cell of
 /// it, on the box's border next to the chip.
 fn docked_against_chip(l: &Planned) {

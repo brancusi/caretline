@@ -120,6 +120,11 @@
   document, but `observe` mapped every text anchor through it, so typing in `main` (page A)
   shifted a hint scoped to `panel:1` (page B), or dropped it when page B was shorter. Anchors
   scoped to views that don't show the edited document are now left alone (`Edited`).
+- A strip for an off-screen anchor goes on the edge the anchor lies beyond: the bottom for
+  one below (the last free row, so above a protected last row or the edge chip), the top for
+  one above. A layer whose anchor lay below fell back to the top row, away from it and its
+  chip. The 44×16 golden strips for anchors below moved from the top row to the row above
+  their chip.
 - A docked box (its anchor off screen) now always touches its own edge chip: it sits next
   to the chip and shares part of its edge, and `Planned.dock` names a cell of that shared
   edge. It used to take any candidate along the edge (one at the area's far side won where
