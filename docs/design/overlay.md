@@ -321,9 +321,9 @@ and `r=`; the feathering hides the upscale. Words are always text, never pixels.
 
 | Fact | Detail | Where |
 |---|---|---|
-| Kitty graphics on by default | Only `image-storage-limit = 0` turns it off | `src/config/Config.zig` |
+| Kitty graphics on by default | Only `image-storage-limit = 0` turns it off | `src/config/Config.zig` (`image-storage-limit`) |
 | Transmission media | `t=d`, `t=f`, `t=t` and `t=s` are accepted. A `t=t` file must be in the temp dir and have `tty-graphics-protocol` in its name. On macOS use `$TMPDIR`, not `/tmp` | `src/terminal/kitty/graphics_image.zig`; ghostty issue 14567 |
-| z ordering | As the spec: z < 0 under text, z < -1073741824 under non-default cell backgrounds, z ≥ 0 over text | `src/terminal/kitty/graphics_storage.zig`, the renderer |
+| z ordering | As the spec: z < 0 under text, z < -1073741824 under non-default cell backgrounds, z ≥ 0 over text | `src/renderer/image.zig` (`bg_limit = minInt(i32) / 2`) |
 | Moving a placement | `a=p` with the same `i` and `p` moves it without re-sending pixels | `src/terminal/kitty/graphics_exec.zig` |
 | Placement keys | `X`/`Y` pixel offsets, `c`/`r` scaling, `C=1` (don't move the cursor) | `src/terminal/kitty/graphics_command.zig` |
 | Deletes | Every `a=d` selector | `src/terminal/kitty/graphics_storage.zig` |
@@ -332,7 +332,7 @@ and `r=`; the feathering hides the upscale. Words are always text, never pixels.
 | Query | `a=q` answers OK | `src/terminal/kitty/graphics_exec.zig` |
 | XTVERSION | Answers `ghostty <version>` | `src/termio/stream_handler.zig` |
 | DA1 | Answers `?62;22;52c` | `src/termio/stream_handler.zig` |
-| Sizes | `CSI 16 t` gives the cell size in physical (device) pixels on Retina; `CSI 14 t` the window size; `TIOCGWINSZ` fills the pixel fields | `src/termio/stream_handler.zig`, `src/termio/Exec.zig` |
+| Sizes | `CSI 16 t` gives the cell size in physical (device) pixels on Retina; `CSI 14 t` the window size; `TIOCGWINSZ` fills the pixel fields | `src/termio/stream_handler.zig`, `src/termio/Termio.zig`, `src/termio/Exec.zig` |
 | Synchronized output | Mode 2026 | `src/terminal/modes.zig` |
 | Storage | 320 MB of images per screen | `src/config/Config.zig` |
 
