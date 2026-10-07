@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/caretline", "crates/caretline-cli", "crates/caretline-mcp", "crates/caretline-layers"]
+members = ["crates/caretline", "crates/caretline-cli", "crates/caretline-mcp", "crates/caretline-layers", "crates/caretline-tour"]
 
 [workspace.package]
 edition = "2024"

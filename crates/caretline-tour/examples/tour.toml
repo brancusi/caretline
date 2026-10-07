@@ -1,0 +1,51 @@
+# A four-step walkthrough over a generic host: a table of rows on the left and an editor on
+# the right. Each step sets the host's scene (`host`, opaque to caretline-tour), points at
+# things in it (`layers`) and says what it is about (`narration`).
+id = "example.basics"
+version = 1
+title = "A table and an editor"
+kind = "hint"                                   # the content kind of a layer that names none
+
+# A page of narration with nothing pointed at: it moves on by `tour.step {to = "next"}`.
+[[step]]
+id = "welcome"
+host = { panels = { left = "table", right = "editor" }, focus = "table" }
+narration = { title = "Welcome", text = "On the left, a table of rows; on the right, the row you open, as text." }
+
+# The single-layer shorthand: `anchor`, `data` and `place` on the step are its layers[0]
+# (id "rows/0").
+[[step]]
+id = "rows"
+host = { focus = "table", select = "first" }
+narration = { title = "Rows", text = "Each row is one record. Move with the arrow keys; Enter opens it." }
+anchor = { host = { kind = "row", key = "first" } }
+data = { title = "A row", text = "Press Enter to open it." }
+place = { arrow = true, ring = true, sides = ["right", "below"] }
+advance = { any = [{ command = "row.open" }, { event = "row.opened" }] }
+
+# Two layers, one in each view of the document.
+[[step]]
+id = "edit"
+host = { panels = { right = "editor" }, focus = "editor" }
+narration = { title = "Two views, one text", text = "The outline follows the text you edit." }
+advance = { msg = "insert_text", count = 5 }    # before [[step.layers]], or TOML puts it in the last one
+nudge = { after_ms = 8000, data = { text = "Type a few letters: the outline keeps up." } }
+
+[[step.layers]]                                 # id "edit/0"
+anchor = { find = "## Summary", in = "main" }
+data = { text = "Type here…" }
+place = { arrow = true }
+
+[[step.layers]]
+id = "outline-entry"
+anchor = [{ find = "Summary", in = "outline" }, { screen = "top" }]
+data = { text = "…and the outline shows the same heading." }
+
+[[step]]
+id = "finish"
+host = { focus = "table" }
+anchor = { screen = "center" }
+data = { title = "That's all", text = "Open the walkthrough again from the help menu." }
+capture = true
+# Branching: back to the rows if the host says so (its state at "again"), else the end.
+next = [{ if = { state = { key = "again", present = true } }, goto = "rows" }, { goto = "end" }]

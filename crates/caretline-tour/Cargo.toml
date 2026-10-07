@@ -1,0 +1,28 @@
+[package]
+name = "caretline-tour"
+description = "Walkthroughs over a caretline host's screen: steps of layers, narration and the host's own scene, a pure reducer, predicates the host answers, and protocol ops"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT"
+repository.workspace = true
+homepage = "https://caretline.app"
+readme = "README.md"
+keywords = ["walkthrough", "tui", "onboarding", "editor", "caretline"]
+categories = ["command-line-interface", "text-editors"]
+
+# Pure: no clock, randomness, I/O, terminal or async. The host keeps the state and draws.
+[lib]
+doctest = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
+caretline-layers = { path = "../caretline-layers", version = "0.1", default-features = false }
+caretline = { path = "../caretline", version = "0.3", optional = true }
+
+[features]
+default = ["caretline"]
+# Editor predicates (`caret_in`, `changed`, `folded`, `selection`, message kinds and commands)
+# answered from caretline types, and `find` anchors resolved in a caretline document.
+caretline = ["dep:caretline", "caretline-layers/caretline"]

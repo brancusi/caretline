@@ -81,6 +81,16 @@ jobs:
           cargo clippy -p caretline-layers --no-default-features --all-targets --locked
           cargo clippy -p caretline-layers --no-default-features --features kitty --all-targets --locked
 
+      - name: caretline-tour depends on no host, terminal or async crate
+        run: |
+          deps="$(cargo tree -p caretline-tour --prefix none -e normal --locked)"
+          if echo "$deps" | grep -E '^(thc|ratatui|crossterm|termion|termwiz|tokio|tiny-skia|libc) '; then
+            echo "caretline-tour must not depend on a host, terminal, async or raster crate" >&2; exit 1
+          fi
+
+      - name: caretline-tour without the caretline feature
+        run: cargo clippy -p caretline-tour --no-default-features --all-targets --locked
+
       - name: Format
         run: cargo fmt --all --check
 
