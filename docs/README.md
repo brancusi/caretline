@@ -119,6 +119,7 @@ caretline is published on crates.io as [`caretline`](https://crates.io/crates/ca
 | [`caretline`](../crates/caretline) | caretline: plain text on Helix's model, in the Elm architecture. **This documentation is about it.** | `caretline-cli`, `thc-tui` |
 | [`caretline-cli`](../crates/caretline-cli) | The `caretline` binary: the interactive editor and the headless tools | |
 | [`caretline-mcp`](../crates/caretline-mcp) | The `caretline-mcp` binary: an [MCP server](mcp.md) for agents | |
+| [`caretline-layers`](../crates/caretline-layers) | New, not released yet: placement, tracking and lifecycle for hints, arrows and spotlights over a host's screen; the host draws them. See [layers.md](layers.md) | |
 
 thc's TUI is one host: it opens each of its documents as one caretline document of blocks,
 keys its own per-block data by mark, sends changes from its own store as `external` changes, and
@@ -138,6 +139,7 @@ builds its own concepts on top with host commands and decorations ([a case study
 | Drive it over JSON lines | [protocol.md](protocol.md) |
 | Let an agent edit alongside you (MCP) | [mcp.md](mcp.md) |
 | Put it inside your own app | [embedding.md](embedding.md) |
+| Point at things on your app's screen: hints, arrows, spotlights (new, unreleased) | [layers.md](layers.md) |
 | Write or debug a test | [testing.md](testing.md) |
 | Know how fast it is, and its limits | [performance.md](performance.md) |
 
