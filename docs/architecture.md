@@ -42,7 +42,7 @@ halves' fields side by side, the shape every earlier state has.
 | `path` | doc | Where `save` writes, if anywhere |
 | `history` | doc | Helix's undo tree |
 | `saved_revision`, `saving`, `dirty` | doc | Which history revision is on disk, a save in flight, and whether they differ |
-| `config` | both | In JSON one object: `tab_width`, `soft_wrap`, `line_ending` and `external_undo` are the document's (`doc.config`); `scrolloff`, `status_bar` and `follow` the view's (`view.config`) |
+| `config` | both | In JSON one object: `tab_width`, `soft_wrap`, `line_ending`, `external_undo` and `single_line` are the document's (`doc.config`); `scrolloff`, `status_bar` and `follow` the view's (`view.config`) |
 | `status` | view | A one-line message for the status bar, cleared by the next input |
 | `now_ms` | doc | The clock, as the last `tick` reported it |
 | `run` | doc | The open edit run (for undo grouping), with the view it is typed in |
@@ -290,6 +290,9 @@ hand-edited file could get wrong:
 - A zero viewport becomes 1 × 1, and a zero tab width becomes 1.
 - A scroll line past the end resets to the top.
 - A history whose current revision doesn't exist resets to empty.
+- In a one-line document (`config.single_line`), line breaks in the text are flattened as
+  typed ones are, and a history that could bring one back resets to empty. An outline
+  document is never one line: the setting is turned off.
 - `dirty` is recomputed.
 
 Parsing also fills in what's missing. Every field but `text` is optional (and `text` defaults

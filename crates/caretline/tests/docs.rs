@@ -46,6 +46,31 @@ fn the_host_command_example_runs() {
     assert_eq!(state.doc.text.to_string(), "HELLO\nworld\n");
 }
 
+/// embedding.md#a-one-line-field
+#[test]
+fn the_one_line_field_example_runs() {
+    let mut field = State::new("", None, Viewport { width: 24, height: 1 });
+    field.doc.config.single_line = true;
+    field.view.config.status_bar = false;
+    field.sanitize();
+    field.doc.set_host(Host::new().input_rule("amount", |ctx, msg| {
+        let text = match msg {
+            Msg::InsertText { text } | Msg::Paste { text: Some(text) } => text,
+            _ => return None,
+        };
+        let r = ctx.selection().primary();
+        let mut next = ctx.text().to_string();
+        next.replace_range(ctx.text().char_to_byte(r.from())..ctx.text().char_to_byte(r.to()), text);
+        let decimal = next.chars().all(|c| c.is_ascii_digit() || c == '.') && next.matches('.').count() <= 1;
+        (!decimal).then(|| Edit::status("a decimal amount"))
+    }));
+    for msg in [Msg::InsertText { text: "12.5".into() }, Msg::InsertText { text: ".".into() }, Msg::InsertNewline] {
+        update(&mut field, msg);
+    }
+    assert_eq!(field.doc.text.to_string(), "12.5");
+    assert_eq!(field.view.status.as_deref(), None, "the newline cleared the refusal's status");
+}
+
 /// embedding.md#case-study-tasks-in-thc, step 2.
 fn task_cycle(ctx: &Ctx, _: &Value) -> Result<Edit, String> {
     let o = ctx.blocks().ok_or("only in outline documents")?;

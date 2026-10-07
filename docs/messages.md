@@ -29,7 +29,7 @@ deletes exactly the selection.
 | Msg | JSON | Does |
 |---|---|---|
 | `InsertText { text }` | `{"msg":"insert_text","text":"hi"}` | Types `text` at every caret, replacing selections. Line breaks are converted to the document's line ending |
-| `InsertNewline` | `{"msg":"insert_newline"}` | Inserts the document's line ending |
+| `InsertNewline` | `{"msg":"insert_newline"}` | Inserts the document's line ending. In a one-line document (`config.single_line`), nothing |
 | `DeleteBackward` | `{"msg":"delete_backward"}` | Deletes one grapheme back, or the selection |
 | `DeleteForward` | `{"msg":"delete_forward"}` | Deletes one grapheme forward, or the selection |
 | `DeleteWordBackward` | `{"msg":"delete_word_backward"}` | Deletes back to the previous word start. At a line start, only the line break |
@@ -37,6 +37,15 @@ deletes exactly the selection.
 | `DeleteToLineStart` | `{"msg":"delete_to_line_start"}` | Deletes back to the start of the visual row. At the row start, one grapheme |
 | `DeleteToLineEnd` | `{"msg":"delete_to_line_end"}` | Deletes forward to the end of the visual row. At the row end, one grapheme |
 | `KillLine` | `{"msg":"kill_line"}` | Deletes to the end of the document line, or the line break when already there |
+
+In a **one-line document** (`config.single_line`, see [api.md](api.md#create-a-state)) the text
+never holds a line break. `insert_newline` and `soft_break` change nothing (an input rule still
+sees them first, so a host can make Enter its submit). Any other text that goes in (typed,
+pasted, a host's `edit` or command, an input rule's edit, an `external` change, `text.set`) is
+flattened: line breaks at the end of the inserted text are dropped, and every other one
+(`\r\n` counted once) becomes a space, so pasting `"one\ntwo\n"` puts in `one two`. Text that
+is only line breaks changes nothing. Motion by a line, a visual row or a page goes to the start
+(backward) or the end (forward), extending the selection with `extend`.
 
 ### Motion and selection
 

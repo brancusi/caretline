@@ -248,6 +248,47 @@ Draw each panel with `draw_editor(f, rects[i], &panels.editors[i])` from the exa
 - **Persist the layout** by saving each state with `to_json`. Reopening restores the text,
   the caret, the scroll and the undo history.
 
+### A one-line field
+
+A filter box, a command palette's query or a prompt is a state with `config.single_line` on:
+the full editor (undo, word motion, selections, several carets) on a text that never holds a
+line break. Line breaks pasted or typed into it become spaces, the line scrolls sideways
+instead of wrapping, and Up and Down go to the start and the end
+([messages.md](messages.md#editing)).
+
+1. Turn on `doc.config.single_line`, turn off `view.config.status_bar`, give it a viewport one
+   row high, and call `sanitize`.
+2. Bind Enter to your submit in your own keymap, before the engine's: in a one-line document
+   `insert_newline` changes nothing. To keep the submit in traces, an input rule can take
+   `InsertNewline` instead and return an `Edit` whose `effects` carry it.
+3. Validate with input rules. The value is the text, so it stays exact: a decimal amount is the
+   string the person typed, which you parse with your own decimal type, never through a float.
+
+```rust
+use caretline::{update, Edit, Host, Msg, State, Viewport};
+
+let mut field = State::new("", None, Viewport { width: 24, height: 1 });
+field.doc.config.single_line = true;
+field.view.config.status_bar = false;
+field.sanitize();
+// Digits and at most one point: anything that would break that is refused, with a word why.
+field.doc.set_host(Host::new().input_rule("amount", |ctx, msg| {
+    let text = match msg {
+        Msg::InsertText { text } | Msg::Paste { text: Some(text) } => text,
+        _ => return None,
+    };
+    let r = ctx.selection().primary();
+    let mut next = ctx.text().to_string();
+    next.replace_range(ctx.text().char_to_byte(r.from())..ctx.text().char_to_byte(r.to()), text);
+    let decimal = next.chars().all(|c| c.is_ascii_digit() || c == '.') && next.matches('.').count() <= 1;
+    (!decimal).then(|| Edit::status("a decimal amount"))
+}));
+for msg in [Msg::InsertText { text: "12.5".into() }, Msg::InsertText { text: ".".into() }, Msg::InsertNewline] {
+    update(&mut field, msg);
+}
+assert_eq!(field.doc.text.to_string(), "12.5");
+```
+
 ## Extending the engine
 
 caretline edits text and knows its shape (blocks, depth, markers), never its meaning. What a
