@@ -702,8 +702,8 @@ fn push(
                     "an arrow goes from the callout to the anchor",
                 );
             }
-            Item::Arrow(_) if layer.callout().is_none() => {
-                return refuse(Reason::Invalid, "an arrow needs a callout");
+            Item::Arrow(_) if !layer.has_box() => {
+                return refuse(Reason::Invalid, "an arrow needs a box to start from");
             }
             Item::Ring(r) if r.around != Part::Anchor => {
                 return refuse(Reason::Invalid, "a ring goes around the anchor");
