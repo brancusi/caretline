@@ -139,6 +139,7 @@ A layer is pure data in `view.ext["layers"]`:
 | Screen | `{"screen": "center"}` | Placement only (a welcome or a closing step) |
 | Find (authoring only) | `{"find": "## 2 · Move"}` | Resolved **once**, when a step starts, to a block or text-in-block anchor, by the reducer (a recorded, deterministic message). Never searched per frame |
 | Host kind | `{"host": {"kind": "row", "key": "a1b2"}}` | A resolver the host registers, or the host's `AnchorMap` (7.1) |
+| In a view | `{"text": {"from": 4, "to": 9}, "in": "panel:2"}`: a text, block or caret anchor with `in` beside it | Only the view with that id (one `FrameResolver` per view of a document, each with its offset and clip). Unscoped anchors resolve in the focused view, else the first view that shows them, else which way they lie from the focused view. As built: 12 |
 
 **Surviving change:**
 - **Edits:** `observe` maps every char-range anchor through the message's `ChangeSet`: the start
@@ -276,8 +277,8 @@ In-frame (7.1, mode A) the crate's frame pass runs these steps and then calls ea
 `render` at 100×40 costs 127 µs today. A bench guards the crate's numbers and the CLI's renderers
 together (9.2).
 
-As built (12): placement measures 4 µs for a box, 27 µs with an arrow and 44 µs for a
-spotlight with an arrow. A host skips even that when nothing changed by keeping the last plan
+As built (12): placement measures 6 µs for a box (four measures, one per side), 27 µs with
+an arrow and 37 µs for a spotlight with an arrow. A host skips even that when nothing changed by keeping the last plan
 with its inputs (12, "Unchanged inputs").
 
 ### 3.6 Pixel plumbing (feature `kitty`)
@@ -506,13 +507,55 @@ next = [{ if = { ext = { key = "agent", present = true } }, goto = "agent" }, { 
 ```
 
 **Fields of a step:**
-- `id`, `anchor` (one or a list), `kind` (default: the tour's), `data`;
-- `place`, `capture`;
-- `advance`, `skip_if`, `nudge` (`{ after_ms, data }` merged into `data` when the person
-  hesitates);
+- `id`;
+- `layers`: the step's layers, `[{id?, anchor, kind?, data, place?, capture?}]`. Each is a
+  layer the tour owns (owner `guide`); `anchor` is one or a list, `kind` defaults to the
+  tour's, and `id` defaults to `<step id>/<index>` (`move/0`, `move/1`). The single-layer
+  fields `anchor`, `kind`, `data`, `place` and `capture` on the step are shorthand for a
+  one-element `layers`; a step with both `layers` and any of them is an error;
+- `narration` (optional): `{title?, text}`, the step's own words. It is not a layer: no
+  anchor, nothing placed, no box. The host shows it where it likes (a docked panel, a strip,
+  read aloud, or nowhere). The tour carries it untouched and exposes it on the current step;
+  it is distinct from each layer's `data`, which is what that layer's box shows;
+- `host` (optional): an opaque JSON value the host applies when the step starts, such as a
+  view-state patch (which panel is open, what is focused or scrolled). The tour never reads
+  it; it holds only the host's own state, not layers or narration;
+- `advance`, `skip_if`, `nudge` (`{ after_ms, data }` merged into each layer's `data` when
+  the person hesitates);
 - `next` (branching: the first matching `if` wins; `goto` names a step id or `end`).
 
-The tour adds `at` and `of` to each step's data, so a renderer can draw step dots.
+The tour adds `at` and `of` to each layer's data, so a renderer can draw step dots.
+
+So a host authors a walkthrough as **view state + layers + narration**: `host` sets the
+scene, `layers` point at things in it, `narration` says what the step is about. A future
+`caretline-tour` reads all three. A step with two layers, one in each view of a document
+(view-scoped anchors, 2.3):
+
+```toml
+[[step]]
+id = "compare"
+host = { panels = { right = "outline" }, focus = "main" }   # the host's own patch; opaque
+narration = { title = "Two views, one document", text = "The outline on the right follows the text you edit on the left." }
+
+[[step.layers]]                      # id "compare/0"
+anchor = { find = "## 2 · Move" }
+kind = "hint"
+data = { text = "You edit here…" }
+place = { connector = true }
+
+[[step.layers]]
+id = "outline-entry"                 # given, instead of "compare/1"
+anchor = { find = "## 2 · Move", in = "panel:outline" }
+kind = "hint"
+data = { text = "…and the outline shows the same heading." }
+
+advance = { command = "move.word_right" }
+```
+
+**Jumping** (`tour.step {to}`, back, a branch's `goto`) is deterministic: the tour applies
+the target step's `host` value (the host's patch, as authored, whatever the steps between
+would have set), then replaces the guide's layers with the target step's. Nothing of the
+step it left stays, so a jump to a step looks the same as arriving there in order.
 
 **Predicates** (pure; they see the message, its effects and changes, and the view):
 
@@ -538,9 +581,10 @@ The tour adds `at` and `of` to each step's data, so a renderer can draw step dot
   `observe` from the message that satisfied the predicate, so it adds no trace lines. Starts, stops
   and manual next and back are `Msg::Ext` lines. Each segment's `state` line carries the `ext`
   values as they stand at its start, so a segment replays on its own.
-- **Drawing:** the tour registers a `LayerSource` with `caretline-layers`. The current step becomes
-  a layer at draw time; it isn't copied into `ext["layers"]`, so there's no second copy to keep in
-  step.
+- **Drawing:** the tour registers a `LayerSource` with `caretline-layers`. The current step's
+  layers are made at draw time; they aren't copied into `ext["layers"]`, so there's no second
+  copy to keep in step. Its `narration` and `host` value are read from the current step by
+  the host, never drawn by the crates.
 - **Replay** of a trace with a guide reproduces the same frames, guide included, with the same
   crates and renderers registered.
 
@@ -592,8 +636,8 @@ host without knowing how that host looks.
 
 - **Data:** `{"title"?: string, "text": string}`, with `{{key:…}}` and `{{code:…}}` in `text`.
 - **What a host must do:** draw the text (all of it, or the first lines with the rest one key away)
-  near the placement's rect, mark agent layers as an agent's (7.5), and give the box a region. A
-  connector and a ring are optional.
+  near the placement's rect and give the box a region. Marking agent layers as an agent's is
+  recommended, and the host's choice (7.5). A connector and a ring are optional.
 - **Where it comes from:** `hint.show` over the protocol, the MCP `show_hint` tool, or the host
   itself.
 
@@ -1234,11 +1278,15 @@ the scope narrowed. Where it differs from the sections above:
   protocol; `layer.list` parses to a listing, not an op.
 - **Performance:** `plan` at 100×40, release build, `tests/bench.rs` with `BENCH_N=50000`:
 
-  | Case | Before | After | Budget |
-  |---|---|---|---|
-  | A hint box | 10 µs | 4.3 µs | |
-  | A hint with an arrow and a ring | 94 µs | 27 µs | 30 µs |
-  | A spotlight with an arrow | 154 µs | 44 µs | 60 µs |
+  | Case | Before | After | With views and per-side measure | Budget |
+  |---|---|---|---|---|
+  | A hint box | 10 µs | 4.3 µs | 5.6 µs | |
+  | A hint with an arrow and a ring | 94 µs | 27 µs | 26.7 µs | 30 µs |
+  | A spotlight with an arrow | 154 µs | 44 µs | 36.6 µs | 60 µs |
+
+  The last column is the least of ten runs of five rounds each, run alternately with the
+  build before it (26.8, 4.2 and 42.7 µs there), as `tests/bench.rs` now reports: a shared
+  machine's load moves single runs by half.
 
   How, with every golden and property test unchanged:
   - The routing cost of every cell is built **once per plan**, on the first arrow, and kept in
@@ -1292,3 +1340,46 @@ the scope narrowed. Where it differs from the sections above:
   (`update_doc_with_changes`, `Session::apply_with_changes`) returns the message's
   `ChangeSet`; `observe` and `map_anchors` map text anchors through it. The stopgap that
   diffed two texts (`changes_between`) is gone.
+- **Views.** A host can show one document in several views (a main editor and side panels),
+  each drawn at its own offset and clipped to its own rect. Each gets a `FrameResolver` with
+  a stable id (the host's names: `main`, `panel:2`), `.at(x, y)` and `.clip(rect)`; the
+  focused one is marked `.focused()`, and they go in one `Chain`.
+  - Cells outside a view's clip aren't visible. An anchor whose cells are all clipped away
+    lies off screen the way they are (`above`/`below` with the column, `left`/`right` with
+    the row); a direction the frame gives (scrolled out) is pulled inside the clip, so the
+    edge chip sits by that view.
+  - A text, block or caret anchor can be scoped: `{"text": {"from": 4, "to": 9}, "in":
+    "panel:2"}` (`Anchor::In`, `Anchor::scoped`). It resolves only in that view, and never
+    falls back to another. Screen and host anchors can't be scoped (a host key names its own
+    place); an empty view, a second scope or any other key beside the target is refused by
+    serde and by `apply`.
+  - An unscoped anchor resolves in a defined order (`Chain`): the focused view if it shows
+    it; else the first view that shows it; else which way it lies from the focused view;
+    else the first direction any view gives.
+  - `Resolved.view` (wire `in`) says which view answered; `Planned.anchor` and
+    `ops::resolved` carry it.
+  - Every view shows the same document, so an edit through any of them (the `ChangeSet` of
+    `update_doc_with_changes`) maps scoped and unscoped anchors alike.
+- **Measured per side.** `Renderer::measure(data, avail)` is called once per candidate side,
+  with that side's room: below and above, the rows between the anchor (plus the arrow's gap)
+  and the area's edge, at most the width cap wide; right and left, the columns past the gap,
+  at most the cap. A renderer can give a narrow, tall box where only a narrow side is free;
+  a side with no room isn't measured. A box that keeps its size whatever room it gets fits
+  where it did before.
+- **The least box, not the first few.** With an arrow, placement takes the least-scoring box
+  of every candidate (it used to take the best of the first six by a guess, which a
+  side newly in reach could crowd out). Boxes are routed a side at a time, the best guess's
+  side first; a box that couldn't win even with the cheapest arrow (one blank cell per cell
+  of gap) is left out, a side with none left gets no search, and a side's search covers
+  only the boxes still in it. Every golden plan is unchanged.
+- **Docked boxes touch their chips.** A docked box sits next to its own chip and shares part
+  of its edge; `Planned.dock` names a cell of that shared edge. When chip-avoidance slid the
+  chip along the edge, the box follows it; when no box can touch it, the layer is a strip.
+  (It used to accept any box along the edge, the one at the area's far side winning where
+  it covered less text, and clamp `dock` to its border.)
+- **A schema for the ops.** `ops::schema()` is a JSON Schema (draft 2020-12) for every
+  request `ops::parse` accepts (`$defs/request`) and every reply (`reply`, `resolved`,
+  `list`, `error`), with `anchor` (and `in`), `layer`, `content`, `hint` and `owner`. A test
+  validates the requests `parse` accepts (and fails the ones it refuses), real replies, and
+  the protocol examples in 7.4 against it with a small validator for the keywords it uses
+  (no new dependency).
