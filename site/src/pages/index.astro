@@ -22,7 +22,7 @@ const scenes = [
 const pieces = [
   { k: 'State', t: 'State', d: 'Everything that decides the screen: text, selections, scroll, viewport, the undo tree, the clock. Plain data that round-trips through JSON.' },
   { k: 'Msg', t: 'Msg', d: 'Every input: an edit, a motion, a click, a resize, a clock tick, the result of a save. Each one has a JSON form.' },
-  { k: 'update', t: 'update(&mut State, Msg) → Vec<Effect>', d: 'The only place state changes. Pure: no I/O, no clock, no randomness. Work for the outside world comes back as effects.' },
+  { k: 'update', t: 'update(&mut State, Msg) → Vec<Effect>', d: 'The only place state changes. Pure: no I/O, no clock, no randomness. Work for the outside world comes back as effects; update_with_changes also hands back the text changes, to move positions you keep.' },
   { k: 'view', t: 'view(&State) → Frame', d: 'A grid of cells and the caret’s cell. Pure, so the same state always draws the same frame.' },
 ];
 

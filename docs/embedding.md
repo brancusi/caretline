@@ -45,6 +45,15 @@ You own the loop. Each turn:
 3. Call `update` and perform the effects it returns.
 4. Call `view` and copy the cells to your screen. Put your cursor at `frame.cursor`.
 
+If your app keeps char positions of its own in the text (anchors for hints, bookmarks, a
+remote cursor), call `update_with_changes` in step 3 instead: it returns the effects and the
+message's text changes, one `ChangeSet` (`None` when the text didn't change), and you map each
+position with `changes.map_pos(pos, Assoc::After)` (or `Assoc::Before` to stay before text
+inserted exactly there). The engine keeps no history of them, so map right after each message.
+`update_doc_with_changes` and `Session::apply_with_changes` do the same for several views and
+for a session. See [api.md](api.md#map-your-own-positions-through-each-message);
+[caretline-layers](layers.md) moves its anchors this way.
+
 ```mermaid
 flowchart LR
     input["Your input<br/>(keys, mouse, paste)"] -->|"to_key → keymap"| msg["Msg"]
@@ -244,7 +253,8 @@ Draw each panel with `draw_editor(f, rects[i], &panels.editors[i])` from the exa
 - **Saving and undo are per state.** Give each state its own `path`.
 - **Two panels on the same document** are one `Document` with a `View` each, driven with
   `update_doc`: an edit in one maps the other's selection, and undo is the document's. See
-  [api.md](api.md#several-views-of-one-document).
+  [api.md](api.md#several-views-of-one-document). `update_doc_with_changes` also returns the
+  document's text changes, to map positions your app keeps.
 - **Persist the layout** by saving each state with `to_json`. Reopening restores the text,
   the caret, the scroll and the undo history.
 

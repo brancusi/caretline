@@ -34,6 +34,7 @@ log. There's no terminal crate and no ratatui.
 | `State`, `Config`, `Viewport`, `Scroll` | `caretline` | Hold and configure the editor: one document and one view |
 | `Document`, `View`, `ViewConfig`, `Follow`, `ExternalUndo` | `caretline` | A document and its views, separately: see [Several views](#several-views-of-one-document) |
 | `update_doc` | `caretline` | Apply a message through one of several views |
+| `update_with_changes`, `update_doc_with_changes`, `ChangeSet`, `Assoc` | `caretline` | Apply a message and get its text changes, to map positions of your own: see [Map your own positions](#map-your-own-positions-through-each-message) |
 | `ExtChange` | `caretline` | A change from elsewhere, for `Msg::External`: see [messages.md](messages.md#changes-from-elsewhere) |
 | `Msg`, `Dir`, `By`, `Effect` | `caretline` | Say what happened; get work back |
 | `update`, `replay` | `caretline` | Apply one message; fold many |
@@ -152,6 +153,46 @@ assert_eq!(state.doc.text.to_string(), "hello there");
 
 Send `Msg::Tick { now_ms }` with real time before user input if you want typing grouped into
 undo steps the way a person expects ([architecture.md](architecture.md#undo-grouping-worked-through)).
+
+### Map your own positions through each message
+
+A host that keeps char positions of its own (an anchor for a hint, a bookmark, a remote
+cursor, a search hit) needs to know how each message moved the text. `update_with_changes`
+does what `update` does and also returns the message's text changes: one `ChangeSet` from the
+text before the message to the text after it. It covers every way a message changes the text:
+typing, deleting, pasting, undo and redo, host commands and input rules, and `Msg::External`;
+several edits in one message are composed into one. It is `None` when the text didn't change
+(a motion, a tick, a refused edit, a command that only changed marks). Nothing is kept in the
+state, so map your positions right after each message.
+
+`changes.map_pos(pos, assoc)` maps a char position. `Assoc` says which side of an insertion
+exactly at `pos` it keeps: `Assoc::Before` stays before the inserted text, `Assoc::After` moves
+past it. Use `After` for the start of a range and `Before` for its end, and a range keeps
+covering what it covered.
+
+```rust
+use caretline::{update_with_changes, Assoc, By, Dir, Msg, State, Viewport};
+
+let mut state = State::new("hello world", None, Viewport { width: 40, height: 5 });
+let (mut from, mut to) = (6, 11);                                   // "world"
+state.view.selection = caretline::helix::Selection::point(6);
+let (_effects, changes) = update_with_changes(&mut state, Msg::InsertText { text: "big ".into() });
+if let Some(cs) = &changes {
+    from = cs.map_pos(from, Assoc::After);
+    to = cs.map_pos(to, Assoc::Before);
+}
+assert_eq!(state.doc.text.slice(from..to).to_string(), "world");
+
+// A motion changes no text.
+let (_, changes) = update_with_changes(&mut state, Msg::Move { dir: Dir::Forward, by: By::Word, extend: false });
+assert!(changes.is_none());
+```
+
+`update_doc_with_changes(doc, views, acting, msg)` is the same for
+[several views](#several-views-of-one-document): whichever view acted, the changes are the
+document's, so they map positions for every view and for the host. `Session::apply_with_changes`
+and `Session::apply_on_with_changes` are the [Session](#session)'s. `ChangeSet` and `Assoc` are
+helix's, re-exported at the crate root; the rest of helix's API is under `caretline::helix`.
 
 ## Read the text and the selection
 
@@ -298,6 +339,8 @@ assert_eq!(doc.text.to_string(), "> one\ntwo\n");
 let _panel = render(&doc, &views[1]);
 ```
 
+`update_doc_with_changes` also returns the message's text changes
+([Map your own positions](#map-your-own-positions-through-each-message)).
 `State::from_parts(doc, view)` and `state.into_parts()` move between the two forms. A view kept
 apart from `update_doc` misses the rebases; `View::fit(&doc)` at least clamps it to the
 document.
@@ -418,6 +461,7 @@ face of the [state protocol](protocol.md).
 | `set_text(text)`, `set_text_on(id, text)`, `text_change(text)` | Puts in a whole new text, changing only what differs, as one change from elsewhere (`Msg::External`, outside the undo history); every view keeps its caret, selection, scroll and folds on its text. Returns the message applied (`None` when nothing differs). `text_change` builds it without applying it |
 | `open_view(view) -> id`, `close_view(id)`, `views()`, `view(id)`, `state_of(id)` | Other views of the document (view 0 is the state's own); opening and closing is a change and is traced |
 | `apply_on(id, msg)`, `apply_with_on`, `keys_on(id, script)` | Apply through view `id`; every other view is rebased |
+| `apply_with_changes(msg)`, `apply_on_with_changes(id, msg) -> (Vec<Effect>, Option<ChangeSet>)` | `apply` and `apply_on`, also returning the message's text changes ([Map your own positions](#map-your-own-positions-through-each-message)); `None` when the text didn't change or there is no such view |
 | `render_view(id, size)` | The frame of view `id` |
 | `state_lines()` | The lines a segment starts with: the state and a `view_open` for each other view |
 | `frame()` | `view` of the current state |

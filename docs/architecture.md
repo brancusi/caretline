@@ -110,6 +110,13 @@ assert_eq!(views[1].caret(), 10); // still before "world"
   mapping (`views::map_elsewhere`); undo and redo are unchanged, and since the mapping is a
   pure function of the changes, replay is too.
 
+**The changes are handed out, not kept.** `update_doc_with_changes` (and
+`update_with_changes`, `Session::apply_with_changes`) returns, beside the effects, every text
+change the message made, composed into one `ChangeSet` from the text before it to the text
+after (`None` when the text didn't change). It is the same change log the other views are
+rebased through, so a host maps its own positions (`ChangeSet::map_pos` with an `Assoc`) exactly
+as the engine maps the views. The state keeps no copy.
+
 `update(&mut state, msg)` is `update_doc(&mut state.doc, [&mut state.view], 0, msg)`, and
 `view(&state)` is `render(&state.doc, &state.view)`. `Session` keeps other views beside its
 state, and the [protocol](protocol.md#views) addresses them by id.
