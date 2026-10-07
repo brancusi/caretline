@@ -1,16 +1,18 @@
 name: caretline release
 
-# Push a tag like caretline-v0.2.0 to build the `caretline` binary (crates/caretline-app) for
+# Push a tag like v0.3.0 to build the `caretline` binary (crates/caretline-cli) for
 # macOS and Linux and publish it as a GitHub Release on this repo:
 #   caretline-<v>-<target>.tar.gz (+ .sha256)   one per target
-# sites/caretline/public/install.sh (served at https://caretline.app/install.sh) finds the newest
-# caretline-v* release, downloads the tarball for the machine and checks its sha256.
+# site/public/install.sh (served at https://caretline.app/install.sh) finds the newest
+# v* release, downloads the tarball for the machine and checks its sha256. (Releases up to
+# 0.3.0 were first published on brancusi/thought-control as caretline-v*; the installer
+# falls back to them.)
 #
 # Builds aren't Apple-signed: a curl install isn't quarantined. Linux builds are static (musl).
 # Manual runs (workflow_dispatch) build, test and smoke-test every target without publishing.
 on:
   push:
-    tags: ["caretline-v*"]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -27,10 +29,10 @@ jobs:
       - name: Version
         id: v
         run: |
-          v="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/caretline-app/Cargo.toml | head -1)"
+          v="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/caretline-cli/Cargo.toml | head -1)"
           [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "caretline-cli version isn't x.y.z: $v" >&2; exit 1; }
-          if [[ "$GITHUB_REF" == refs/tags/caretline-v* ]]; then
-            [[ "${GITHUB_REF#refs/tags/caretline-v}" == "$v" ]] || { echo "Tag ${GITHUB_REF#refs/tags/} doesn't match crates/caretline-app ($v)." >&2; exit 1; }
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            [[ "${GITHUB_REF#refs/tags/v}" == "$v" ]] || { echo "Tag ${GITHUB_REF#refs/tags/} doesn't match crates/caretline-cli ($v)." >&2; exit 1; }
             echo "publish=1" >> "$GITHUB_OUTPUT"
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
@@ -48,7 +50,7 @@ jobs:
     steps:
       - name: Create the draft release
         run: |
-          tag="caretline-v$V"
+          tag="v$V"
           if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $tag exists; uploading into it"
           else
@@ -126,9 +128,9 @@ jobs:
           name="caretline-$V-$T"
           mkdir -p "dist/$name"
           cp "target/$T/release/caretline" "dist/$name/"
-          cp LICENSE "dist/$name/LICENSE"
-          cp crates/caretline/src/helix/LICENSE-MPL-2.0 "dist/$name/LICENSE-MPL-2.0"
-          cp crates/caretline-app/README.md "dist/$name/README.md"
+          cp LICENSE-MIT "dist/$name/LICENSE-MIT"
+          cp LICENSE-MPL-2.0 "dist/$name/LICENSE-MPL-2.0"
+          cp crates/caretline-cli/README.md "dist/$name/README.md"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && if command -v sha256sum >/dev/null; then sha256sum "$name.tar.gz"; else shasum -a 256 "$name.tar.gz"; fi > "$name.tar.gz.sha256")
           cat "dist/$name.tar.gz.sha256"
@@ -140,7 +142,7 @@ jobs:
 
       - name: Upload to the draft release
         if: needs.version.outputs.publish == '1'
-        run: gh release upload "caretline-v$V" dist/*.tar.gz dist/*.tar.gz.sha256 --clobber -R "$GITHUB_REPOSITORY"
+        run: gh release upload "v$V" dist/*.tar.gz dist/*.tar.gz.sha256 --clobber -R "$GITHUB_REPOSITORY"
 
   publish:
     needs: [version, build]
@@ -154,7 +156,7 @@ jobs:
     steps:
       - name: Every target's files are there
         run: |
-          assets="$(gh release view "caretline-v$V" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          assets="$(gh release view "v$V" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
           echo "$assets"
           for t in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
             for f in "caretline-$V-$t.tar.gz" "caretline-$V-$t.tar.gz.sha256"; do
@@ -162,4 +164,4 @@ jobs:
             done
           done
       - name: Publish
-        run: gh release edit "caretline-v$V" -R "$GITHUB_REPOSITORY" --draft=false --latest
+        run: gh release edit "v$V" -R "$GITHUB_REPOSITORY" --draft=false --latest
