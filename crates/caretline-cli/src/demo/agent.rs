@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::Progress;
 
@@ -45,7 +45,11 @@ pub(crate) enum Reply {
 impl Conn {
     pub fn connect(path: &Path) -> Result<Conn, String> {
         let s = UnixStream::connect(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        Ok(Conn { w: s.try_clone().map_err(|e| e.to_string())?, r: BufReader::new(s), line: String::new() })
+        Ok(Conn {
+            w: s.try_clone().map_err(|e| e.to_string())?,
+            r: BufReader::new(s),
+            line: String::new(),
+        })
     }
 
     /// Connects, retrying for up to `wait` while the editor starts.
@@ -62,9 +66,14 @@ impl Conn {
 
     /// Sends one raw request line and reads the response line.
     pub fn send(&mut self, req: &str) -> Result<&str, String> {
-        self.w.write_all(req.as_bytes()).and_then(|_| self.w.write_all(b"\n")).map_err(|e| format!("send: {e}"))?;
+        self.w
+            .write_all(req.as_bytes())
+            .and_then(|_| self.w.write_all(b"\n"))
+            .map_err(|e| format!("send: {e}"))?;
         self.line.clear();
-        self.r.read_line(&mut self.line).map_err(|e| format!("read: {e}"))?;
+        self.r
+            .read_line(&mut self.line)
+            .map_err(|e| format!("read: {e}"))?;
         if self.line.is_empty() {
             return Err("the editor closed the connection".into());
         }
@@ -124,7 +133,9 @@ pub(crate) fn run(
         return Err(format!("unexpected protocol: {hello}"));
     }
     // A view of its own, its caret at the end of the document: its section.
-    let view = conn.ask(json!({"op": "view.open", "w": 80, "h": 8}))?["view"].as_u64().ok_or("view.open: no view")?;
+    let view = conn.ask(json!({"op": "view.open", "w": 80, "h": 8}))?["view"]
+        .as_u64()
+        .ok_or("view.open: no view")?;
     conn.ask(json!({"op": "msgs", "view": view, "msgs": [
         {"msg": "move", "dir": "forward", "by": "doc_end"},
         {"msg": "show_status", "text": "agent · here, about to type"},
@@ -174,7 +185,11 @@ pub(crate) fn run(
                 // A change from elsewhere leaves every caret before what it puts in, this
                 // view's too, so the agent moves its own caret past it in the same request
                 // (which clears the status: it is set again).
-                let status = format!("agent · typing · {} writes · {} stale, retried", report.writes + 1, report.stale);
+                let status = format!(
+                    "agent · typing · {} writes · {} stale, retried",
+                    report.writes + 1,
+                    report.stale
+                );
                 let write = json!({"op": "msgs", "view": view, "if_rev": rev, "msgs": [
                     {"msg": "external", "changes": [{"change": "replace", "from": caret, "to": caret, "text": c.to_string()}]},
                     {"msg": "move", "dir": "forward", "by": "doc_end"},
@@ -200,7 +215,10 @@ pub(crate) fn run(
         }
         std::thread::sleep(pace.line);
     }
-    let text = format!("agent · done · {} writes · {} refused as stale and retried", report.writes, report.stale);
+    let text = format!(
+        "agent · done · {} writes · {} refused as stale and retried",
+        report.writes, report.stale
+    );
     conn.ask(json!({"op": "msgs", "view": view, "msgs": [{"msg": "show_status", "text": text}]}))?;
     if let Ok(mut p) = progress.lock() {
         p.done = true;
@@ -212,7 +230,11 @@ pub(crate) fn run(
 pub(crate) fn spawn(socket: PathBuf, progress: Arc<Mutex<Progress>>) {
     std::thread::spawn(move || {
         let result = Conn::connect_within(&socket, Duration::from_secs(5)).and_then(|mut c| {
-            let pace = Pace { start: Duration::from_millis(1200), key: Duration::from_millis(45), line: Duration::from_millis(500) };
+            let pace = Pace {
+                start: Duration::from_millis(1200),
+                key: Duration::from_millis(45),
+                line: Duration::from_millis(500),
+            };
             run(&mut c, &pace, &progress, &mut |_| {})
         });
         if let Err(e) = result
@@ -228,10 +250,21 @@ pub(crate) fn spawn(socket: PathBuf, progress: Arc<Mutex<Progress>>) {
 /// landed, that the interleaved ones were refused and retried, and that the person's undo
 /// takes back only the person's text. Prints a JSON report.
 pub(crate) fn headless() -> Result<(), String> {
-    let state = super::initial_state(super::Kind::Agent, None, caretline::Viewport { width: 80, height: 24 });
+    let state = super::initial_state(
+        super::Kind::Agent,
+        None,
+        caretline::Viewport {
+            width: 80,
+            height: 24,
+        },
+    );
     let initial = state.doc.text.to_string();
     let socket = std::env::temp_dir().join(format!("caretline-demo-{}.sock", std::process::id()));
-    let socket = if socket.as_os_str().len() > 100 { PathBuf::from(format!("/tmp/caretline-demo-{}.sock", std::process::id())) } else { socket };
+    let socket = if socket.as_os_str().len() > 100 {
+        PathBuf::from(format!("/tmp/caretline-demo-{}.sock", std::process::id()))
+    } else {
+        socket
+    };
     let hub = crate::hub::Hub::new(caretline::Session::new(state), None);
     let (tx, rx) = std::sync::mpsc::channel();
     let listening = crate::hub::listen(&socket, tx)?;
@@ -240,7 +273,11 @@ pub(crate) fn headless() -> Result<(), String> {
     let mut person = Conn::connect_within(&socket, Duration::from_secs(5))?;
     let mut agent = Conn::connect_within(&socket, Duration::from_secs(5))?;
     let progress = Arc::new(Mutex::new(Progress::default()));
-    let pace = Pace { start: Duration::ZERO, key: Duration::ZERO, line: Duration::ZERO };
+    let pace = Pace {
+        start: Duration::ZERO,
+        key: Duration::ZERO,
+        line: Duration::ZERO,
+    };
     let mut typed_by_person = 0u64;
     let mut person_err: Option<String> = None;
     let report = run(&mut agent, &pace, &progress, &mut |writes| {
@@ -280,7 +317,10 @@ pub(crate) fn headless() -> Result<(), String> {
         undos += 1;
     }
     let agent_text_landed = SCRIPT.iter().all(|l| after_both.contains(l));
-    let ok = report.stale > 0 && agent_text_landed && text == want && report.writes as usize == report.typed.chars().count();
+    let ok = report.stale > 0
+        && agent_text_landed
+        && text == want
+        && report.writes as usize == report.typed.chars().count();
     let out = json!({
         "ok": ok,
         "agent": {"writes": report.writes, "stale_retried": report.stale, "chars": report.typed.chars().count()},
@@ -289,7 +329,14 @@ pub(crate) fn headless() -> Result<(), String> {
         "undo_kept_only_the_agents_text": text == want,
         "text": text,
     });
-    println!("{}", serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?
+    );
     drop(listening);
-    if ok { Ok(()) } else { Err("the agent demo's checks failed (see the report)".into()) }
+    if ok {
+        Ok(())
+    } else {
+        Err("the agent demo's checks failed (see the report)".into())
+    }
 }

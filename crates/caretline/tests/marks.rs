@@ -7,7 +7,7 @@
 mod common;
 
 use caretline::helix::Selection;
-use caretline::marks::{MarkAttrs, Mark, MarkId};
+use caretline::marks::{Mark, MarkAttrs, MarkId};
 use caretline::{update, Msg, State, Viewport};
 use common::*;
 use rand::rngs::StdRng;
@@ -25,7 +25,11 @@ fn marked(notation: &str, lines: &[usize]) -> State {
 
 /// The marks as (line, id).
 fn marks(s: &State) -> Vec<(usize, u64)> {
-    s.doc.marks.iter().map(|m| (s.doc.text.char_to_line(m.pos), m.id.0)).collect()
+    s.doc
+        .marks
+        .iter()
+        .map(|m| (s.doc.text.char_to_line(m.pos), m.id.0))
+        .collect()
 }
 
 #[test]
@@ -106,7 +110,11 @@ fn cut_then_paste_in_place_keeps_the_ids() {
     keys(&mut s, "<c-x>");
     assert_eq!(show(&s), "One ▮ree");
     assert_eq!(marks(&s), [(0, 0)]);
-    assert_eq!(s.doc.clipboard.marks.len(), 1, "the register carries the cut mark");
+    assert_eq!(
+        s.doc.clipboard.marks.len(),
+        1,
+        "the register carries the cut mark"
+    );
     keys(&mut s, "<c-v>");
     assert_eq!(show(&s), "One two\nth▮ree");
     assert_eq!(marks(&s), [(0, 0), (1, 1)]);
@@ -124,7 +132,12 @@ fn a_paste_of_the_registers_own_text_from_outside_keeps_the_ids_too() {
     send(&mut s, [Msg::Paste { text: Some(text) }]);
     assert_eq!(marks(&s), [(0, 0), (1, 1)]);
     // Other text is new: it brings no marks.
-    send(&mut s, [Msg::Paste { text: Some("x\ny".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("x\ny".into()),
+        }],
+    );
     assert_eq!(marks(&s), [(0, 0), (1, 1)]);
 }
 
@@ -145,7 +158,12 @@ fn a_second_paste_never_duplicates_an_id() {
     keys(&mut s, "<c-x><c-v><c-v>");
     assert_eq!(s.doc.text.to_string(), "x\na\na\n");
     let ids: Vec<u64> = s.doc.marks.iter().map(|m| m.id.0).collect();
-    assert_eq!(ids, [0, 1], "the second copy brings no mark: {:?}", marks(&s));
+    assert_eq!(
+        ids,
+        [0, 1],
+        "the second copy brings no mark: {:?}",
+        marks(&s)
+    );
 }
 
 #[test]
@@ -165,7 +183,9 @@ fn a_typing_run_undoes_to_its_start_marks_included() {
 #[test]
 fn attributes_travel_with_their_mark() {
     let mut s = marked("ab\n▮cd", &[0, 1]);
-    s.doc.marks.set_attrs(MarkId(1), MarkAttrs::gap(Some(false)));
+    s.doc
+        .marks
+        .set_attrs(MarkId(1), MarkAttrs::gap(Some(false)));
     keys(&mut s, "<bs>");
     keys(&mut s, "<c-z>");
     assert_eq!(s.doc.marks.attrs(MarkId(1)), MarkAttrs::gap(Some(false)));
@@ -179,7 +199,11 @@ fn marks_and_their_log_survive_serialization() {
     let mut back = State::from_json(&json).unwrap();
     assert_eq!(back, s);
     keys(&mut back, "<c-z><c-z>");
-    assert_eq!(marks(&back), [(0, 0), (1, 1)], "undo after a round trip restores the marks");
+    assert_eq!(
+        marks(&back),
+        [(0, 0), (1, 1)],
+        "undo after a round trip restores the marks"
+    );
     // A state with no marks serializes as before: no new keys.
     let plain = state("abc▮");
     assert!(!plain.to_json().contains("marks"));
@@ -198,11 +222,24 @@ fn marks_off_line_starts_are_repaired_on_load() {
     let mut s = state("ab\ncd▮");
     s.doc.marks.mint(0);
     let mut v: serde_json::Value = serde_json::from_str(&s.to_json()).unwrap();
-    v["marks"]["marks"].as_array_mut().unwrap().push(serde_json::json!({"pos": 1, "id": 7}));
-    v["marks"]["marks"].as_array_mut().unwrap().push(serde_json::json!({"pos": 3, "id": 0}));
+    v["marks"]["marks"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"pos": 1, "id": 7}));
+    v["marks"]["marks"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"pos": 3, "id": 0}));
     let back = State::from_json(&v.to_string()).unwrap();
-    assert_eq!(marks(&back), [(0, 0)], "off a line start, and a repeated id, are dropped");
-    assert!(back.doc.marks.next_id().0 >= 8, "the counter stays past every id seen");
+    assert_eq!(
+        marks(&back),
+        [(0, 0)],
+        "off a line start, and a repeated id, are dropped"
+    );
+    assert!(
+        back.doc.marks.next_id().0 >= 8,
+        "the counter stays past every id seen"
+    );
 }
 
 #[test]
@@ -228,8 +265,14 @@ fn check_marks(s: &State, ctx: &str) {
     let mut last: Option<usize> = None;
     for m in s.doc.marks.iter() {
         assert!(m.pos <= text.len_chars(), "{ctx}: mark {m:?} past the end");
-        assert!(caretline::marks::is_line_start(text, m.pos), "{ctx}: mark {m:?} not at a line start");
-        assert!(last.is_none_or(|l| l < m.pos), "{ctx}: marks out of order or two on a line");
+        assert!(
+            caretline::marks::is_line_start(text, m.pos),
+            "{ctx}: mark {m:?} not at a line start"
+        );
+        assert!(
+            last.is_none_or(|l| l < m.pos),
+            "{ctx}: marks out of order or two on a line"
+        );
         assert!(ids.insert(m.id), "{ctx}: id {:?} twice", m.id);
         last = Some(m.pos);
     }
@@ -282,7 +325,10 @@ fn marks_keep_their_invariants_in_random_sessions() {
             if is_edit(&msg) && s.doc.history.len() == before.doc.history.len() + 1 {
                 let mut undone = s.clone();
                 update(&mut undone, Msg::Undo);
-                assert_eq!(undone.doc.marks, before.doc.marks, "{ctx}: undo restores the marks");
+                assert_eq!(
+                    undone.doc.marks, before.doc.marks,
+                    "{ctx}: undo restores the marks"
+                );
                 update(&mut undone, Msg::Redo);
                 assert_eq!(undone.doc.marks, s.doc.marks, "{ctx}: redo re-applies them");
             }
@@ -297,8 +343,15 @@ fn marks_keep_their_invariants_in_random_sessions() {
             guard += 1;
             assert!(guard < 10_000);
         }
-        assert_eq!(s.doc.text.to_string(), original.0, "seed {seed}: text after full undo");
-        assert_eq!(s.doc.marks, original.1, "seed {seed}: marks after full undo");
+        assert_eq!(
+            s.doc.text.to_string(),
+            original.0,
+            "seed {seed}: text after full undo"
+        );
+        assert_eq!(
+            s.doc.marks, original.1,
+            "seed {seed}: marks after full undo"
+        );
     }
 }
 
@@ -321,21 +374,45 @@ fn cut_and_paste_in_place_is_the_identity_for_marks() {
         update(&mut s, Msg::Cut);
         update(&mut s, Msg::Paste { text: None });
         assert_eq!(s.doc.text, s0.doc.text, "case {case}: text");
-        assert_eq!(s.doc.marks, s0.doc.marks, "case {case}: marks for {:?} {a}..{b}", s0.doc.text.to_string());
+        assert_eq!(
+            s.doc.marks,
+            s0.doc.marks,
+            "case {case}: marks for {:?} {a}..{b}",
+            s0.doc.text.to_string()
+        );
     }
 }
 
 /// The example in docs/api.md.
 #[test]
 fn the_api_example_runs() {
-    use caretline::{MarkAttrs, By, Dir};
-    let mut s = State::new("Groceries\nmilk\n", None, Viewport { width: 40, height: 5 });
+    use caretline::{By, Dir, MarkAttrs};
+    let mut s = State::new(
+        "Groceries\nmilk\n",
+        None,
+        Viewport {
+            width: 40,
+            height: 5,
+        },
+    );
     let list = s.doc.marks.mint(0);
     let milk = s.doc.marks.mint(s.doc.text.line_to_char(1));
     s.doc.marks.set_attrs(milk, MarkAttrs::gap(Some(false)));
-    update(&mut s, Msg::InsertText { text: "Weekly ".into() });
+    update(
+        &mut s,
+        Msg::InsertText {
+            text: "Weekly ".into(),
+        },
+    );
     assert_eq!(s.doc.marks.pos(list), Some(0));
-    update(&mut s, Msg::Move { dir: Dir::Forward, by: By::DocEnd, extend: false });
+    update(
+        &mut s,
+        Msg::Move {
+            dir: Dir::Forward,
+            by: By::DocEnd,
+            extend: false,
+        },
+    );
     update(&mut s, Msg::Undo);
     assert_eq!(s.doc.marks.pos(milk), Some(s.doc.text.line_to_char(1)));
     assert_eq!(s.doc.marks.attrs(milk), MarkAttrs::gap(Some(false)));

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::engine::{self, Engine, ProtoError};
 use crate::text::{self, Pos};
@@ -94,8 +94,14 @@ impl Sess {
 
     /// Notes the revs a `msgs`/`keys` result made: one per message, ending at `rev`.
     fn mark_mine(&mut self, result: &Value) {
-        let Some(rev) = result["rev"].as_u64() else { return };
-        let n = result["msgs"].as_array().map(|m| m.len() as u64).unwrap_or(1).max(1);
+        let Some(rev) = result["rev"].as_u64() else {
+            return;
+        };
+        let n = result["msgs"]
+            .as_array()
+            .map(|m| m.len() as u64)
+            .unwrap_or(1)
+            .max(1);
         for r in rev.saturating_sub(n - 1)..=rev {
             self.mine.insert(r);
         }
@@ -107,7 +113,9 @@ impl Sess {
 
     /// The state without its history (view 0, or another view), remembered by rev.
     fn state(&mut self, view: u32) -> Result<(u64, String, Value), ToolError> {
-        let r = self.engine.call(json!({"op": "state.get", "history": false, "view": view}))?;
+        let r = self
+            .engine
+            .call(json!({"op": "state.get", "history": false, "view": view}))?;
         let rev = r["rev"].as_u64().unwrap_or(0);
         let text = r["state"]["text"].as_str().unwrap_or("").to_string();
         self.remember(rev, &text);
@@ -115,7 +123,10 @@ impl Sess {
     }
 
     fn who(&self, event: &Value) -> &'static str {
-        if event["rev"].as_u64().is_some_and(|r| self.mine.contains(&r)) {
+        if event["rev"]
+            .as_u64()
+            .is_some_and(|r| self.mine.contains(&r))
+        {
             return "this agent";
         }
         match event["source"].as_str() {
@@ -138,12 +149,18 @@ impl Sess {
 
 /// Messages that change nothing anyone would notice: the clock, frames, resizes.
 fn noise(msg: &Value) -> bool {
-    matches!(msg["msg"].as_str(), Some("tick" | "frame" | "frame_clock" | "resize"))
+    matches!(
+        msg["msg"].as_str(),
+        Some("tick" | "frame" | "frame_clock" | "resize")
+    )
 }
 
 /// An event with nothing but noise (a view opened or closed has no messages at all).
 fn is_noise(event: &Value) -> bool {
-    event["state_set"] != json!(true) && event["msgs"].as_array().is_some_and(|m| m.iter().all(noise))
+    event["state_set"] != json!(true)
+        && event["msgs"]
+            .as_array()
+            .is_some_and(|m| m.iter().all(noise))
 }
 
 /// A short account of messages: typing joined into strings, other messages by name.
@@ -159,7 +176,8 @@ fn describe(msgs: &[Value], actions: &mut Vec<String>) {
         };
         if let Some(t) = typed {
             if let Some(last) = actions.last_mut().filter(|a| a.starts_with("typed ")) {
-                let mut s: String = serde_json::from_str(&last["typed ".len()..]).unwrap_or_default();
+                let mut s: String =
+                    serde_json::from_str(&last["typed ".len()..]).unwrap_or_default();
                 s.push_str(&t);
                 *last = format!("typed {}", json!(s));
             } else {
@@ -169,9 +187,24 @@ fn describe(msgs: &[Value], actions: &mut Vec<String>) {
         }
         let name = m["msg"].as_str().unwrap_or("?");
         let detail = match name {
-            "move" => format!("move {} {}{}", m["dir"].as_str().unwrap_or(""), m["by"].as_str().unwrap_or(""), if m["extend"] == json!(true) { " (extend)" } else { "" }),
-            "edit" => format!("edit ({} change(s))", m["changes"].as_array().map_or(0, |c| c.len())),
-            "external" => format!("external change ({} change(s))", m["changes"].as_array().map_or(0, |c| c.len())),
+            "move" => format!(
+                "move {} {}{}",
+                m["dir"].as_str().unwrap_or(""),
+                m["by"].as_str().unwrap_or(""),
+                if m["extend"] == json!(true) {
+                    " (extend)"
+                } else {
+                    ""
+                }
+            ),
+            "edit" => format!(
+                "edit ({} change(s))",
+                m["changes"].as_array().map_or(0, |c| c.len())
+            ),
+            "external" => format!(
+                "external change ({} change(s))",
+                m["changes"].as_array().map_or(0, |c| c.len())
+            ),
             "show_status" => format!("status {}", m["text"]),
             "paste" => "paste".into(),
             _ => name.to_string(),
@@ -212,14 +245,29 @@ fn arg_bool(args: &Map<String, Value>, k: &str) -> bool {
 }
 
 fn parse_pos(v: Option<&Value>, what: &str) -> Result<Pos, ToolError> {
-    let v = v.ok_or_else(|| ToolError::Msg(format!("{what} is required: {{\"line\": 1, \"col\": 1}}")))?;
+    let v = v.ok_or_else(|| {
+        ToolError::Msg(format!("{what} is required: {{\"line\": 1, \"col\": 1}}"))
+    })?;
     if let Some(s) = v.as_str() {
-        let (l, c) = s.split_once(':').ok_or_else(|| ToolError::Msg(format!("{what}: write {{\"line\": L, \"col\": C}} or \"L:C\"")))?;
-        let line = l.trim().parse().map_err(|_| ToolError::Msg(format!("{what}: bad line {l:?}")))?;
-        let col = c.trim().parse().map_err(|_| ToolError::Msg(format!("{what}: bad col {c:?}")))?;
+        let (l, c) = s.split_once(':').ok_or_else(|| {
+            ToolError::Msg(format!(
+                "{what}: write {{\"line\": L, \"col\": C}} or \"L:C\""
+            ))
+        })?;
+        let line = l
+            .trim()
+            .parse()
+            .map_err(|_| ToolError::Msg(format!("{what}: bad line {l:?}")))?;
+        let col = c
+            .trim()
+            .parse()
+            .map_err(|_| ToolError::Msg(format!("{what}: bad col {c:?}")))?;
         return Ok(Pos { line, col });
     }
-    let line = v["line"].as_u64().ok_or_else(|| ToolError::Msg(format!("{what}.line is required (1-based)")))? as usize;
+    let line = v["line"]
+        .as_u64()
+        .ok_or_else(|| ToolError::Msg(format!("{what}.line is required (1-based)")))?
+        as usize;
     let col = v["col"].as_u64().unwrap_or(1) as usize;
     Ok(Pos { line, col })
 }
@@ -227,10 +275,18 @@ fn parse_pos(v: Option<&Value>, what: &str) -> Result<Pos, ToolError> {
 /// A selection described for an agent: the caret and, when something is selected, its ends
 /// and text.
 fn describe_selection(text: &str, state: &Value) -> Value {
-    let ranges = state["selection"]["ranges"].as_array().cloned().unwrap_or_default();
+    let ranges = state["selection"]["ranges"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     let primary = state["selection"]["primary_index"].as_u64().unwrap_or(0) as usize;
-    let Some(r) = ranges.get(primary).or(ranges.first()) else { return Value::Null };
-    let (a, h) = (r["anchor"].as_u64().unwrap_or(0) as usize, r["head"].as_u64().unwrap_or(0) as usize);
+    let Some(r) = ranges.get(primary).or(ranges.first()) else {
+        return Value::Null;
+    };
+    let (a, h) = (
+        r["anchor"].as_u64().unwrap_or(0) as usize,
+        r["head"].as_u64().unwrap_or(0) as usize,
+    );
     let mut out = json!({ "caret": text::to_pos(text, h).json() });
     if a != h {
         let (from, to) = (a.min(h), a.max(h));
@@ -251,11 +307,20 @@ fn describe_selection(text: &str, state: &Value) -> Value {
 
 impl Tools {
     pub fn new(config: Config) -> Tools {
-        Tools { config, sessions: Mutex::new(HashMap::new()), next: Mutex::new(1), client_name: Mutex::new(None) }
+        Tools {
+            config,
+            sessions: Mutex::new(HashMap::new()),
+            next: Mutex::new(1),
+            client_name: Mutex::new(None),
+        }
     }
 
     fn name(&self) -> String {
-        self.config.name.clone().or_else(|| self.client_name.lock().unwrap().clone()).unwrap_or_else(|| "agent".into())
+        self.config
+            .name
+            .clone()
+            .or_else(|| self.client_name.lock().unwrap().clone())
+            .unwrap_or_else(|| "agent".into())
     }
 
     fn session(&self, args: &Map<String, Value>) -> Result<Arc<Mutex<Sess>>, ToolError> {
@@ -264,14 +329,26 @@ impl Tools {
             Some(id) => id.to_string(),
             None if sessions.len() == 1 => sessions.keys().next().unwrap().clone(),
             None if sessions.is_empty() => return Err("no open session: call open first".into()),
-            None => return Err(format!("several sessions are open ({}): pass session", sessions.keys().cloned().collect::<Vec<_>>().join(", ")).into()),
+            None => {
+                return Err(format!(
+                    "several sessions are open ({}): pass session",
+                    sessions.keys().cloned().collect::<Vec<_>>().join(", ")
+                )
+                .into());
+            }
         };
-        sessions.get(&id).cloned().ok_or_else(|| ToolError::Msg(format!("no session {id:?}: call open, or list sessions with open's result")))
+        sessions.get(&id).cloned().ok_or_else(|| {
+            ToolError::Msg(format!(
+                "no session {id:?}: call open, or list sessions with open's result"
+            ))
+        })
     }
 
     fn writable(&self, what: &str) -> Result<(), ToolError> {
         if self.config.read_only {
-            return Err(format!("this server is read-only (--read-only): {what} is refused").into());
+            return Err(
+                format!("this server is read-only (--read-only): {what} is refused").into(),
+            );
         }
         Ok(())
     }
@@ -339,20 +416,42 @@ impl Tools {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
                 Err(e) => return Err(format!("{}: {e}", abs.display()).into()),
             };
-            let state = new_state(&body, Some(abs.display().to_string()), width, height, outline, arg_bool(args, "layout"));
-            (Engine::headless(state, Some(abs.clone())), Some(abs.display().to_string()), None)
+            let state = new_state(
+                &body,
+                Some(abs.display().to_string()),
+                width,
+                height,
+                outline,
+                arg_bool(args, "layout"),
+            );
+            (
+                Engine::headless(state, Some(abs.clone())),
+                Some(abs.display().to_string()),
+                None,
+            )
         } else if let Some(body) = arg_str(args, "text") {
             let state = new_state(body, None, width, height, outline, arg_bool(args, "layout"));
             (Engine::headless(state, None), None, None)
         } else {
             let editors = engine::list_editors();
             let target = if let Some(sock) = arg_str(args, "socket") {
-                engine::Editor { pid: 0, socket: PathBuf::from(sock), file: None, started_ms: 0, alive: true }
+                engine::Editor {
+                    pid: 0,
+                    socket: PathBuf::from(sock),
+                    file: None,
+                    started_ms: 0,
+                    alive: true,
+                }
             } else if let Some(pid) = arg_u64(args, "pid")? {
                 editors
                     .into_iter()
                     .find(|e| e.pid as u64 == pid)
-                    .ok_or_else(|| ToolError::Msg(format!("no editor with pid {pid} in {}: list_editors shows the live ones", engine::discovery_dir().display())))?
+                    .ok_or_else(|| {
+                        ToolError::Msg(format!(
+                            "no editor with pid {pid} in {}: list_editors shows the live ones",
+                            engine::discovery_dir().display()
+                        ))
+                    })?
             } else {
                 editors.into_iter().find(|e| e.alive).ok_or_else(|| {
                     ToolError::Msg("no live caretline editor found. A person starts one with `caretline FILE --listen`; or pass file or text to open a headless engine".into())
@@ -367,12 +466,23 @@ impl Tools {
             *n += 1;
             id
         };
-        let mut sess = Sess { id: id.clone(), engine, file: file.clone(), pid, agent_view: None, texts: BTreeMap::new(), mine: BTreeSet::new() };
+        let mut sess = Sess {
+            id: id.clone(),
+            engine,
+            file: file.clone(),
+            pid,
+            agent_view: None,
+            texts: BTreeMap::new(),
+            mine: BTreeSet::new(),
+        };
         let hello = sess.engine.call(json!({"op": "hello"}))?;
         let (rev, body, state) = sess.state(0)?;
         let live = sess.engine.is_live();
         let socket = sess.engine.socket().map(|p| p.display().to_string());
-        self.sessions.lock().unwrap().insert(id.clone(), Arc::new(Mutex::new(sess)));
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(id.clone(), Arc::new(Mutex::new(sess)));
         Ok(json!({
             "session": id,
             "live": live,
@@ -394,9 +504,10 @@ impl Tools {
         let s = self.session(args)?;
         let mut s = s.lock().unwrap();
         if let Some((v, _, _)) = s.agent_view.take()
-            && let Ok(r) = s.engine.call(json!({"op": "view.close", "view": v})) {
-                s.mark_mine(&r);
-            }
+            && let Ok(r) = s.engine.call(json!({"op": "view.close", "view": v}))
+        {
+            s.mark_mine(&r);
+        }
         let id = s.id.clone();
         drop(s);
         self.sessions.lock().unwrap().remove(&id);
@@ -409,7 +520,9 @@ impl Tools {
         let (rev, body, state) = s.state(0)?;
         let total = text::line_count(&body);
         let from = arg_u64(args, "from_line")?.unwrap_or(1) as usize;
-        let to = arg_u64(args, "to_line")?.map(|t| t as usize).unwrap_or(total);
+        let to = arg_u64(args, "to_line")?
+            .map(|t| t as usize)
+            .unwrap_or(total);
         let (from, to, part) = text::slice_lines(&body, from, to);
         let mut carets = json!({ "person": describe_selection(&body, &state) });
         if !s.engine.is_live() {
@@ -429,25 +542,51 @@ impl Tools {
             "dirty": state["dirty"],
             "carets": carets,
         });
-        let numbered = arg(args, "numbered").and_then(|v| v.as_bool()).unwrap_or(true);
-        let mut shown = if numbered { text::numbered(&part, from) } else { part.clone() };
+        let numbered = arg(args, "numbered")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let mut shown = if numbered {
+            text::numbered(&part, from)
+        } else {
+            part.clone()
+        };
         if let Some(r) = arg(args, "render").filter(|r| r != &&json!(false)) {
-            let w = r["width"].as_u64().or_else(|| arg_u64(args, "width").ok().flatten()).unwrap_or(80).clamp(1, 1000);
-            let h = r["height"].as_u64().or_else(|| arg_u64(args, "height").ok().flatten()).unwrap_or(24).clamp(1, 1000);
+            let w = r["width"]
+                .as_u64()
+                .or_else(|| arg_u64(args, "width").ok().flatten())
+                .unwrap_or(80)
+                .clamp(1, 1000);
+            let h = r["height"]
+                .as_u64()
+                .or_else(|| arg_u64(args, "height").ok().flatten())
+                .unwrap_or(24)
+                .clamp(1, 1000);
             let view = match arg_str(args, "view") {
                 Some("person") => 0,
-                Some("agent") => s.agent_view.map(|v| v.0).ok_or("no agent view: call view_open")?,
+                Some("agent") => s
+                    .agent_view
+                    .map(|v| v.0)
+                    .ok_or("no agent view: call view_open")?,
                 _ => s.agent_view.map(|v| v.0).unwrap_or(0),
             };
-            let f = s.engine.call(json!({"op": "render", "w": w, "h": h, "view": view}))?;
+            let f = s
+                .engine
+                .call(json!({"op": "render", "w": w, "h": h, "view": view}))?;
             data["render"] = json!({"view": view, "width": w, "height": h, "cursor": f["cursor"]});
             shown = f["frame"].as_str().unwrap_or("").to_string();
             data["shown"] = json!("the rendered frame (not the raw text)");
         } else {
             data["text"] = json!(part);
-            data["shown"] = json!(if numbered { "lines prefixed with their numbers: `N│ ` is not part of the text" } else { "the raw text" });
+            data["shown"] = json!(if numbered {
+                "lines prefixed with their numbers: `N│ ` is not part of the text"
+            } else {
+                "the raw text"
+            });
         }
-        Ok(Output { data, text: Some(shown) })
+        Ok(Output {
+            data,
+            text: Some(shown),
+        })
     }
 
     /// Checks `if_rev` against the document: a write goes ahead when the text is the one the
@@ -472,7 +611,11 @@ impl Tools {
         {
             let events = s.engine.events.clone();
             let log = events.snapshot();
-            for e in log.events.iter().filter(|e| e["rev"].as_u64().is_some_and(|r| r > want && r <= rev)) {
+            for e in log
+                .events
+                .iter()
+                .filter(|e| e["rev"].as_u64().is_some_and(|r| r > want && r <= rev))
+            {
                 if !is_noise(e) {
                     by.insert(s.who(e));
                 }
@@ -504,14 +647,21 @@ impl Tools {
             None => Vec::new(),
         };
         // A single op may be given inline, without `ops`.
-        if ops.is_empty() && ["search", "at", "keys", "from"].iter().any(|k| args.contains_key(*k)) {
+        if ops.is_empty()
+            && ["search", "at", "keys", "from"]
+                .iter()
+                .any(|k| args.contains_key(*k))
+        {
             ops.push(Value::Object(args.clone()));
         }
         if ops.is_empty() {
             return Err("ops is empty: give at least one operation".into());
         }
         let kinds: Vec<String> = ops.iter().map(op_kind).collect::<Result<_, _>>()?;
-        let caret_ops = kinds.iter().filter(|k| *k == "keys" || *k == "select").count();
+        let caret_ops = kinds
+            .iter()
+            .filter(|k| *k == "keys" || *k == "select")
+            .count();
         if caret_ops > 0 && caret_ops != kinds.len() {
             return Err("text operations (replace, replace_range, insert) and caret operations (select, keys) can't be mixed in one edit: send them as two edits".into());
         }
@@ -524,7 +674,15 @@ impl Tools {
             let result = if caret_ops > 0 {
                 self.caret_ops(&mut s, rev, &body, &ops, &kinds)
             } else {
-                self.text_ops(&mut s, rev, &body, &state, &ops, &kinds, shared == "outside")
+                self.text_ops(
+                    &mut s,
+                    rev,
+                    &body,
+                    &state,
+                    &ops,
+                    &kinds,
+                    shared == "outside",
+                )
             };
             match result {
                 // The document moved between the check and the write: check again.
@@ -533,26 +691,36 @@ impl Tools {
                 Ok(mut out) => {
                     let (new_rev, new_body, new_state) = s.state(0)?;
                     if new_body != body && s.engine.is_live() && self.config.announce {
-                        let line = text::diff(&body, &new_body, 1).and_then(|d| d["first_line"].as_u64()).unwrap_or(1);
+                        let line = text::diff(&body, &new_body, 1)
+                            .and_then(|d| d["first_line"].as_u64())
+                            .unwrap_or(1);
                         let status = format!("{}: edited line {line}", self.name());
                         if let Ok(r) = s.engine.call(json!({"op": "msgs", "view": 0, "msgs": [{"msg": "show_status", "text": status}]})) {
                             s.mark_mine(&r);
                         }
                     }
-                    let (new_rev, new_state) = if s.engine.is_live() && self.config.announce && new_body != body {
-                        let (r, _, st) = s.state(0)?;
-                        (r, st)
-                    } else {
-                        (new_rev, new_state)
-                    };
+                    let (new_rev, new_state) =
+                        if s.engine.is_live() && self.config.announce && new_body != body {
+                            let (r, _, st) = s.state(0)?;
+                            (r, st)
+                        } else {
+                            (new_rev, new_state)
+                        };
                     // If someone else changed the document right after this write, the text
                     // now isn't what this edit made: return the write's own rev, so the next
                     // guarded edit asks the agent to read first.
-                    let write_rev = out.data.as_object_mut().and_then(|o| o.remove("write_rev")).and_then(|v| v.as_u64()).unwrap_or(new_rev);
+                    let write_rev = out
+                        .data
+                        .as_object_mut()
+                        .and_then(|o| o.remove("write_rev"))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(new_rev);
                     let foreign = (write_rev + 1..=new_rev).any(|r| !s.mine.contains(&r));
                     if foreign {
                         out.data["rev"] = json!(write_rev);
-                        out.data["note"] = json!(format!("the document changed again after this edit (now rev {new_rev}): the diff includes those changes. Read before the next edit"));
+                        out.data["note"] = json!(format!(
+                            "the document changed again after this edit (now rev {new_rev}): the diff includes those changes. Read before the next edit"
+                        ));
                     } else {
                         out.data["rev"] = json!(new_rev);
                     }
@@ -571,27 +739,53 @@ impl Tools {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn text_ops(&self, s: &mut Sess, rev: u64, body: &str, state: &Value, ops: &[Value], kinds: &[String], outside: bool) -> R {
+    fn text_ops(
+        &self,
+        s: &mut Sess,
+        rev: u64,
+        body: &str,
+        state: &Value,
+        ops: &[Value],
+        kinds: &[String],
+        outside: bool,
+    ) -> R {
         let mut changes: Vec<(usize, usize, String)> = Vec::new();
         for (op, kind) in ops.iter().zip(kinds) {
-            let new_text = op.get("text").or_else(|| op.get("replace")).and_then(|v| v.as_str());
+            let new_text = op
+                .get("text")
+                .or_else(|| op.get("replace"))
+                .and_then(|v| v.as_str());
             match kind.as_str() {
                 "replace" => {
-                    let search = op["search"].as_str().filter(|s| !s.is_empty()).ok_or("replace needs a non-empty search")?;
+                    let search = op["search"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .ok_or("replace needs a non-empty search")?;
                     let with = new_text.ok_or("replace needs text: what the match becomes")?;
                     let found = text::find_all(body, search);
                     match found.len() {
                         0 => {
-                            let hint = if text::find_all(&body.to_lowercase(), &search.to_lowercase()).is_empty() {
+                            let hint = if text::find_all(
+                                &body.to_lowercase(),
+                                &search.to_lowercase(),
+                            )
+                            .is_empty()
+                            {
                                 "Read again: the text may have changed, or check whitespace and line breaks"
                             } else {
                                 "It matches when case is ignored: check the case"
                             };
-                            return Err(ToolError::Data(json!({"error": "not_found", "message": format!("search not found: {search:?}. {hint}"), "rev": rev})));
+                            return Err(ToolError::Data(
+                                json!({"error": "not_found", "message": format!("search not found: {search:?}. {hint}"), "rev": rev}),
+                            ));
                         }
                         1 => changes.push((found[0].0, found[0].1, with.to_string())),
                         n => {
-                            let at: Vec<Value> = found.iter().take(20).map(|(a, _)| text::to_pos(body, *a).json()).collect();
+                            let at: Vec<Value> = found
+                                .iter()
+                                .take(20)
+                                .map(|(a, _)| text::to_pos(body, *a).json())
+                                .collect();
                             return Err(ToolError::Data(json!({
                                 "error": "ambiguous",
                                 "message": format!("search matches {n} times; include more surrounding text so it matches once, or use replace_range"),
@@ -607,7 +801,13 @@ impl Tools {
                     if to < from {
                         return Err("replace_range: to is before from".into());
                     }
-                    changes.push((from, to, new_text.ok_or("replace_range needs text (\"\" deletes)")?.to_string()));
+                    changes.push((
+                        from,
+                        to,
+                        new_text
+                            .ok_or("replace_range needs text (\"\" deletes)")?
+                            .to_string(),
+                    ));
                 }
                 "insert" => {
                     let at = text::to_char(body, parse_pos(op.get("at"), "at")?)?;
@@ -621,13 +821,26 @@ impl Tools {
             return Err("two operations overlap: each must touch different text".into());
         }
         let crlf = state["config"]["line_ending"].as_str() == Some("CRLF");
-        let fix = |t: &str| if crlf { t.replace("\r\n", "\n").replace('\n', "\r\n") } else { t.to_string() };
+        let fix = |t: &str| {
+            if crlf {
+                t.replace("\r\n", "\n").replace('\n', "\r\n")
+            } else {
+                t.to_string()
+            }
+        };
         let msg = if outside {
             // Applied in reverse, so each change's positions are still those of the text read.
-            let ch: Vec<Value> = changes.iter().rev().map(|(a, b, t)| json!({"change": "replace", "from": a, "to": b, "text": t})).collect();
+            let ch: Vec<Value> = changes
+                .iter()
+                .rev()
+                .map(|(a, b, t)| json!({"change": "replace", "from": a, "to": b, "text": t}))
+                .collect();
             json!({"msg": "external", "changes": ch})
         } else {
-            let ch: Vec<Value> = changes.iter().map(|(a, b, t)| json!([a, b, fix(t)])).collect();
+            let ch: Vec<Value> = changes
+                .iter()
+                .map(|(a, b, t)| json!([a, b, fix(t)]))
+                .collect();
             json!({"msg": "edit", "changes": ch, "join": false})
         };
         // Through the agent's view, else the connection's own (a live editor gives each client
@@ -638,7 +851,9 @@ impl Tools {
         }
         let r = s.engine.call(req);
         let r = match r {
-            Err(e) if e.kind == "stale" => return Err(ToolError::Msg(format!("stale: {}", e.message))),
+            Err(e) if e.kind == "stale" => {
+                return Err(ToolError::Msg(format!("stale: {}", e.message)));
+            }
             r => r?,
         };
         s.mark_mine(&r);
@@ -667,20 +882,32 @@ impl Tools {
                     rev = self.select(s, rev, view, from, to)?;
                 }
                 "keys" => {
-                    let keys = op["keys"].as_str().ok_or("keys needs a key script, e.g. \"<down><end>!\"")?;
+                    let keys = op["keys"]
+                        .as_str()
+                        .ok_or("keys needs a key script, e.g. \"<down><end>!\"")?;
                     let view = s.agent_view.map(|v| v.0).unwrap_or(view);
-                    let r = match s.engine.call(json!({"op": "keys", "keys": keys, "if_rev": rev, "view": view})) {
-                        Err(e) if e.kind == "stale" => return Err(ToolError::Msg(format!("stale: {}", e.message))),
+                    let r = match s
+                        .engine
+                        .call(json!({"op": "keys", "keys": keys, "if_rev": rev, "view": view}))
+                    {
+                        Err(e) if e.kind == "stale" => {
+                            return Err(ToolError::Msg(format!("stale: {}", e.message)));
+                        }
                         r => r?,
                     };
                     s.mark_mine(&r);
                     rev = r["rev"].as_u64().unwrap_or(rev);
                     let mut actions = Vec::new();
-                    describe(r["msgs"].as_array().map(|v| v.as_slice()).unwrap_or(&[]), &mut actions);
+                    describe(
+                        r["msgs"].as_array().map(|v| v.as_slice()).unwrap_or(&[]),
+                        &mut actions,
+                    );
                     out["actions"] = json!(actions);
                     if r["effects"].as_array().is_some_and(|e| !e.is_empty()) {
                         out["effects"] = r["effects"].clone();
-                        out["effects_note"] = json!("effects are returned, not performed: nothing was written or quit. Use save to write the file");
+                        out["effects_note"] = json!(
+                            "effects are returned, not performed: nothing was written or quit. Use save to write the file"
+                        );
                     }
                 }
                 _ => unreachable!(),
@@ -692,11 +919,21 @@ impl Tools {
 
     /// Puts the caret view's selection at `[from, to)`: the agent's view is reopened with it
     /// (views have no message for that); a headless engine's own view gets it by state.set.
-    fn select(&self, s: &mut Sess, rev: u64, view: u32, from: usize, to: usize) -> Result<u64, ToolError> {
+    fn select(
+        &self,
+        s: &mut Sess,
+        rev: u64,
+        view: u32,
+        from: usize,
+        to: usize,
+    ) -> Result<u64, ToolError> {
         let sel = json!({"ranges": [{"anchor": from, "head": to}]});
         if let Some((v, w, h)) = s.agent_view {
-            let open = json!({"selection": sel, "focused": true, "read_only": self.config.read_only});
-            let r = s.engine.call(json!({"op": "view.open", "open": open, "w": w, "h": h}))?;
+            let open =
+                json!({"selection": sel, "focused": true, "read_only": self.config.read_only});
+            let r = s
+                .engine
+                .call(json!({"op": "view.open", "open": open, "w": w, "h": h}))?;
             s.mark_mine(&r);
             let nv = r["view"].as_u64().ok_or("view.open returned no view")? as u32;
             s.agent_view = Some((nv, w, h));
@@ -707,8 +944,13 @@ impl Tools {
         debug_assert_eq!(view, 0);
         let mut full = s.engine.call(json!({"op": "state.get"}))?;
         full["state"]["selection"] = sel;
-        let r = match s.engine.call(json!({"op": "state.set", "state": full["state"], "if_rev": rev})) {
-            Err(e) if e.kind == "stale" => return Err(ToolError::Msg(format!("stale: {}", e.message))),
+        let r = match s
+            .engine
+            .call(json!({"op": "state.set", "state": full["state"], "if_rev": rev}))
+        {
+            Err(e) if e.kind == "stale" => {
+                return Err(ToolError::Msg(format!("stale: {}", e.message)));
+            }
             r => r?,
         };
         let new = r["rev"].as_u64().unwrap_or(rev);
@@ -744,7 +986,9 @@ impl Tools {
     fn view_close(&self, args: &Map<String, Value>) -> R {
         let s = self.session(args)?;
         let mut s = s.lock().unwrap();
-        let Some((v, _, _)) = s.agent_view.take() else { return Ok(json!({"closed": null, "note": "no agent view was open"}).into()) };
+        let Some((v, _, _)) = s.agent_view.take() else {
+            return Ok(json!({"closed": null, "note": "no agent view was open"}).into());
+        };
         let r = s.engine.call(json!({"op": "view.close", "view": v}))?;
         s.mark_mine(&r);
         Ok(json!({"closed": v, "rev": r["rev"]}).into())
@@ -752,7 +996,8 @@ impl Tools {
 
     fn watch(&self, args: &Map<String, Value>) -> R {
         let sess = self.session(args)?;
-        let since = arg_u64(args, "since_rev")?.ok_or("since_rev is required: the rev you last saw (from read or edit)")?;
+        let since = arg_u64(args, "since_rev")?
+            .ok_or("since_rev is required: the rev you last saw (from read or edit)")?;
         let timeout = arg_u64(args, "timeout_ms")?.unwrap_or(20_000).min(300_000);
         let settle = arg_u64(args, "settle_ms")?.unwrap_or(400).min(10_000);
         let include_own = arg_bool(args, "include_own");
@@ -768,13 +1013,20 @@ impl Tools {
         };
         let start = Instant::now();
         let deadline = start + Duration::from_millis(timeout);
-        let got = events.wait_until(deadline, |log| log.events.iter().any(&wanted)).events.iter().any(&wanted);
+        let got = events
+            .wait_until(deadline, |log| log.events.iter().any(&wanted))
+            .events
+            .iter()
+            .any(&wanted);
         if got && settle > 0 {
             // Let a burst of typing finish, so one watch sees the whole word.
             let mut last = events.snapshot().events.len();
             loop {
                 let until = Instant::now() + Duration::from_millis(settle);
-                let n = events.wait_until(until, |log| log.events.len() > last).events.len();
+                let n = events
+                    .wait_until(until, |log| log.events.len() > last)
+                    .events
+                    .len();
                 if n == last {
                     break;
                 }
@@ -792,21 +1044,38 @@ impl Tools {
             if e["state_set"] == json!(true) {
                 actions.push("replaced the whole state".to_string());
             }
-            describe(e["msgs"].as_array().map(|v| v.as_slice()).unwrap_or(&[]), &mut actions);
+            describe(
+                e["msgs"].as_array().map(|v| v.as_slice()).unwrap_or(&[]),
+                &mut actions,
+            );
             if all && actions.is_empty() {
                 describe(&[], &mut actions);
-                actions.push(e["msgs"].as_array().map(|m| m.iter().filter_map(|x| x["msg"].as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default());
+                actions.push(
+                    e["msgs"]
+                        .as_array()
+                        .map(|m| {
+                            m.iter()
+                                .filter_map(|x| x["msg"].as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default(),
+                );
             }
             let view = e.get("view").cloned();
             match groups.last_mut() {
                 Some(g) if g["who"] == json!(who) && g.get("view") == view.as_ref() => {
                     g["to_rev"] = json!(r);
-                    let mut acts: Vec<String> = serde_json::from_value(g["actions"].take()).unwrap_or_default();
+                    let mut acts: Vec<String> =
+                        serde_json::from_value(g["actions"].take()).unwrap_or_default();
                     for a in actions {
                         match (acts.last_mut(), a.strip_prefix("typed ")) {
                             (Some(last), Some(more)) if last.starts_with("typed ") => {
-                                let mut t: String = serde_json::from_str(&last["typed ".len()..]).unwrap_or_default();
-                                t.push_str(&serde_json::from_str::<String>(more).unwrap_or_default());
+                                let mut t: String = serde_json::from_str(&last["typed ".len()..])
+                                    .unwrap_or_default();
+                                t.push_str(
+                                    &serde_json::from_str::<String>(more).unwrap_or_default(),
+                                );
                                 *last = format!("typed {}", json!(t));
                             }
                             _ => acts.push(a),
@@ -843,7 +1112,8 @@ impl Tools {
         }
         if closed {
             out["closed"] = json!(true);
-            out["note"] = json!("the editor is gone (it quit). Its last state is what read returned before");
+            out["note"] =
+                json!("the editor is gone (it quit). Its last state is what read returned before");
         }
         Ok(out.into())
     }
@@ -873,13 +1143,23 @@ impl Tools {
             let abs = std::path::absolute(path).map_err(|e| format!("{path}: {e}"))?;
             std::fs::write(&abs, &jsonl).map_err(|e| format!("{}: {e}", abs.display()))?;
             out["path"] = json!(abs);
-            out["replay"] = json!(format!("caretline --replay {} --snapshot 80x24", abs.display()));
+            out["replay"] = json!(format!(
+                "caretline --replay {} --snapshot 80x24",
+                abs.display()
+            ));
             return Ok(out.into());
         }
         if jsonl.len() > 512 * 1024 {
-            return Err(format!("the trace is {} KB: pass path to write it to a file", jsonl.len() / 1024).into());
+            return Err(format!(
+                "the trace is {} KB: pass path to write it to a file",
+                jsonl.len() / 1024
+            )
+            .into());
         }
-        Ok(Output { data: out, text: Some(jsonl) })
+        Ok(Output {
+            data: out,
+            text: Some(jsonl),
+        })
     }
 
     fn save(&self, args: &Map<String, Value>) -> R {
@@ -887,15 +1167,34 @@ impl Tools {
         let s = self.session(args)?;
         let mut s = s.lock().unwrap();
         if !s.engine.is_live() && s.file.is_none() {
-            return Err("this headless session was opened from text and has no file to save to".into());
+            return Err(
+                "this headless session was opened from text and has no file to save to".into(),
+            );
         }
-        let r = s.engine.call(json!({"op": "msgs", "view": 0, "msgs": [{"msg": "save"}], "apply_effects": true}))?;
+        let r = s.engine.call(
+            json!({"op": "msgs", "view": 0, "msgs": [{"msg": "save"}], "apply_effects": true}),
+        )?;
         s.mark_mine(&r);
-        let msgs: Vec<&str> = r["msgs"].as_array().map(|m| m.iter().filter_map(|x| x["msg"].as_str()).collect()).unwrap_or_default();
-        let failed = r["msgs"].as_array().and_then(|m| m.iter().find(|x| x["msg"] == "save_failed").map(|x| x["err"].clone()));
+        let msgs: Vec<&str> = r["msgs"]
+            .as_array()
+            .map(|m| m.iter().filter_map(|x| x["msg"].as_str()).collect())
+            .unwrap_or_default();
+        let failed = r["msgs"].as_array().and_then(|m| {
+            m.iter()
+                .find(|x| x["msg"] == "save_failed")
+                .map(|x| x["err"].clone())
+        });
         let (rev, _, state) = s.state(0)?;
         let saved = msgs.contains(&"saved");
-        let written: Vec<Value> = r["effects"].as_array().map(|e| e.iter().filter(|x| x["effect"] == "write_file").map(|x| x["path"].clone()).collect()).unwrap_or_default();
+        let written: Vec<Value> = r["effects"]
+            .as_array()
+            .map(|e| {
+                e.iter()
+                    .filter(|x| x["effect"] == "write_file")
+                    .map(|x| x["path"].clone())
+                    .collect()
+            })
+            .unwrap_or_default();
         let out = json!({
             "saved": saved,
             "path": written.first().cloned().or_else(|| s.file.clone().map(Value::from)),
@@ -915,7 +1214,10 @@ fn op_kind(op: &Value) -> Result<String, ToolError> {
     if let Some(k) = op["kind"].as_str() {
         return match k {
             "replace" | "replace_range" | "insert" | "keys" | "select" => Ok(k.to_string()),
-            _ => Err(format!("unknown op kind {k:?}: use replace, replace_range, insert, select or keys").into()),
+            _ => Err(format!(
+                "unknown op kind {k:?}: use replace, replace_range, insert, select or keys"
+            )
+            .into()),
         };
     }
     let has = |k: &str| op.get(k).is_some_and(|v| !v.is_null());
@@ -935,10 +1237,22 @@ fn op_kind(op: &Value) -> Result<String, ToolError> {
     .to_string())
 }
 
-fn new_state(body: &str, path: Option<String>, width: u16, height: u16, outline: bool, layout: bool) -> caretline::State {
+fn new_state(
+    body: &str,
+    path: Option<String>,
+    width: u16,
+    height: u16,
+    outline: bool,
+    layout: bool,
+) -> caretline::State {
     let viewport = caretline::Viewport { width, height };
     let mut state = if outline {
-        caretline::outline::markdown::load(body, path, viewport, caretline::OutlineConfig::default())
+        caretline::outline::markdown::load(
+            body,
+            path,
+            viewport,
+            caretline::OutlineConfig::default(),
+        )
     } else {
         caretline::State::new(body, path, viewport)
     };

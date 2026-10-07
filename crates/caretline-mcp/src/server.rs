@@ -4,12 +4,13 @@
 use std::sync::Arc;
 
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock as Content, Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock as Content,
+    Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
     Tool, ToolAnnotations,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::tools::{ToolError, Tools};
 
@@ -33,8 +34,16 @@ fn session_prop() -> Value {
     json!({"type": "string", "description": "The session id from open (optional when only one session is open)"})
 }
 
-fn tool(name: &'static str, description: &str, schema: Value, read_only: bool, destructive: bool) -> Tool {
-    let Value::Object(schema) = schema else { unreachable!() };
+fn tool(
+    name: &'static str,
+    description: &str,
+    schema: Value,
+    read_only: bool,
+    destructive: bool,
+) -> Tool {
+    let Value::Object(schema) = schema else {
+        unreachable!()
+    };
     let mut annotations = ToolAnnotations::default();
     annotations.read_only_hint = Some(read_only);
     annotations.destructive_hint = Some(destructive);
@@ -222,11 +231,19 @@ impl ServerHandler for Server {
             .with_instructions(INSTRUCTIONS)
     }
 
-    async fn list_tools(&self, _request: Option<PaginatedRequestParams>, _context: RequestContext<RoleServer>) -> Result<ListToolsResult, McpError> {
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
         Ok(ListToolsResult::with_all_items(tools()))
     }
 
-    async fn call_tool(&self, request: CallToolRequestParams, context: RequestContext<RoleServer>) -> Result<CallToolResponse, McpError> {
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, McpError> {
         if let Some(info) = context.peer.peer_info() {
             let mut name = self.tools.client_name.lock().unwrap();
             if name.is_none() {

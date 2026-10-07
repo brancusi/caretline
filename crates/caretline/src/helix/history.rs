@@ -174,7 +174,8 @@ impl History {
         // `path` runs from the current revision down to the root's child.
         let mut r = remote.clone();
         let mut text = doc.clone();
-        let mut rebuilt: Vec<(Rebased, Transaction, Transaction, Timestamp)> = Vec::with_capacity(path.len());
+        let mut rebuilt: Vec<(Rebased, Transaction, Transaction, Timestamp)> =
+            Vec::with_capacity(path.len());
         for &k in &path {
             let rev = &self.revisions[k];
             let inv = rev.inversion.changes();
@@ -198,9 +199,22 @@ impl History {
             };
             let remote_k = std::mem::replace(&mut r, r_prev);
             let text_k = std::mem::replace(&mut text, prev_text);
-            rebuilt.push((Rebased { old: k, remote: remote_k, text: text_k }, transaction, inversion, rev.timestamp));
+            rebuilt.push((
+                Rebased {
+                    old: k,
+                    remote: remote_k,
+                    text: text_k,
+                },
+                transaction,
+                inversion,
+                rev.timestamp,
+            ));
         }
-        let mut kept = vec![Rebased { old: 0, remote: r, text }];
+        let mut kept = vec![Rebased {
+            old: 0,
+            remote: r,
+            text,
+        }];
         let mut revisions = vec![Revision {
             parent: 0,
             last_child: None,
@@ -211,7 +225,13 @@ impl History {
         for (rebased, transaction, inversion, timestamp) in rebuilt.into_iter().rev() {
             let i = revisions.len();
             revisions[i - 1].last_child = NonZeroUsize::new(i);
-            revisions.push(Revision { parent: i - 1, last_child: None, transaction, inversion, timestamp });
+            revisions.push(Revision {
+                parent: i - 1,
+                last_child: None,
+                transaction,
+                inversion,
+                timestamp,
+            });
             kept.push(rebased);
         }
         self.current = revisions.len() - 1;
@@ -234,7 +254,9 @@ impl History {
     ///
     /// caretline addition: not in upstream Helix.
     pub fn transactions(&self) -> impl Iterator<Item = (&Transaction, &Transaction)> {
-        self.revisions.iter().map(|r| (&r.transaction, &r.inversion))
+        self.revisions
+            .iter()
+            .map(|r| (&r.transaction, &r.inversion))
     }
 
     /// The number of revisions, including the root.
@@ -413,7 +435,8 @@ impl History {
     fn jump_duration_backward(&mut self, duration: Duration) -> Vec<Transaction> {
         match self.revisions[self.current]
             .timestamp
-            .checked_sub(duration.as_millis() as Timestamp) {
+            .checked_sub(duration.as_millis() as Timestamp)
+        {
             Some(instant) => self.jump_instant(instant),
             None => self.jump_to(0),
         }
@@ -424,7 +447,8 @@ impl History {
     fn jump_duration_forward(&mut self, duration: Duration) -> Vec<Transaction> {
         match self.revisions[self.current]
             .timestamp
-            .checked_add(duration.as_millis() as Timestamp) {
+            .checked_add(duration.as_millis() as Timestamp)
+        {
             Some(instant) => self.jump_instant(instant),
             None => self.jump_to(self.revisions.len() - 1),
         }
@@ -616,7 +640,6 @@ mod test {
         later(&mut history, &mut state, Steps(1));
         assert_eq!("a\n", state.doc);
     }
-
 }
 
 /// Maps a selection stored in a revision through `changes`, clamping it to the document the
@@ -625,6 +648,10 @@ mod test {
 fn map_selection(sel: &Selection, changes: &ChangeSet) -> Selection {
     let len = changes.len();
     sel.clone()
-        .transform(|r| Range { anchor: r.anchor.min(len), head: r.head.min(len), old_visual_position: None })
+        .transform(|r| Range {
+            anchor: r.anchor.min(len),
+            head: r.head.min(len),
+            old_visual_position: None,
+        })
         .map(changes)
 }

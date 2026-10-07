@@ -7,7 +7,14 @@ use caretline::{view, Effect, Msg, Session, State, Viewport};
 use serde_json::{json, Value};
 
 fn session() -> Session {
-    Session::new(State::new("hello world\nsecond line\n", Some("doc.md".into()), Viewport { width: 30, height: 5 }))
+    Session::new(State::new(
+        "hello world\nsecond line\n",
+        Some("doc.md".into()),
+        Viewport {
+            width: 30,
+            height: 5,
+        },
+    ))
 }
 
 fn ask(s: &mut Session, req: Value) -> Value {
@@ -16,7 +23,9 @@ fn ask(s: &mut Session, req: Value) -> Value {
 }
 
 fn error_kind(v: &Value) -> &str {
-    v["error"]["kind"].as_str().unwrap_or_else(|| panic!("not an error: {v}"))
+    v["error"]["kind"]
+        .as_str()
+        .unwrap_or_else(|| panic!("not an error: {v}"))
 }
 
 #[test]
@@ -36,7 +45,14 @@ fn state_get_returns_the_state_and_set_replaces_it() {
     let got: State = serde_json::from_value(r["result"]["state"].clone()).unwrap();
     assert_eq!(&got, s.state());
 
-    let other = State::new("replaced\n", None, Viewport { width: 20, height: 4 });
+    let other = State::new(
+        "replaced\n",
+        None,
+        Viewport {
+            width: 20,
+            height: 4,
+        },
+    );
     let r = ask(&mut s, json!({"id": 2, "op": "state.set", "state": other}));
     assert_eq!(r["result"]["rev"], 1);
     assert_eq!(s.state(), &other);
@@ -48,7 +64,15 @@ fn state_get_returns_the_state_and_set_replaces_it() {
 #[test]
 fn state_set_repairs_an_out_of_range_selection() {
     let mut s = session();
-    let mut st = serde_json::to_value(State::new("abc", None, Viewport { width: 20, height: 4 })).unwrap();
+    let mut st = serde_json::to_value(State::new(
+        "abc",
+        None,
+        Viewport {
+            width: 20,
+            height: 4,
+        },
+    ))
+    .unwrap();
     st["selection"]["ranges"][0]["head"] = json!(99);
     st["selection"]["ranges"][0]["anchor"] = json!(99);
     let r = ask(&mut s, json!({"op": "state.set", "state": st}));
@@ -80,7 +104,14 @@ fn keys_go_through_the_keymap() {
     let mut s = session();
     let r = ask(&mut s, json!({"op": "keys", "keys": "<down>Hey <c-z>"}));
     let msgs: Vec<Msg> = serde_json::from_value(r["result"]["msgs"].clone()).unwrap();
-    assert_eq!(msgs[0], Msg::Move { dir: caretline::Dir::Forward, by: caretline::By::VisualLine, extend: false });
+    assert_eq!(
+        msgs[0],
+        Msg::Move {
+            dir: caretline::Dir::Forward,
+            by: caretline::By::VisualLine,
+            extend: false
+        }
+    );
     assert_eq!(*msgs.last().unwrap(), Msg::Undo);
     assert_eq!(r["result"]["rev"], msgs.len() as u64);
     assert_eq!(s.state().doc.text.to_string(), "hello world\nsecond line\n");
@@ -124,7 +155,10 @@ fn errors_carry_the_id_and_a_kind() {
     let mut s = session();
     let r = ask(&mut s, json!({"id": 7, "op": "frobnicate"}));
     assert_eq!((r["id"].clone(), error_kind(&r)), (json!(7), "unknown_op"));
-    let r = ask(&mut s, json!({"id": 8, "op": "msgs", "msgs": [{"msg": "nope"}]}));
+    let r = ask(
+        &mut s,
+        json!({"id": 8, "op": "msgs", "msgs": [{"msg": "nope"}]}),
+    );
     assert_eq!((r["id"].clone(), error_kind(&r)), (json!(8), "bad_request"));
     let r = ask(&mut s, json!({"id": 9, "op": "msgs"}));
     assert_eq!(error_kind(&r), "bad_request");
@@ -133,8 +167,14 @@ fn errors_carry_the_id_and_a_kind() {
     let r = ask(&mut s, json!({"id": 11, "op": "state.set"}));
     assert_eq!(error_kind(&r), "bad_request");
     let r = ask(&mut s, json!({"id": 12}));
-    assert_eq!((r["id"].clone(), error_kind(&r)), (json!(12), "bad_request"));
-    let r = ask(&mut s, json!({"id": 13, "op": "msgs", "msgs": [], "apply_effects": true}));
+    assert_eq!(
+        (r["id"].clone(), error_kind(&r)),
+        (json!(12), "bad_request")
+    );
+    let r = ask(
+        &mut s,
+        json!({"id": 13, "op": "msgs", "msgs": [], "apply_effects": true}),
+    );
     assert_eq!(error_kind(&r), "unsupported");
     let h = s.handle("{not json", None);
     let r: Value = serde_json::from_str(&h.response).unwrap();
@@ -168,30 +208,51 @@ fn rev_counts_every_change_and_guards_writes() {
     ask(&mut s, json!({"op": "render"}));
     assert_eq!(s.rev(), 6);
     // if_rev: a stale writer is refused, a current one goes through.
-    let r = ask(&mut s, json!({"op": "msgs", "if_rev": 5, "msgs": [{"msg": "undo"}]}));
+    let r = ask(
+        &mut s,
+        json!({"op": "msgs", "if_rev": 5, "msgs": [{"msg": "undo"}]}),
+    );
     assert_eq!(error_kind(&r), "stale");
-    let r = ask(&mut s, json!({"op": "msgs", "if_rev": 6, "msgs": [{"msg": "undo"}]}));
+    let r = ask(
+        &mut s,
+        json!({"op": "msgs", "if_rev": 6, "msgs": [{"msg": "undo"}]}),
+    );
     assert_eq!(r["result"]["rev"], 7);
 }
 
 #[test]
 fn subscribe_returns_a_control_and_events_describe_changes() {
     let mut s = session();
-    let h = s.handle(r#"{"op":"subscribe","frame":{"w":20,"h":3,"format":"cells"}}"#, None);
-    let Some(Control::Subscribe(sub)) = h.control else { panic!("no subscribe control") };
+    let h = s.handle(
+        r#"{"op":"subscribe","frame":{"w":20,"h":3,"format":"cells"}}"#,
+        None,
+    );
+    let Some(Control::Subscribe(sub)) = h.control else {
+        panic!("no subscribe control")
+    };
     assert!(sub.msgs);
     assert_eq!(sub.frame.unwrap().format, Format::Cells);
 
-    let h = s.handle(r#"{"op":"msgs","msgs":[{"msg":"insert_text","text":"Q"}]}"#, None);
+    let h = s.handle(
+        r#"{"op":"msgs","msgs":[{"msg":"insert_text","text":"Q"}]}"#,
+        None,
+    );
     let change = h.change.expect("a change");
     assert_eq!(change.rev, 1);
     let ev: Value = serde_json::from_str(&event_line(&s, &change, &sub, Some("client"))).unwrap();
     assert_eq!(ev["event"], "state");
     assert_eq!(ev["rev"], 1);
     assert_eq!(ev["msgs"][0]["text"], "Q");
-    assert_eq!(ev["frame"]["rows"][0]["text"].as_str().unwrap().trim_end(), "Qhello world");
+    assert_eq!(
+        ev["frame"]["rows"][0]["text"].as_str().unwrap().trim_end(),
+        "Qhello world"
+    );
 
-    let bare = Subscription { msgs: false, frame: None, state: false };
+    let bare = Subscription {
+        msgs: false,
+        frame: None,
+        state: false,
+    };
     let ev: Value = serde_json::from_str(&event_line(&s, &change, &bare, None)).unwrap();
     assert!(ev.get("msgs").is_none() && ev.get("frame").is_none());
 
@@ -207,16 +268,30 @@ fn subscribe_returns_a_control_and_events_describe_changes() {
 }
 
 fn trace_lines(r: &Value) -> Vec<String> {
-    r["result"]["trace"].as_array().unwrap().iter().map(|l| l.to_string()).collect()
+    r["result"]["trace"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.to_string())
+        .collect()
 }
 
 #[test]
 fn trace_replays_to_the_same_state() {
     let mut s = session();
-    ask(&mut s, json!({"op": "keys", "keys": "one<cr>two<wait:2000><s-a-left><c-x>"}));
+    ask(
+        &mut s,
+        json!({"op": "keys", "keys": "one<cr>two<wait:2000><s-a-left><c-x>"}),
+    );
     let before_set = s.rev();
-    ask(&mut s, json!({"op": "state.set", "state": State::new("fresh\n", None, Viewport { width: 30, height: 5 })}));
-    ask(&mut s, json!({"op": "msgs", "msgs": [{"msg": "move", "dir": "forward", "by": "word"}, {"msg": "insert_text", "text": "!"}]}));
+    ask(
+        &mut s,
+        json!({"op": "state.set", "state": State::new("fresh\n", None, Viewport { width: 30, height: 5 })}),
+    );
+    ask(
+        &mut s,
+        json!({"op": "msgs", "msgs": [{"msg": "move", "dir": "forward", "by": "word"}, {"msg": "insert_text", "text": "!"}]}),
+    );
 
     // The whole trace replays, through the replacement.
     let r = ask(&mut s, json!({"op": "trace.get", "all": true}));
@@ -224,7 +299,10 @@ fn trace_replays_to_the_same_state() {
     let lines = trace_lines(&r);
     let (replayed, n) = replay_trace(&lines.join("\n")).unwrap();
     assert_eq!(&replayed, s.state());
-    assert_eq!(n, lines.iter().filter(|l| l.starts_with("{\"msg\"")).count());
+    assert_eq!(
+        n,
+        lines.iter().filter(|l| l.starts_with("{\"msg\"")).count()
+    );
     assert_eq!(s.trace_jsonl().lines().count(), lines.len());
 
     // By default: the current segment, from the state.set on, which replays on its own.
@@ -263,12 +341,18 @@ fn trace_since_rev_and_checkpoints() {
     assert_eq!(&replayed, s.state());
     // since_rev skips the checkpoint at the rev itself.
     let r = ask(&mut s, json!({"op": "trace.get", "since_rev": 3}));
-    assert_eq!(trace_lines(&r), vec![r#"{"msg":{"msg":"insert_text","text":"d"}}"#.to_string()]);
+    assert_eq!(
+        trace_lines(&r),
+        vec![r#"{"msg":{"msg":"insert_text","text":"d"}}"#.to_string()]
+    );
     // The full trace (the checkpoint included) still replays.
     let (replayed, _) = replay_trace(&s.trace_jsonl()).unwrap();
     assert_eq!(&replayed, s.state());
 
-    let r = ask(&mut s, json!({"op": "trace.get", "since_rev": 1, "all": true}));
+    let r = ask(
+        &mut s,
+        json!({"op": "trace.get", "since_rev": 1, "all": true}),
+    );
     assert_eq!(error_kind(&r), "bad_request");
 }
 
@@ -279,7 +363,14 @@ fn the_trace_limit_drops_old_segments_and_cuts_long_ones() {
     for _ in 0..4 {
         s.apply(Msg::InsertText { text: "x".into() });
     }
-    s.set_state(State::new("new\n", None, Viewport { width: 30, height: 5 }));
+    s.set_state(State::new(
+        "new\n",
+        None,
+        Viewport {
+            width: 30,
+            height: 5,
+        },
+    ));
     for _ in 0..7 {
         s.apply(Msg::InsertText { text: "y".into() });
     }
@@ -318,12 +409,21 @@ fn state_set_takes_a_minimal_state() {
     assert!(r["result"]["rev"].is_u64(), "{r}");
     let st = s.state();
     assert_eq!(st.doc.text.to_string(), "hello\nworld\n");
-    assert_eq!((st.view.selection.primary().anchor, st.view.selection.primary().head), (0, 5));
+    assert_eq!(
+        (
+            st.view.selection.primary().anchor,
+            st.view.selection.primary().head
+        ),
+        (0, 5)
+    );
     assert!(!st.doc.dirty, "a pushed state counts as saved");
     assert!(!st.doc.config.soft_wrap);
     assert_eq!(st.doc.config.tab_width, 4);
     // A working editor: type over the selection, then undo it.
-    ask(&mut s, json!({"op": "msgs", "msgs": [{"msg": "insert_text", "text": "bye"}]}));
+    ask(
+        &mut s,
+        json!({"op": "msgs", "msgs": [{"msg": "insert_text", "text": "bye"}]}),
+    );
     assert_eq!(s.state().doc.text.to_string(), "bye\nworld\n");
     assert!(s.state().doc.dirty);
     ask(&mut s, json!({"op": "msgs", "msgs": [{"msg": "undo"}]}));
@@ -331,12 +431,25 @@ fn state_set_takes_a_minimal_state() {
     assert!(!s.state().doc.dirty);
 
     // Text alone works too: the rest takes State::new's defaults.
-    let r = ask(&mut s, json!({"op": "state.set", "state": {"text": "a\r\nb\r\n"}}));
+    let r = ask(
+        &mut s,
+        json!({"op": "state.set", "state": {"text": "a\r\nb\r\n"}}),
+    );
     assert!(r["result"]["rev"].is_u64(), "{r}");
-    let fresh = State::new("a\r\nb\r\n", None, Viewport { width: 80, height: 24 });
+    let fresh = State::new(
+        "a\r\nb\r\n",
+        None,
+        Viewport {
+            width: 80,
+            height: 24,
+        },
+    );
     assert_eq!(s.state(), &fresh);
     // An explicit null saved_revision means never saved.
-    ask(&mut s, json!({"op": "state.set", "state": {"text": "x", "saved_revision": null}}));
+    ask(
+        &mut s,
+        json!({"op": "state.set", "state": {"text": "x", "saved_revision": null}}),
+    );
     assert!(s.state().doc.dirty);
 }
 
@@ -360,7 +473,10 @@ fn apply_with_feeds_effect_results_back() {
     let r: Value = serde_json::from_str(&h.response).unwrap();
     assert_eq!(r["result"]["executed"], true);
     // The response lists every message applied, the fed-back result included.
-    assert_eq!(r["result"]["msgs"].as_array().unwrap().last().unwrap()["msg"], "saved");
+    assert_eq!(
+        r["result"]["msgs"].as_array().unwrap().last().unwrap()["msg"],
+        "saved"
+    );
     assert_eq!(h.change.unwrap().msgs.last(), Some(&Msg::Saved));
     assert!(!s.state().doc.dirty);
     // Without apply_effects the executor is not used.
@@ -371,7 +487,9 @@ fn apply_with_feeds_effect_results_back() {
 #[test]
 fn show_status_is_passive() {
     let mut s = session();
-    s.apply(Msg::ShowStatus { text: "hi there\nignored".into() });
+    s.apply(Msg::ShowStatus {
+        text: "hi there\nignored".into(),
+    });
     assert_eq!(s.state().view.status.as_deref(), Some("hi there"));
     assert!(view(s.state()).to_text().contains("hi there"));
     s.apply(Msg::Tick { now_ms: 9 });
@@ -384,18 +502,33 @@ fn show_status_is_passive() {
 fn requests_tick_to_their_own_time_or_the_runtimes() {
     let mut s = session();
     // A request's now_ms becomes a tick before its messages, and waits count from it.
-    let r = ask(&mut s, json!({"op": "keys", "now_ms": 1000, "keys": "a<wait:500>b"}));
+    let r = ask(
+        &mut s,
+        json!({"op": "keys", "now_ms": 1000, "keys": "a<wait:500>b"}),
+    );
     let msgs = &r["result"]["msgs"];
     assert_eq!(msgs[0], json!({"msg": "tick", "now_ms": 1000}));
     assert_eq!(msgs[2], json!({"msg": "tick", "now_ms": 1500}));
     assert_eq!(s.state().doc.now_ms, 1500);
 
     // A runtime clock ticks forward only, and the request's own time wins.
-    let h = s.handle_at(r#"{"op":"msgs","msgs":[{"msg":"insert_text","text":"c"}]}"#, None, Some(9000));
+    let h = s.handle_at(
+        r#"{"op":"msgs","msgs":[{"msg":"insert_text","text":"c"}]}"#,
+        None,
+        Some(9000),
+    );
     assert_eq!(h.change.unwrap().msgs[0], Msg::Tick { now_ms: 9000 });
-    let h = s.handle_at(r#"{"op":"msgs","msgs":[{"msg":"insert_text","text":"d"}]}"#, None, Some(100));
+    let h = s.handle_at(
+        r#"{"op":"msgs","msgs":[{"msg":"insert_text","text":"d"}]}"#,
+        None,
+        Some(100),
+    );
     assert_eq!(h.change.unwrap().msgs.len(), 1, "no tick backwards");
-    let h = s.handle_at(r#"{"op":"msgs","now_ms":20000,"msgs":[]}"#, None, Some(9500));
+    let h = s.handle_at(
+        r#"{"op":"msgs","now_ms":20000,"msgs":[]}"#,
+        None,
+        Some(9500),
+    );
     assert_eq!(h.change.unwrap().msgs, vec![Msg::Tick { now_ms: 20000 }]);
 
     // Typing far apart in time is separate undo steps; close together, one.
@@ -408,7 +541,14 @@ fn requests_tick_to_their_own_time_or_the_runtimes() {
 
 #[test]
 fn the_status_bar_can_be_hidden() {
-    let mut st = State::new("one\ntwo\nthree\n", None, Viewport { width: 20, height: 3 });
+    let mut st = State::new(
+        "one\ntwo\nthree\n",
+        None,
+        Viewport {
+            width: 20,
+            height: 3,
+        },
+    );
     st.view.config.status_bar = false;
     let text = view(&st).to_text();
     assert_eq!(text, "one\ntwo\nthree\n");
@@ -427,11 +567,23 @@ fn two_views_of_one_document_over_the_protocol() {
     assert_eq!(v, 1);
     // View 1 goes to the second line; view 0 types at the start.
     ask(&mut s, json!({"op":"keys","view":v,"keys":"<down><end>"}));
-    ask(&mut s, json!({"op":"msgs","msgs":[{"msg":"insert_text","text":">> "}]}));
-    assert_eq!(s.state().doc.text.to_string(), ">> hello world\nsecond line\n");
+    ask(
+        &mut s,
+        json!({"op":"msgs","msgs":[{"msg":"insert_text","text":">> "}]}),
+    );
+    assert_eq!(
+        s.state().doc.text.to_string(),
+        ">> hello world\nsecond line\n"
+    );
     // View 1 kept its place on its own line: typing there lands at its end.
-    ask(&mut s, json!({"op":"msgs","view":v,"msgs":[{"msg":"insert_text","text":"!"}]}));
-    assert_eq!(s.state().doc.text.to_string(), ">> hello world\nsecond line!\n");
+    ask(
+        &mut s,
+        json!({"op":"msgs","view":v,"msgs":[{"msg":"insert_text","text":"!"}]}),
+    );
+    assert_eq!(
+        s.state().doc.text.to_string(),
+        ">> hello world\nsecond line!\n"
+    );
     let r = ask(&mut s, json!({"op":"render","view":v}));
     assert_eq!(r["result"]["w"], 20);
     assert_eq!(r["result"]["cursor"], json!([12, 1]));
@@ -440,17 +592,32 @@ fn two_views_of_one_document_over_the_protocol() {
     let r = ask(&mut s, json!({"op":"view.list"}));
     assert_eq!(r["result"]["views"].as_array().unwrap().len(), 2);
     // Undo through view 1 takes back its own last step.
-    ask(&mut s, json!({"op":"msgs","view":v,"msgs":[{"msg":"undo"}]}));
-    assert_eq!(s.state().doc.text.to_string(), ">> hello world\nsecond line\n");
+    ask(
+        &mut s,
+        json!({"op":"msgs","view":v,"msgs":[{"msg":"undo"}]}),
+    );
+    assert_eq!(
+        s.state().doc.text.to_string(),
+        ">> hello world\nsecond line\n"
+    );
     // The trace replays both views.
     let lines: String = s.trace_jsonl();
     let (state, views, _) = caretline::trace::replay_trace_views(&lines).unwrap();
     assert_eq!(state, *s.state());
     assert_eq!(views, s.views().to_vec());
     // Unknown views are errors; view 0 never closes.
-    assert_eq!(error_kind(&ask(&mut s, json!({"op":"render","view":9}))), "no_view");
-    assert_eq!(error_kind(&ask(&mut s, json!({"op":"view.close","view":0}))), "bad_request");
-    assert_eq!(ask(&mut s, json!({"op":"view.close","view":v}))["result"]["closed"], 1);
+    assert_eq!(
+        error_kind(&ask(&mut s, json!({"op":"render","view":9}))),
+        "no_view"
+    );
+    assert_eq!(
+        error_kind(&ask(&mut s, json!({"op":"view.close","view":0}))),
+        "bad_request"
+    );
+    assert_eq!(
+        ask(&mut s, json!({"op":"view.close","view":v}))["result"]["closed"],
+        1
+    );
     assert!(s.views().is_empty());
 }
 
@@ -458,10 +625,17 @@ fn two_views_of_one_document_over_the_protocol() {
 fn an_external_change_then_local_undo_over_the_protocol() {
     let mut s = session();
     ask(&mut s, json!({"op":"keys","keys":"<end>!"}));
-    ask(&mut s, json!({"op":"msgs","msgs":[{"msg":"external","changes":[{"change":"replace","from":13,"to":19,"text":"2nd"}]}]}));
+    ask(
+        &mut s,
+        json!({"op":"msgs","msgs":[{"msg":"external","changes":[{"change":"replace","from":13,"to":19,"text":"2nd"}]}]}),
+    );
     assert_eq!(s.state().doc.text.to_string(), "hello world!\n2nd line\n");
     ask(&mut s, json!({"op":"msgs","msgs":[{"msg":"undo"}]}));
-    assert_eq!(s.state().doc.text.to_string(), "hello world\n2nd line\n", "undo kept the change from elsewhere");
+    assert_eq!(
+        s.state().doc.text.to_string(),
+        "hello world\n2nd line\n",
+        "undo kept the change from elsewhere"
+    );
     let (state, _) = replay_trace(&s.trace_jsonl()).unwrap();
     assert_eq!(state, *s.state());
 }
@@ -469,10 +643,24 @@ fn an_external_change_then_local_undo_over_the_protocol() {
 #[test]
 fn a_checkpoint_carries_the_open_views() {
     let mut s = session();
-    let v = s.open_view(caretline::View::new(Viewport { width: 10, height: 3 }));
-    s.apply_on(v, Msg::Move { dir: caretline::Dir::Forward, by: caretline::By::DocEnd, extend: false });
+    let v = s.open_view(caretline::View::new(Viewport {
+        width: 10,
+        height: 3,
+    }));
+    s.apply_on(
+        v,
+        Msg::Move {
+            dir: caretline::Dir::Forward,
+            by: caretline::By::DocEnd,
+            extend: false,
+        },
+    );
     s.checkpoint();
-    let seg: String = s.segment_trace().iter().map(|l| l.to_line() + "\n").collect();
+    let seg: String = s
+        .segment_trace()
+        .iter()
+        .map(|l| l.to_line() + "\n")
+        .collect();
     let (state, views, _) = caretline::trace::replay_trace_views(&seg).unwrap();
     assert_eq!(state, *s.state());
     assert_eq!(views, s.views().to_vec());
@@ -482,8 +670,12 @@ fn a_checkpoint_carries_the_open_views() {
 fn edited_session() -> Session {
     let mut s = session();
     for (i, t) in ["a", "b", "c"].iter().enumerate() {
-        s.apply(Msg::Tick { now_ms: 10_000 * (i as u64 + 1) });
-        s.apply(Msg::InsertText { text: t.to_string() });
+        s.apply(Msg::Tick {
+            now_ms: 10_000 * (i as u64 + 1),
+        });
+        s.apply(Msg::InsertText {
+            text: t.to_string(),
+        });
     }
     s
 }
@@ -501,14 +693,19 @@ fn state_get_without_history_leaves_out_the_undo_history() {
     assert_eq!(st["text"], full["result"]["state"]["text"]);
     assert_eq!(st["selection"], full["result"]["state"]["selection"]);
     assert_eq!(st["dirty"], true);
-    assert_eq!(st["saved_revision"], Value::Null, "a dirty document is never saved in a fresh history");
+    assert_eq!(
+        st["saved_revision"],
+        Value::Null,
+        "a dirty document is never saved in a fresh history"
+    );
     assert!(light.to_string().len() < full.to_string().len());
 }
 
 #[test]
 fn a_state_without_history_rehydrates_to_a_working_editor() {
     let mut s = edited_session();
-    let light = ask(&mut s, json!({"op": "state.get", "history": false}))["result"]["state"].clone();
+    let light =
+        ask(&mut s, json!({"op": "state.get", "history": false}))["result"]["state"].clone();
     let mut t = Session::new(State::default());
     let r = ask(&mut t, json!({"op": "state.set", "state": light}));
     assert!(r.get("result").is_some(), "{r}");
@@ -526,11 +723,16 @@ fn a_state_without_history_rehydrates_to_a_working_editor() {
     t.apply(Msg::Undo);
     assert_eq!(t.state().doc.text.to_string(), before);
     t.apply(Msg::Undo);
-    assert_eq!(t.state().doc.text.to_string(), before, "nothing older to undo");
+    assert_eq!(
+        t.state().doc.text.to_string(),
+        before,
+        "nothing older to undo"
+    );
 
     // A clean document stays clean.
     let mut c = session();
-    let light = ask(&mut c, json!({"op": "state.get", "history": false}))["result"]["state"].clone();
+    let light =
+        ask(&mut c, json!({"op": "state.get", "history": false}))["result"]["state"].clone();
     assert_eq!(light["saved_revision"], 0);
     let back: State = State::from_json(&light.to_string()).unwrap();
     assert!(!back.doc.dirty);
@@ -539,7 +741,8 @@ fn a_state_without_history_rehydrates_to_a_working_editor() {
 #[test]
 fn history_get_returns_what_state_get_leaves_out() {
     let mut s = edited_session();
-    let mut light = ask(&mut s, json!({"op": "state.get", "history": false}))["result"]["state"].clone();
+    let mut light =
+        ask(&mut s, json!({"op": "state.get", "history": false}))["result"]["state"].clone();
     let h = ask(&mut s, json!({"id": 4, "op": "history.get"}));
     assert_eq!(h["id"], 4);
     let part = h["result"].as_object().unwrap();
@@ -554,11 +757,17 @@ fn history_get_returns_what_state_get_leaves_out() {
 #[test]
 fn subscribers_can_have_the_state_without_history() {
     let mut s = session();
-    let h = s.handle(r#"{"op":"subscribe","with_state":true,"with_msgs":false}"#, None);
-    let Some(Control::Subscribe(sub)) = h.control else { panic!("no subscribe control") };
+    let h = s.handle(
+        r#"{"op":"subscribe","with_state":true,"with_msgs":false}"#,
+        None,
+    );
+    let Some(Control::Subscribe(sub)) = h.control else {
+        panic!("no subscribe control")
+    };
     assert!(sub.state);
     let h = s.handle(r#"{"op":"keys","keys":"hi"}"#, None);
-    let ev: Value = serde_json::from_str(&event_line(&s, &h.change.unwrap(), &sub, Some("client"))).unwrap();
+    let ev: Value =
+        serde_json::from_str(&event_line(&s, &h.change.unwrap(), &sub, Some("client"))).unwrap();
     assert_eq!(ev["state"]["text"], "hihello world\nsecond line\n");
     assert!(ev["state"].get("history").is_none());
     assert!(ev.get("msgs").is_none());
@@ -569,7 +778,10 @@ fn frame_shows_a_text_with_highlights_and_no_history() {
     let mut s = edited_session();
     s.apply(Msg::FrameClock { fps: 60 });
     let before = s.state().clone();
-    let r = ask(&mut s, json!({"id": 1, "op": "frame", "text": "ab\ncd\n", "highlights": [[0, 1], [3, 5]], "status": "scene 1"}));
+    let r = ask(
+        &mut s,
+        json!({"id": 1, "op": "frame", "text": "ab\ncd\n", "highlights": [[0, 1], [3, 5]], "status": "scene 1"}),
+    );
     let rev = r["result"]["rev"].as_u64().unwrap();
     assert_eq!(rev, s.rev());
     let st = s.state();
@@ -580,11 +792,19 @@ fn frame_shows_a_text_with_highlights_and_no_history() {
     assert_eq!(st.view.viewport, before.view.viewport, "the size stays");
     assert_eq!(st.view.frame_clock, 60, "the frame clock stays");
     assert_eq!(st.view.status.as_deref(), Some("scene 1"));
-    let spans: Vec<(usize, usize)> = st.view.selection.iter().map(|r| (r.from(), r.to())).collect();
+    let spans: Vec<(usize, usize)> = st
+        .view
+        .selection
+        .iter()
+        .map(|r| (r.from(), r.to()))
+        .collect();
     assert_eq!(spans, vec![(0, 1), (3, 5)]);
     // The highlights draw in the selection's colour.
     let r = ask(&mut s, json!({"op": "render", "format": "cells"}));
-    assert_eq!(r["result"]["rows"][1]["spans"], json!([[0, 2, "selection"]]));
+    assert_eq!(
+        r["result"]["rows"][1]["spans"],
+        json!([[0, 2, "selection"]])
+    );
     // A frame without status keeps the last one; a caret goes first.
     ask(&mut s, json!({"op": "frame", "text": "xyz", "caret": 2}));
     assert_eq!(s.state().view.status.as_deref(), Some("scene 1"));
@@ -601,7 +821,14 @@ fn frame_shows_a_text_with_highlights_and_no_history() {
 
 #[test]
 fn the_frame_clock_is_view_state_and_frames_are_passive() {
-    let mut s = Session::new(State::new("", None, Viewport { width: 20, height: 4 }));
+    let mut s = Session::new(State::new(
+        "",
+        None,
+        Viewport {
+            width: 20,
+            height: 4,
+        },
+    ));
     assert_eq!(s.state().view.frame_rate(), None);
     s.apply(Msg::FrameClock { fps: 120 });
     assert_eq!(s.state().view.frame_rate(), Some(120));
@@ -619,5 +846,8 @@ fn the_frame_clock_is_view_state_and_frames_are_passive() {
     assert_eq!(s.state().doc.text.to_string(), "", "one undo step");
     s.apply(Msg::FrameClock { fps: 0 });
     assert_eq!(s.state().view.frame_rate(), None);
-    assert!(serde_json::to_value(s.state()).unwrap().get("frame_clock").is_none());
+    assert!(serde_json::to_value(s.state())
+        .unwrap()
+        .get("frame_clock")
+        .is_none());
 }

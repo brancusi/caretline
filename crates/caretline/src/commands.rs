@@ -89,13 +89,34 @@ pub struct Binding {
 
 macro_rules! cmd {
     ($id:literal, $name:literal, $cat:ident, $desc:literal) => {
-        CommandInfo { id: $id, name: $name, description: $desc, category: Category::$cat, outline_only: false, takes_block: false }
+        CommandInfo {
+            id: $id,
+            name: $name,
+            description: $desc,
+            category: Category::$cat,
+            outline_only: false,
+            takes_block: false,
+        }
     };
     ($id:literal, $name:literal, $cat:ident, $desc:literal, outline) => {
-        CommandInfo { id: $id, name: $name, description: $desc, category: Category::$cat, outline_only: true, takes_block: false }
+        CommandInfo {
+            id: $id,
+            name: $name,
+            description: $desc,
+            category: Category::$cat,
+            outline_only: true,
+            takes_block: false,
+        }
     };
     ($id:literal, $name:literal, $cat:ident, $desc:literal, block) => {
-        CommandInfo { id: $id, name: $name, description: $desc, category: Category::$cat, outline_only: true, takes_block: true }
+        CommandInfo {
+            id: $id,
+            name: $name,
+            description: $desc,
+            category: Category::$cat,
+            outline_only: true,
+            takes_block: true,
+        }
     };
 }
 
@@ -104,58 +125,287 @@ const COMMANDS: &[CommandInfo] = &[
     cmd!("move.right", "Right", Move, "Move right one character"),
     cmd!("move.up", "Up", Move, "Move up one row"),
     cmd!("move.down", "Down", Move, "Move down one row"),
-    cmd!("move.word_left", "Word left", Move, "Move to the start of the previous word"),
-    cmd!("move.word_right", "Word right", Move, "Move to the end of the next word"),
-    cmd!("move.line_start", "Line start", Move, "Move to the start of the row"),
-    cmd!("move.line_end", "Line end", Move, "Move to the end of the row"),
-    cmd!("move.doc_start", "Document start", Move, "Move to the start of the document"),
-    cmd!("move.doc_end", "Document end", Move, "Move to the end of the document"),
+    cmd!(
+        "move.word_left",
+        "Word left",
+        Move,
+        "Move to the start of the previous word"
+    ),
+    cmd!(
+        "move.word_right",
+        "Word right",
+        Move,
+        "Move to the end of the next word"
+    ),
+    cmd!(
+        "move.line_start",
+        "Line start",
+        Move,
+        "Move to the start of the row"
+    ),
+    cmd!(
+        "move.line_end",
+        "Line end",
+        Move,
+        "Move to the end of the row"
+    ),
+    cmd!(
+        "move.doc_start",
+        "Document start",
+        Move,
+        "Move to the start of the document"
+    ),
+    cmd!(
+        "move.doc_end",
+        "Document end",
+        Move,
+        "Move to the end of the document"
+    ),
     cmd!("move.page_up", "Page up", Move, "Move up a screenful"),
     cmd!("move.page_down", "Page down", Move, "Move down a screenful"),
-    cmd!("move.block_up", "Block up", Move, "Move to the start of this block, then the one before"),
-    cmd!("move.block_down", "Block down", Move, "Move to the start of the next block"),
-    cmd!("select.left", "Select left", Select, "Extend the selection left one character"),
-    cmd!("select.right", "Select right", Select, "Extend the selection right one character"),
-    cmd!("select.up", "Select up", Select, "Extend the selection up one row"),
-    cmd!("select.down", "Select down", Select, "Extend the selection down one row"),
-    cmd!("select.word_left", "Select word left", Select, "Extend the selection to the previous word start"),
-    cmd!("select.word_right", "Select word right", Select, "Extend the selection to the next word end"),
-    cmd!("select.line_start", "Select to line start", Select, "Extend the selection to the start of the row"),
-    cmd!("select.line_end", "Select to line end", Select, "Extend the selection to the end of the row"),
-    cmd!("select.doc_start", "Select to document start", Select, "Extend the selection to the start of the document"),
-    cmd!("select.doc_end", "Select to document end", Select, "Extend the selection to the end of the document"),
-    cmd!("select.page_up", "Select page up", Select, "Extend the selection up a screenful"),
-    cmd!("select.page_down", "Select page down", Select, "Extend the selection down a screenful"),
-    cmd!("select.block_up", "Select block up", Select, "Extend the selection to the previous block start"),
-    cmd!("select.block_down", "Select block down", Select, "Extend the selection to the next block start"),
-    cmd!("select.all", "Select all", Select, "Select the whole document"),
-    cmd!("select.collapse", "Collapse selection", Select, "Collapse every selection to its caret"),
-    cmd!("select.block", "Select block", Select, "Select a block's whole content", block),
-    cmd!("edit.newline", "New line", Edit, "Break the line (in a list, start the next item)"),
-    cmd!("edit.soft_break", "Line break", Edit, "Break the line inside the block", outline),
+    cmd!(
+        "move.block_up",
+        "Block up",
+        Move,
+        "Move to the start of this block, then the one before"
+    ),
+    cmd!(
+        "move.block_down",
+        "Block down",
+        Move,
+        "Move to the start of the next block"
+    ),
+    cmd!(
+        "select.left",
+        "Select left",
+        Select,
+        "Extend the selection left one character"
+    ),
+    cmd!(
+        "select.right",
+        "Select right",
+        Select,
+        "Extend the selection right one character"
+    ),
+    cmd!(
+        "select.up",
+        "Select up",
+        Select,
+        "Extend the selection up one row"
+    ),
+    cmd!(
+        "select.down",
+        "Select down",
+        Select,
+        "Extend the selection down one row"
+    ),
+    cmd!(
+        "select.word_left",
+        "Select word left",
+        Select,
+        "Extend the selection to the previous word start"
+    ),
+    cmd!(
+        "select.word_right",
+        "Select word right",
+        Select,
+        "Extend the selection to the next word end"
+    ),
+    cmd!(
+        "select.line_start",
+        "Select to line start",
+        Select,
+        "Extend the selection to the start of the row"
+    ),
+    cmd!(
+        "select.line_end",
+        "Select to line end",
+        Select,
+        "Extend the selection to the end of the row"
+    ),
+    cmd!(
+        "select.doc_start",
+        "Select to document start",
+        Select,
+        "Extend the selection to the start of the document"
+    ),
+    cmd!(
+        "select.doc_end",
+        "Select to document end",
+        Select,
+        "Extend the selection to the end of the document"
+    ),
+    cmd!(
+        "select.page_up",
+        "Select page up",
+        Select,
+        "Extend the selection up a screenful"
+    ),
+    cmd!(
+        "select.page_down",
+        "Select page down",
+        Select,
+        "Extend the selection down a screenful"
+    ),
+    cmd!(
+        "select.block_up",
+        "Select block up",
+        Select,
+        "Extend the selection to the previous block start"
+    ),
+    cmd!(
+        "select.block_down",
+        "Select block down",
+        Select,
+        "Extend the selection to the next block start"
+    ),
+    cmd!(
+        "select.all",
+        "Select all",
+        Select,
+        "Select the whole document"
+    ),
+    cmd!(
+        "select.collapse",
+        "Collapse selection",
+        Select,
+        "Collapse every selection to its caret"
+    ),
+    cmd!(
+        "select.block",
+        "Select block",
+        Select,
+        "Select a block's whole content",
+        block
+    ),
+    cmd!(
+        "edit.newline",
+        "New line",
+        Edit,
+        "Break the line (in a list, start the next item)"
+    ),
+    cmd!(
+        "edit.soft_break",
+        "Line break",
+        Edit,
+        "Break the line inside the block",
+        outline
+    ),
     cmd!("edit.insert_tab", "Tab", Edit, "Insert a tab character"),
-    cmd!("edit.backspace", "Backspace", Edit, "Delete the character before the caret, or the selection"),
-    cmd!("edit.delete_forward", "Delete", Edit, "Delete the character after the caret, or the selection"),
-    cmd!("edit.delete_word", "Delete word", Edit, "Delete back to the previous word start"),
-    cmd!("edit.delete_word_forward", "Delete word forward", Edit, "Delete forward to the next word end"),
-    cmd!("edit.delete_to_line_start", "Delete to line start", Edit, "Delete back to the start of the row"),
-    cmd!("edit.delete_to_line_end", "Delete to line end", Edit, "Delete forward to the end of the row"),
-    cmd!("edit.kill_line", "Kill line", Edit, "Delete to the end of the line, or the line break when there"),
-    cmd!("structure.indent", "Indent", Structure, "Nest the block (or every selected block) one level deeper", outline),
-    cmd!("structure.outdent", "Outdent", Structure, "Un-nest the block (or every selected block) one level", outline),
-    cmd!("structure.move_up", "Move block up", Structure, "Swap the block and its children with the sibling above", outline),
-    cmd!("structure.move_down", "Move block down", Structure, "Swap the block and its children with the sibling below", outline),
+    cmd!(
+        "edit.backspace",
+        "Backspace",
+        Edit,
+        "Delete the character before the caret, or the selection"
+    ),
+    cmd!(
+        "edit.delete_forward",
+        "Delete",
+        Edit,
+        "Delete the character after the caret, or the selection"
+    ),
+    cmd!(
+        "edit.delete_word",
+        "Delete word",
+        Edit,
+        "Delete back to the previous word start"
+    ),
+    cmd!(
+        "edit.delete_word_forward",
+        "Delete word forward",
+        Edit,
+        "Delete forward to the next word end"
+    ),
+    cmd!(
+        "edit.delete_to_line_start",
+        "Delete to line start",
+        Edit,
+        "Delete back to the start of the row"
+    ),
+    cmd!(
+        "edit.delete_to_line_end",
+        "Delete to line end",
+        Edit,
+        "Delete forward to the end of the row"
+    ),
+    cmd!(
+        "edit.kill_line",
+        "Kill line",
+        Edit,
+        "Delete to the end of the line, or the line break when there"
+    ),
+    cmd!(
+        "structure.indent",
+        "Indent",
+        Structure,
+        "Nest the block (or every selected block) one level deeper",
+        outline
+    ),
+    cmd!(
+        "structure.outdent",
+        "Outdent",
+        Structure,
+        "Un-nest the block (or every selected block) one level",
+        outline
+    ),
+    cmd!(
+        "structure.move_up",
+        "Move block up",
+        Structure,
+        "Swap the block and its children with the sibling above",
+        outline
+    ),
+    cmd!(
+        "structure.move_down",
+        "Move block down",
+        Structure,
+        "Swap the block and its children with the sibling below",
+        outline
+    ),
     cmd!("clip.copy", "Copy", Clipboard, "Copy the selection"),
     cmd!("clip.cut", "Cut", Clipboard, "Cut the selection"),
-    cmd!("clip.paste", "Paste", Clipboard, "Paste (Markdown becomes blocks in an outline)"),
-    cmd!("clip.paste_plain", "Paste as plain text", Clipboard, "Paste as plain paragraphs, never list items"),
+    cmd!(
+        "clip.paste",
+        "Paste",
+        Clipboard,
+        "Paste (Markdown becomes blocks in an outline)"
+    ),
+    cmd!(
+        "clip.paste_plain",
+        "Paste as plain text",
+        Clipboard,
+        "Paste as plain paragraphs, never list items"
+    ),
     cmd!("history.undo", "Undo", History, "Undo the last step"),
     cmd!("history.redo", "Redo", History, "Redo the step undone"),
-    cmd!("view.fold", "Fold", View, "Hide a block's children in this view", block),
-    cmd!("view.unfold", "Unfold", View, "Show a folded block's children", block),
-    cmd!("view.fold_toggle", "Toggle fold", View, "Fold or unfold a block", block),
+    cmd!(
+        "view.fold",
+        "Fold",
+        View,
+        "Hide a block's children in this view",
+        block
+    ),
+    cmd!(
+        "view.unfold",
+        "Unfold",
+        View,
+        "Show a folded block's children",
+        block
+    ),
+    cmd!(
+        "view.fold_toggle",
+        "Toggle fold",
+        View,
+        "Fold or unfold a block",
+        block
+    ),
     cmd!("file.save", "Save", File, "Write the document to its file"),
-    cmd!("file.quit", "Quit", File, "Quit (a second time to discard unsaved changes)"),
+    cmd!(
+        "file.quit",
+        "Quit",
+        File,
+        "Quit (a second time to discard unsaved changes)"
+    ),
 ];
 
 /// Every editing command, in display order.
@@ -233,13 +483,28 @@ pub fn command_msg(id: &str, block: Option<MarkId>) -> Option<Msg> {
 
 macro_rules! bind {
     ($keys:literal, $cmd:literal) => {
-        Binding { keys: $keys, command: $cmd, platform: Platform::Any, outline: false }
+        Binding {
+            keys: $keys,
+            command: $cmd,
+            platform: Platform::Any,
+            outline: false,
+        }
     };
     ($keys:literal, $cmd:literal, mac) => {
-        Binding { keys: $keys, command: $cmd, platform: Platform::Mac, outline: false }
+        Binding {
+            keys: $keys,
+            command: $cmd,
+            platform: Platform::Mac,
+            outline: false,
+        }
     };
     ($keys:literal, $cmd:literal, outline) => {
-        Binding { keys: $keys, command: $cmd, platform: Platform::Any, outline: true }
+        Binding {
+            keys: $keys,
+            command: $cmd,
+            platform: Platform::Any,
+            outline: true,
+        }
     };
 }
 
@@ -350,10 +615,20 @@ const BINDINGS: &[Binding] = &[
 /// The default bindings: the plain keymap, and with `outline` an outline document's (its
 /// bindings replace a plain one on the same keys).
 pub fn default_keymap(outline: bool) -> Vec<Binding> {
-    let outline_keys: Vec<&str> = BINDINGS.iter().filter(|b| b.outline).map(|b| b.keys).collect();
+    let outline_keys: Vec<&str> = BINDINGS
+        .iter()
+        .filter(|b| b.outline)
+        .map(|b| b.keys)
+        .collect();
     BINDINGS
         .iter()
-        .filter(|b| if outline { b.outline || !outline_keys.contains(&b.keys) } else { !b.outline })
+        .filter(|b| {
+            if outline {
+                b.outline || !outline_keys.contains(&b.keys)
+            } else {
+                !b.outline
+            }
+        })
         .copied()
         .collect()
 }
@@ -393,7 +668,12 @@ pub fn key_notation(key: &Key) -> String {
         KeyCode::Esc => "esc".into(),
     };
     let mut s = String::from("<");
-    for (on, p) in [(mods.ctrl, "c-"), (mods.alt, "a-"), (mods.cmd, "d-"), (mods.shift, "s-")] {
+    for (on, p) in [
+        (mods.ctrl, "c-"),
+        (mods.alt, "a-"),
+        (mods.cmd, "d-"),
+        (mods.shift, "s-"),
+    ] {
         if on {
             s.push_str(p);
         }
@@ -440,8 +720,14 @@ pub(crate) fn lookup(outline: bool, key: &Key) -> Option<Msg> {
     }
     match key.code {
         KeyCode::Char(c) if !(key.mods.ctrl || key.mods.alt || key.mods.cmd) => {
-            let c = if key.mods.shift { c.to_uppercase().next().unwrap_or(c) } else { c };
-            Some(Msg::InsertText { text: c.to_string() })
+            let c = if key.mods.shift {
+                c.to_uppercase().next().unwrap_or(c)
+            } else {
+                c
+            };
+            Some(Msg::InsertText {
+                text: c.to_string(),
+            })
         }
         _ => None,
     }

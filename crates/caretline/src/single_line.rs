@@ -61,8 +61,13 @@ fn flatten_mapped(text: &str, left: Option<char>, right: Option<char>) -> (Strin
             i += 1;
         }
         let before = if run > 0 { Some(chars[run - 1]) } else { left };
-        let after = if i < chars.len() { Some(chars[i]) } else { right };
-        if matches!((before, after), (Some(b), Some(a)) if !b.is_whitespace() && !a.is_whitespace()) {
+        let after = if i < chars.len() {
+            Some(chars[i])
+        } else {
+            right
+        };
+        if matches!((before, after), (Some(b), Some(a)) if !b.is_whitespace() && !a.is_whitespace())
+        {
             out.push(' ');
             n += 1;
         }
@@ -84,7 +89,11 @@ pub(crate) fn around(old: &Rope, from: usize, to: usize) -> (Option<char>, Optio
 /// `txn` (against `old`) with every text it inserts flattened where it lands ([`flatten_at`]),
 /// and its selection moved to match. Unchanged when it inserts no line break.
 pub(crate) fn flatten_txn(old: &Rope, txn: Transaction) -> Transaction {
-    let breaks = txn.changes().changes().iter().any(|op| matches!(op, Operation::Insert(s) if has_break(s)));
+    let breaks = txn
+        .changes()
+        .changes()
+        .iter()
+        .any(|op| matches!(op, Operation::Insert(s) if has_break(s)));
     if !breaks {
         return txn;
     }
@@ -102,11 +111,14 @@ pub(crate) fn flatten_txn(old: &Rope, txn: Transaction) -> Transaction {
                 new_pos += n;
             }
             Operation::Delete(n) => {
-                open.get_or_insert((old_pos, old_pos, String::new(), new_pos)).1 += n;
+                open.get_or_insert((old_pos, old_pos, String::new(), new_pos))
+                    .1 += n;
                 old_pos += n;
             }
             Operation::Insert(s) => {
-                open.get_or_insert((old_pos, old_pos, String::new(), new_pos)).2.push_str(s);
+                open.get_or_insert((old_pos, old_pos, String::new(), new_pos))
+                    .2
+                    .push_str(s);
                 new_pos += s.chars().count();
             }
         }
@@ -140,7 +152,11 @@ pub(crate) fn flatten_txn(old: &Rope, txn: Transaction) -> Transaction {
         Some(sel) => {
             let ranges: SmallVec<[Range; 1]> = sel
                 .iter()
-                .map(|r| Range { anchor: place(r.anchor), head: place(r.head), old_visual_position: r.old_visual_position })
+                .map(|r| Range {
+                    anchor: place(r.anchor),
+                    head: place(r.head),
+                    old_visual_position: r.old_visual_position,
+                })
                 .collect();
             out.with_selection(Selection::new(ranges, sel.primary_index()))
         }

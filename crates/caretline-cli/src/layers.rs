@@ -11,11 +11,13 @@
 
 use std::collections::HashMap;
 
+use caretline::Frame;
 use caretline::helix::Tendril;
 use caretline::view::{Cell, Role};
-use caretline::Frame;
 use caretline_layers::kitty::{CellPx, Cells, Image, KittyState, Picture, Z, shape_key};
-use caretline_layers::{Anchor, Dir, Edge, Hint, Layers, Mode, Off, Plan, Planned, Rect, Renderer, Size, width};
+use caretline_layers::{
+    Anchor, Dir, Edge, Hint, Layers, Mode, Off, Plan, Planned, Rect, Renderer, Size, width,
+};
 use serde_json::Value;
 use tiny_skia::{FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform};
 use unicode_segmentation::UnicodeSegmentation;
@@ -93,7 +95,13 @@ impl Renderer for HintRenderer {
             return Size::new(0, 0);
         }
         let (title, lines) = hint_lines(data, inner);
-        let w = title.iter().chain(&lines).map(|l| str_width(l)).max().unwrap_or(0).min(inner);
+        let w = title
+            .iter()
+            .chain(&lines)
+            .map(|l| str_width(l))
+            .max()
+            .unwrap_or(0)
+            .min(inner);
         let h = lines.len() + title.is_some() as usize;
         Size::new(w as u16 + 4, h as u16 + 2)
     }
@@ -146,9 +154,17 @@ fn put(frame: &mut Frame, x: u16, y: u16, g: &str, r: Role) -> u16 {
     if end < fw && frame.cells[at(end)].symbol.is_empty() {
         frame.cells[at(end)].symbol = Tendril::from(" ");
     }
-    frame.cells[at(x)] = Cell { symbol: Tendril::from(g), role: r, char_idx: None };
+    frame.cells[at(x)] = Cell {
+        symbol: Tendril::from(g),
+        role: r,
+        char_idx: None,
+    };
     for cx in x + 1..end {
-        frame.cells[at(cx)] = Cell { symbol: Tendril::new(), role: r, char_idx: None };
+        frame.cells[at(cx)] = Cell {
+            symbol: Tendril::new(),
+            role: r,
+            char_idx: None,
+        };
     }
     w
 }
@@ -203,7 +219,10 @@ pub fn draw(frame: &mut Frame, plan: &Plan, layers: &Layers, surface: Surface) -
             .collect();
     }
     for l in &plan.layers {
-        let data = layers.get(&l.id).and_then(|x| x.content.as_ref()).map(|c| c.data.clone());
+        let data = layers
+            .get(&l.id)
+            .and_then(|x| x.content.as_ref())
+            .map(|c| c.data.clone());
         if cells {
             let ring = role(frame, "layer.ring");
             for r in &l.ring {
@@ -215,7 +234,13 @@ pub fn draw(frame: &mut Frame, plan: &Plan, layers: &Layers, surface: Surface) -
                 let arrow = role(frame, "layer.arrow");
                 let n = rt.steps.len();
                 for (k, s) in rt.steps.iter().enumerate() {
-                    put(frame, s.x, s.y, arrow_glyph(s.enter, s.leave, k + 1 == n), arrow);
+                    put(
+                        frame,
+                        s.x,
+                        s.y,
+                        arrow_glyph(s.enter, s.leave, k + 1 == n),
+                        arrow,
+                    );
                 }
             }
         }
@@ -227,7 +252,18 @@ pub fn draw(frame: &mut Frame, plan: &Plan, layers: &Layers, surface: Surface) -
         }
         if let (Some(c), Some(off)) = (l.chip, l.anchor.as_ref().and_then(|a| a.off)) {
             let chip = role(frame, "layer.chip");
-            put_str(frame, c.x, c.y, &format!(" {:<w$}", chip_label(off), w = c.w.saturating_sub(1) as usize), c.right(), chip);
+            put_str(
+                frame,
+                c.x,
+                c.y,
+                &format!(
+                    " {:<w$}",
+                    chip_label(off),
+                    w = c.w.saturating_sub(1) as usize
+                ),
+                c.right(),
+                chip,
+            );
         }
     }
     dim
@@ -247,17 +283,32 @@ pub fn status(frame: &mut Frame, y: u16, text: &str) {
 fn draw_strip(frame: &mut Frame, r: Rect, data: &Value) {
     let strip = role(frame, "layer.chip");
     let (title, lines) = hint_lines(data, usize::MAX / 2);
-    let text = title.into_iter().chain(lines).collect::<Vec<_>>().join(" · ");
+    let text = title
+        .into_iter()
+        .chain(lines)
+        .collect::<Vec<_>>()
+        .join(" · ");
     for x in r.x..r.right() {
         put(frame, x, r.y, " ", strip);
     }
-    put_str(frame, r.x + 1, r.y, &text, r.right().saturating_sub(1), strip);
+    put_str(
+        frame,
+        r.x + 1,
+        r.y,
+        &text,
+        r.right().saturating_sub(1),
+        strip,
+    );
 }
 
 fn draw_box(frame: &mut Frame, l: &Planned, r: Rect, data: &Value, surface: Surface) {
     let cells = surface == Surface::Cells;
     let (fill, border, title_role) = if cells {
-        (role(frame, "layer.callout"), role(frame, "layer.border"), role(frame, "layer.title"))
+        (
+            role(frame, "layer.callout"),
+            role(frame, "layer.border"),
+            role(frame, "layer.title"),
+        )
     } else {
         (Role::Text, Role::Text, role(frame, "layer.title.px"))
     };
@@ -319,7 +370,12 @@ fn paint(c: (u8, u8, u8), a: f32) -> Paint<'static> {
 }
 
 fn stroke(w: f32) -> Stroke {
-    Stroke { width: w, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Default::default() }
+    Stroke {
+        width: w,
+        line_cap: LineCap::Round,
+        line_join: LineJoin::Round,
+        ..Default::default()
+    }
 }
 
 fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
@@ -368,7 +424,10 @@ pub fn straight(pm: &Pixmap) -> Image {
 /// one row taller (for the shadow): a soft shadow, a rounded fill and a 1 px rim.
 pub fn raster_panel(w: u16, h: u16, cell: CellPx) -> Pixmap {
     let (cw, ch) = (cell.w as f32, cell.h as f32);
-    let (iw, ih) = ((w as u32 + 2) * cell.w as u32, (h as u32 + 1) * cell.h as u32);
+    let (iw, ih) = (
+        (w as u32 + 2) * cell.w as u32,
+        (h as u32 + 1) * cell.h as u32,
+    );
     let mut pm = Pixmap::new(iw.max(1), ih.max(1)).expect("a panel size");
     let (x, y) = (cw + cw * 0.15, ch * 0.12);
     let (pw, ph) = (w as f32 * cw - cw * 0.3, h as f32 * ch - ch * 0.24);
@@ -388,16 +447,29 @@ pub fn raster_panel(w: u16, h: u16, cell: CellPx) -> Pixmap {
         pm.fill_path(&p, &paint(PANEL, 0.97), FillRule::Winding, id, None);
     }
     if let Some(p) = rrect(x + 0.5, y + 0.5, pw - 1.0, ph - 1.0, rad - 0.5) {
-        pm.stroke_path(&p, &paint(ACCENT, 0.7), &stroke(1.0_f32.max(cw / 12.0)), id, None);
+        pm.stroke_path(
+            &p,
+            &paint(ACCENT, 0.7),
+            &stroke(1.0_f32.max(cw / 12.0)),
+            id,
+            None,
+        );
     }
     pm
 }
 
 /// An arrow through cell points (relative to the image's top-left cell): rounded bends,
 /// a filled head ending at `tip`, over a dark casing for contrast.
-pub fn raster_arrow(cols: u16, rows: u16, pts: &[(f32, f32)], tip: (f32, f32), cell: CellPx) -> Pixmap {
+pub fn raster_arrow(
+    cols: u16,
+    rows: u16,
+    pts: &[(f32, f32)],
+    tip: (f32, f32),
+    cell: CellPx,
+) -> Pixmap {
     let (cw, ch) = (cell.w as f32, cell.h as f32);
-    let mut pm = Pixmap::new(cols as u32 * cell.w as u32, rows as u32 * cell.h as u32).expect("an arrow size");
+    let mut pm = Pixmap::new(cols as u32 * cell.w as u32, rows as u32 * cell.h as u32)
+        .expect("an arrow size");
     let px = |p: (f32, f32)| (p.0 * cw, p.1 * ch);
     let mut all: Vec<(f32, f32)> = pts.iter().map(|&p| px(p)).collect();
     let tip = px(tip);
@@ -422,8 +494,14 @@ pub fn raster_arrow(cols: u16, rows: u16, pts: &[(f32, f32)], tip: (f32, f32), c
             let l1 = (p.0 - a.0).hypot(p.1 - a.1);
             let l2 = (c.0 - p.0).hypot(c.1 - p.1);
             let r = rad.min(l1 / 2.0).min(l2 / 2.0);
-            let b1 = (p.0 - (p.0 - a.0) / l1.max(0.001) * r, p.1 - (p.1 - a.1) / l1.max(0.001) * r);
-            let b2 = (p.0 + (c.0 - p.0) / l2.max(0.001) * r, p.1 + (c.1 - p.1) / l2.max(0.001) * r);
+            let b1 = (
+                p.0 - (p.0 - a.0) / l1.max(0.001) * r,
+                p.1 - (p.1 - a.1) / l1.max(0.001) * r,
+            );
+            let b2 = (
+                p.0 + (c.0 - p.0) / l2.max(0.001) * r,
+                p.1 + (c.1 - p.1) / l2.max(0.001) * r,
+            );
             pb.line_to(b1.0, b1.1);
             pb.quad_to(p.0, p.1, b2.0, b2.1);
         } else {
@@ -458,16 +536,25 @@ pub fn raster_arrow(cols: u16, rows: u16, pts: &[(f32, f32)], tip: (f32, f32), c
 /// side): a faint fill, a glow and an anti-aliased outline.
 pub fn raster_ring(cols: u16, rows: u16, rects: &[Rect], cell: CellPx) -> Pixmap {
     let (cw, ch) = (cell.w as f32, cell.h as f32);
-    let mut pm = Pixmap::new(cols as u32 * cell.w as u32, rows as u32 * cell.h as u32).expect("a ring size");
+    let mut pm =
+        Pixmap::new(cols as u32 * cell.w as u32, rows as u32 * cell.h as u32).expect("a ring size");
     let id = Transform::identity();
     let w = (ch / 14.0).max(1.2);
     for r in rects {
         let (x, y) = (r.x as f32 * cw - cw * 0.35, r.y as f32 * ch + ch * 0.04);
         let (pw, ph) = (r.w as f32 * cw + cw * 0.7, ch * 0.92);
-        let Some(path) = rrect(x, y, pw, ph, ch * 0.25) else { continue };
+        let Some(path) = rrect(x, y, pw, ph, ch * 0.25) else {
+            continue;
+        };
         pm.fill_path(&path, &paint(ACCENT, 0.10), FillRule::Winding, id, None);
         for k in (1..=3).rev() {
-            pm.stroke_path(&path, &paint(ACCENT, 0.08), &stroke(w + k as f32 * w * 1.6), id, None);
+            pm.stroke_path(
+                &path,
+                &paint(ACCENT, 0.08),
+                &stroke(w + k as f32 * w * 1.6),
+                id,
+                None,
+            );
         }
         pm.stroke_path(&path, &paint(ACCENT, 1.0), &stroke(w), id, None);
     }
@@ -480,7 +567,14 @@ pub fn raster_veil(cols: u16, rows: u16, holes: &[Rect], per: (u32, u32)) -> Pix
     let (vx, vy) = (per.0 as f32, per.1 as f32);
     let (w, h) = (cols as u32 * per.0, rows as u32 * per.1);
     let mut pm = Pixmap::new(w.max(1), h.max(1)).expect("a veil size");
-    let shade = |a: f32| [(6.0 * a) as u8, (8.0 * a) as u8, (14.0 * a) as u8, (a * 255.0) as u8];
+    let shade = |a: f32| {
+        [
+            (6.0 * a) as u8,
+            (8.0 * a) as u8,
+            (14.0 * a) as u8,
+            (a * 255.0) as u8,
+        ]
+    };
     let full = shade(0.58);
     for c in pm.data_mut().as_chunks_mut::<4>().0 {
         *c = full;
@@ -490,7 +584,12 @@ pub fn raster_veil(cols: u16, rows: u16, holes: &[Rect], per: (u32, u32)) -> Pix
         .iter()
         .map(|r| {
             let (x0, y0) = (r.x as f32 * vx, r.y as f32 * vy);
-            (x0 - vx * 0.2, y0 - vy * 0.1, x0 + r.w as f32 * vx + vx * 0.2, y0 + r.h as f32 * vy + vy * 0.1)
+            (
+                x0 - vx * 0.2,
+                y0 - vy * 0.1,
+                x0 + r.w as f32 * vx + vx * 0.2,
+                y0 + r.h as f32 * vy + vy * 0.1,
+            )
         })
         .collect();
     let data = pm.data_mut();
@@ -502,9 +601,13 @@ pub fn raster_veil(cols: u16, rows: u16, holes: &[Rect], per: (u32, u32)) -> Pix
         for y in y0..y1 {
             for x in x0..x1 {
                 let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-                let d = hs.iter().map(|&r| sd_rrect(fx, fy, r, rad)).fold(f32::MAX, f32::min);
+                let d = hs
+                    .iter()
+                    .map(|&r| sd_rrect(fx, fy, r, rad))
+                    .fold(f32::MAX, f32::min);
                 let i = ((y * w + x) * 4) as usize;
-                data[i..i + 4].copy_from_slice(&shade(0.58 * smoothstep(-feather * 0.3, feather, d)));
+                data[i..i + 4]
+                    .copy_from_slice(&shade(0.58 * smoothstep(-feather * 0.3, feather, d)));
             }
         }
     }
@@ -541,19 +644,41 @@ fn le(v: &[i64]) -> Vec<u8> {
 /// The pictures for a plan in pixels: per layer a panel under its words, then over the text
 /// its veil, arrow and ring. Pixels are rasterised only for shape keys the terminal doesn't
 /// hold. `area` is the text area (the veil stays inside it).
-pub fn pictures(plan: &Plan, cell: CellPx, area: Rect, kitty: &KittyState, rasters: &mut Rasters) -> Vec<Picture> {
+pub fn pictures(
+    plan: &Plan,
+    cell: CellPx,
+    area: Rect,
+    kitty: &KittyState,
+    rasters: &mut Rasters,
+) -> Vec<Picture> {
     let mut out = Vec::new();
     let cpx = le(&[cell.w as i64, cell.h as i64]);
-    let mut want = |layer: &str, part: &str, key: u64, z: Z, at: Cells, clip: Option<Rect>, make: &dyn Fn() -> Pixmap| {
+    let mut want = |layer: &str,
+                    part: &str,
+                    key: u64,
+                    z: Z,
+                    at: Cells,
+                    clip: Option<Rect>,
+                    make: &dyn Fn() -> Pixmap| {
         let image = (!kitty.holds(key, cell)).then(|| rasters.get(key, make));
-        out.push(Picture { layer: layer.into(), part: part.into(), key, z, at, clip, image });
+        out.push(Picture {
+            layer: layer.into(),
+            part: part.into(),
+            key,
+            z,
+            at,
+            clip,
+            image,
+        });
     };
     for l in &plan.layers {
         let id = l.id.as_str();
         if let (Some(r), Some(Mode::Box)) = (l.rect, l.mode) {
             let key = shape_key(&[RASTER, b"panel", &cpx, &le(&[r.w as i64, r.h as i64])]);
             let at = Cells::new(r.x as i32 - 1, r.y as i32, r.w + 2, r.h + 1);
-            want(id, "panel", key, Z::Below, at, None, &|| raster_panel(r.w, r.h, cell));
+            want(id, "panel", key, Z::Below, at, None, &|| {
+                raster_panel(r.w, r.h, cell)
+            });
         }
         if let Some(s) = plan.spots.iter().find(|s| s.layer == l.id) {
             let a = s.area.intersection(&area);
@@ -576,7 +701,9 @@ pub fn pictures(plan: &Plan, cell: CellPx, area: Rect, kitty: &KittyState, raste
                 let key = shape_key(&[RASTER, b"veil", &le(&k)]);
                 let (w, h3) = (a.w, (rows * 3) as u16);
                 let at = Cells::new(a.x as i32, y0, w, h3);
-                want(id, "veil", key, Z::Above, at, Some(a), &|| raster_veil(w, h3, &holes, per));
+                want(id, "veil", key, Z::Above, at, Some(a), &|| {
+                    raster_veil(w, h3, &holes, per)
+                });
             }
         }
         if let Some(rt) = &l.route
@@ -611,12 +738,18 @@ pub fn pictures(plan: &Plan, cell: CellPx, area: Rect, kitty: &KittyState, raste
             }
             let key = shape_key(&[RASTER, b"arrow", &cpx, &le(&k)]);
             let at = Cells::new(ox, oy, cols, rows);
-            want(id, "arrow", key, Z::Above, at, None, &|| raster_arrow(cols, rows, &pts, tip, cell));
+            want(id, "arrow", key, Z::Above, at, None, &|| {
+                raster_arrow(cols, rows, &pts, tip, cell)
+            });
         }
         if !l.ring.is_empty() {
             let b = Rect::bounds(&l.ring);
             let (ox, oy) = (b.x as i32 - 1, b.y as i32 - 1);
-            let rel: Vec<Rect> = l.ring.iter().map(|r| Rect::new((r.x as i32 - ox) as u16, (r.y as i32 - oy) as u16, r.w, r.h)).collect();
+            let rel: Vec<Rect> = l
+                .ring
+                .iter()
+                .map(|r| Rect::new((r.x as i32 - ox) as u16, (r.y as i32 - oy) as u16, r.w, r.h))
+                .collect();
             let (cols, rows) = (b.w + 2, b.h + 2);
             let mut k = vec![cols as i64, rows as i64];
             for r in &rel {
@@ -624,7 +757,9 @@ pub fn pictures(plan: &Plan, cell: CellPx, area: Rect, kitty: &KittyState, raste
             }
             let key = shape_key(&[RASTER, b"ring", &cpx, &le(&k)]);
             let at = Cells::new(ox, oy, cols, rows);
-            want(id, "ring", key, Z::Above, at, None, &|| raster_ring(cols, rows, &rel, cell));
+            want(id, "ring", key, Z::Above, at, None, &|| {
+                raster_ring(cols, rows, &rel, cell)
+            });
         }
     }
     out
@@ -650,25 +785,64 @@ mod tests {
             std::fs::write(&path, pm.encode_png().unwrap()).unwrap();
             return;
         }
-        let want = Pixmap::decode_png(&std::fs::read(&path).unwrap_or_else(|_| panic!("no golden {name}: run with CARETLINE_GOLDENS=update")))
-            .unwrap();
-        assert_eq!((want.width(), want.height()), (pm.width(), pm.height()), "{name}");
-        let worst = want.data().iter().zip(pm.data()).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
+        let want = Pixmap::decode_png(
+            &std::fs::read(&path)
+                .unwrap_or_else(|_| panic!("no golden {name}: run with CARETLINE_GOLDENS=update")),
+        )
+        .unwrap();
+        assert_eq!(
+            (want.width(), want.height()),
+            (pm.width(), pm.height()),
+            "{name}"
+        );
+        let worst = want
+            .data()
+            .iter()
+            .zip(pm.data())
+            .map(|(a, b)| a.abs_diff(*b))
+            .max()
+            .unwrap_or(0);
         assert!(worst <= 2, "{name}: a channel differs by {worst}");
     }
 
     #[test]
     fn png_goldens_at_a_pinned_cell_size() {
         png_golden("raster.panel.png", &raster_panel(20, 5, CELL));
-        png_golden("raster.arrow.png", &raster_arrow(6, 5, &[(4.5, 1.5), (4.5, 2.5), (1.5, 2.5)], (1.5, 3.95), CELL));
-        png_golden("raster.ring.png", &raster_ring(7, 3, &[Rect::new(1, 1, 5, 1)], CELL));
-        png_golden("raster.veil.png", &raster_veil(30, 18, &[Rect::new(4, 7, 5, 1), Rect::new(2, 9, 20, 4)], (2, 4)));
+        png_golden(
+            "raster.arrow.png",
+            &raster_arrow(
+                6,
+                5,
+                &[(4.5, 1.5), (4.5, 2.5), (1.5, 2.5)],
+                (1.5, 3.95),
+                CELL,
+            ),
+        );
+        png_golden(
+            "raster.ring.png",
+            &raster_ring(7, 3, &[Rect::new(1, 1, 5, 1)], CELL),
+        );
+        png_golden(
+            "raster.veil.png",
+            &raster_veil(
+                30,
+                18,
+                &[Rect::new(4, 7, 5, 1), Rect::new(2, 9, 20, 4)],
+                (2, 4),
+            ),
+        );
     }
 
     #[test]
     fn rasters_are_the_same_twice() {
-        assert_eq!(raster_panel(10, 4, CELL).data(), raster_panel(10, 4, CELL).data());
-        assert_eq!(raster_veil(10, 9, &[Rect::new(1, 4, 3, 1)], (2, 4)).data(), raster_veil(10, 9, &[Rect::new(1, 4, 3, 1)], (2, 4)).data());
+        assert_eq!(
+            raster_panel(10, 4, CELL).data(),
+            raster_panel(10, 4, CELL).data()
+        );
+        assert_eq!(
+            raster_veil(10, 9, &[Rect::new(1, 4, 3, 1)], (2, 4)).data(),
+            raster_veil(10, 9, &[Rect::new(1, 4, 3, 1)], (2, 4)).data()
+        );
     }
 
     #[test]

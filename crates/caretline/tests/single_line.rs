@@ -65,30 +65,65 @@ fn s02_enter_keeps_a_selection() {
 fn s03_pasted_lines_join_with_spaces() {
     // Before more text, the last break is a space too: a break never joins two words.
     let mut s = field("a ▮b");
-    send(&mut s, [Msg::Paste { text: Some("one\ntwo\nthree\n".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("one\ntwo\nthree\n".into()),
+        }],
+    );
     assert_eq!(show(&s), "a one two three ▮b");
     // At the end of the line, it is dropped.
     let mut s = field("x ▮");
-    send(&mut s, [Msg::Paste { text: Some("foo\n".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("foo\n".into()),
+        }],
+    );
     assert_eq!(show(&s), "x foo▮");
     // At the start of the line, a leading break too.
     let mut s = field("▮one");
-    send(&mut s, [Msg::Paste { text: Some("\nand\n".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("\nand\n".into()),
+        }],
+    );
     assert_eq!(show(&s), "and ▮one");
 }
 
 #[test]
 fn s04_crlf_counts_once() {
     let mut s = field("▮");
-    send(&mut s, [Msg::Paste { text: Some("x\r\ny\rz\r\n\r\n".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("x\r\ny\rz\r\n\r\n".into()),
+        }],
+    );
     assert_eq!(show(&s), "x y z▮");
-    send(&mut s, [Msg::InsertText { text: " p\r\nq".into() }]);
+    send(
+        &mut s,
+        [Msg::InsertText {
+            text: " p\r\nq".into(),
+        }],
+    );
     assert_eq!(show(&s), "x y z p q▮");
     // Blank lines inside: a run of breaks is one space.
-    send(&mut s, [Msg::InsertText { text: "\n\nr".into() }]);
+    send(
+        &mut s,
+        [Msg::InsertText {
+            text: "\n\nr".into(),
+        }],
+    );
     assert_eq!(show(&s), "x y z p q r▮");
     // Next to a space, a break adds none: no doubled spaces.
-    send(&mut s, [Msg::InsertText { text: " \ns\n ".into() }]);
+    send(
+        &mut s,
+        [Msg::InsertText {
+            text: " \ns\n ".into(),
+        }],
+    );
     assert_eq!(show(&s), "x y z p q r s ▮");
 }
 
@@ -96,12 +131,25 @@ fn s04_crlf_counts_once() {
 fn s05_pasting_only_line_breaks() {
     // At the end of the line: nothing.
     let mut s = field("ab▮");
-    send(&mut s, [Msg::Paste { text: Some("\r\n\n".into()) }, Msg::InsertText { text: "\n".into() }]);
+    send(
+        &mut s,
+        [
+            Msg::Paste {
+                text: Some("\r\n\n".into()),
+            },
+            Msg::InsertText { text: "\n".into() },
+        ],
+    );
     assert_eq!(show(&s), "ab▮");
     assert!(!s.doc.dirty);
     // Between two words: one space, over the selection like any paste.
     let mut s = field("a⟦b▮⟧c");
-    send(&mut s, [Msg::Paste { text: Some("\r\n\n".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("\r\n\n".into()),
+        }],
+    );
     assert_eq!(show(&s), "a ▮c");
     // Next to that space: nothing more.
     send(&mut s, [Msg::InsertText { text: "\n".into() }]);
@@ -112,7 +160,12 @@ fn s05_pasting_only_line_breaks() {
 fn s06_undo_and_redo_across_a_flattening_paste() {
     let mut s = field("say ▮");
     keys(&mut s, "hi<wait:2000>");
-    send(&mut s, [Msg::Paste { text: Some(" there\nfriend\n".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some(" there\nfriend\n".into()),
+        }],
+    );
     assert_eq!(show(&s), "say hi there friend▮");
     keys(&mut s, "<c-z>");
     assert_eq!(show(&s), "say hi▮");
@@ -129,7 +182,12 @@ fn s07_multi_cursor_typing_on_one_line() {
     s.view.selection = Selection::new([Range::point(1), Range::point(3)].into_iter().collect(), 0);
     keys(&mut s, "x<cr>y");
     assert_eq!(text(&s), "axybcxyd");
-    send(&mut s, [Msg::Paste { text: Some("1\n2\n".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("1\n2\n".into()),
+        }],
+    );
     assert_eq!(text(&s), "axy1 2 bcxy1 2 d");
     let carets: Vec<usize> = s.view.selection.iter().map(|r| r.head).collect();
     assert_eq!(carets, vec![7, 15]);
@@ -138,18 +196,27 @@ fn s07_multi_cursor_typing_on_one_line() {
 #[test]
 fn s08_a_hosts_edit_and_input_rule_are_flattened_too() {
     let mut s = field("ab▮");
-    send(&mut s, [Msg::Edit { changes: vec![(1, 1, "\nX\r\n".into())], join: false }]);
+    send(
+        &mut s,
+        [Msg::Edit {
+            changes: vec![(1, 1, "\nX\r\n".into())],
+            join: false,
+        }],
+    );
     assert_eq!(text(&s), "a X b");
     // An input rule that puts a line break in, with its own selection after it.
-    s.doc.set_host(Host::new().input_rule("test.lines", |ctx, msg| {
-        let Msg::InsertText { text } = msg else { return None };
-        let p = ctx.caret();
-        (text == "|").then(|| Edit {
-            changes: vec![(p, p, "1\r\n2".into())],
-            selection: Some(Selection::point(p + 4)),
-            ..Edit::default()
-        })
-    }));
+    s.doc
+        .set_host(Host::new().input_rule("test.lines", |ctx, msg| {
+            let Msg::InsertText { text } = msg else {
+                return None;
+            };
+            let p = ctx.caret();
+            (text == "|").then(|| Edit {
+                changes: vec![(p, p, "1\r\n2".into())],
+                selection: Some(Selection::point(p + 4)),
+                ..Edit::default()
+            })
+        }));
     keys(&mut s, "<end>|");
     assert_eq!(show(&s), "a X b1 2▮");
 }
@@ -161,14 +228,32 @@ fn s08_a_hosts_edit_and_input_rule_are_flattened_too() {
 fn s09_an_external_change_with_line_breaks_is_flattened_outside_undo() {
     let mut s = field("one▮");
     keys(&mut s, " two");
-    send(&mut s, [Msg::External { changes: vec![ExtChange::Replace { from: 0, to: 0, text: "zero\r\nand\n".into() }] }]);
+    send(
+        &mut s,
+        [Msg::External {
+            changes: vec![ExtChange::Replace {
+                from: 0,
+                to: 0,
+                text: "zero\r\nand\n".into(),
+            }],
+        }],
+    );
     // The break before "one" is a space: it never joins two words.
     assert_eq!(show(&s), "zero and one two▮");
     // Undo takes back only the local typing.
     keys(&mut s, "<c-z>");
     assert_eq!(show(&s), "zero and one▮");
     // A break put in at the end of the line is dropped.
-    send(&mut s, [Msg::External { changes: vec![ExtChange::Replace { from: 12, to: 12, text: "!\n".into() }] }]);
+    send(
+        &mut s,
+        [Msg::External {
+            changes: vec![ExtChange::Replace {
+                from: 12,
+                to: 12,
+                text: "!\n".into(),
+            }],
+        }],
+    );
     assert_eq!(text(&s), "zero and one!");
 
     // text.set: the whole new text is flattened, then diffed.
@@ -207,7 +292,15 @@ fn s11_turning_it_on_flattens_and_drops_an_undo_that_could_break_the_line() {
 
 #[test]
 fn s12_an_outline_document_is_never_one_line() {
-    let mut s = markdown::load("- one\n- two\n", None, Viewport { width: 30, height: 5 }, OutlineConfig::default());
+    let mut s = markdown::load(
+        "- one\n- two\n",
+        None,
+        Viewport {
+            width: 30,
+            height: 5,
+        },
+        OutlineConfig::default(),
+    );
     let before = text(&s);
     s.doc.config.single_line = true;
     s.sanitize();
@@ -273,7 +366,14 @@ fn s15_the_setting_serializes_only_when_on() {
 
 #[test]
 fn s16_over_the_protocol() {
-    let mut s = Session::new(State::new("", None, Viewport { width: 20, height: 1 }));
+    let mut s = Session::new(State::new(
+        "",
+        None,
+        Viewport {
+            width: 20,
+            height: 1,
+        },
+    ));
     let r = s.handle(
         &json!({"op": "state.set", "state": {"text": "a\nb", "config": {"single_line": true, "status_bar": false}}}).to_string(),
         None,
@@ -309,7 +409,14 @@ fn s17_random_sessions_never_break_the_line() {
     use rand::{Rng, SeedableRng};
     for seed in 0..8 {
         let mut rng = StdRng::seed_from_u64(seed);
-        let mut s = State::new(&gen::text(&mut rng), None, Viewport { width: 30, height: 3 });
+        let mut s = State::new(
+            &gen::text(&mut rng),
+            None,
+            Viewport {
+                width: 30,
+                height: 3,
+            },
+        );
         s.doc.config.single_line = true;
         s.sanitize();
         for step in 0..400 {
@@ -319,13 +426,22 @@ fn s17_random_sessions_never_break_the_line() {
             let msg = if rng.random_bool(0.05) {
                 let len = s.doc.text.len_chars();
                 let from = rng.random_range(0..=len);
-                Msg::External { changes: vec![ExtChange::Replace { from, to: from, text: gen::text(&mut rng) }] }
+                Msg::External {
+                    changes: vec![ExtChange::Replace {
+                        from,
+                        to: from,
+                        text: gen::text(&mut rng),
+                    }],
+                }
             } else {
                 gen::msg(&mut rng, &s)
             };
             update(&mut s, msg.clone());
             let t = text(&s);
-            assert!(!t.contains(['\n', '\r']), "seed {seed} step {step}: {msg:?} left {t:?}");
+            assert!(
+                !t.contains(['\n', '\r']),
+                "seed {seed} step {step}: {msg:?} left {t:?}"
+            );
         }
         // Undo all the way back never brings a line break back.
         while s.doc.history.current_revision() > 0 {

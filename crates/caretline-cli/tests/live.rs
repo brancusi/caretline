@@ -10,7 +10,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const ROWS: u16 = 12;
 const COLS: u16 = 60;
@@ -33,15 +33,30 @@ impl Drop for Pty {
 impl Pty {
     fn spawn(mut c: Command) -> Pty {
         let (mut m, mut s) = (0, 0);
-        let mut ws = libc::winsize { ws_row: ROWS, ws_col: COLS, ws_xpixel: 0, ws_ypixel: 0 };
+        let mut ws = libc::winsize {
+            ws_row: ROWS,
+            ws_col: COLS,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
         assert_eq!(
-            unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null_mut(), &mut ws) },
+            unsafe {
+                libc::openpty(
+                    &mut m,
+                    &mut s,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut ws,
+                )
+            },
             0
         );
         let slave = unsafe { OwnedFd::from_raw_fd(s) };
         c.env("TERM", "xterm-256color");
         let sfd = slave.as_raw_fd();
-        c.stdin(slave.try_clone().unwrap()).stdout(slave.try_clone().unwrap()).stderr(slave);
+        c.stdin(slave.try_clone().unwrap())
+            .stdout(slave.try_clone().unwrap())
+            .stderr(slave);
         unsafe {
             c.pre_exec(move || {
                 libc::setsid();
@@ -85,7 +100,10 @@ impl Pty {
             if ok(&s) {
                 return s;
             }
-            assert!(Instant::now() < deadline, "timed out waiting for {what}; screen:\n{s}");
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for {what}; screen:\n{s}"
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
     }
@@ -106,7 +124,10 @@ fn screen(out: &[u8], rows: usize, cols: usize) -> Vec<String> {
                         it.next();
                         if ('@'..='~').contains(&n) {
                             if n == 'H' {
-                                let mut p = params.trim_start_matches('?').split(';').map(|x| x.parse::<usize>().unwrap_or(1));
+                                let mut p = params
+                                    .trim_start_matches('?')
+                                    .split(';')
+                                    .map(|x| x.parse::<usize>().unwrap_or(1));
                                 r = p.next().unwrap_or(1).saturating_sub(1);
                                 c = p.next().unwrap_or(1).saturating_sub(1);
                             } else if n == 'J' && params == "2" {
@@ -149,7 +170,10 @@ impl Client {
     fn connect(path: &Path) -> Client {
         let s = UnixStream::connect(path).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        Client { w: s.try_clone().unwrap(), r: BufReader::new(s) }
+        Client {
+            w: s.try_clone().unwrap(),
+            r: BufReader::new(s),
+        }
     }
     fn line(&mut self) -> Value {
         let mut l = String::new();
@@ -191,15 +215,31 @@ fn a_running_editor_takes_pushed_state_and_messages() {
         .arg("--no-mouse")
         .env("TMPDIR", &dir);
     let mut pty = Pty::spawn(c);
-    pty.wait("the editor", |s| s.contains("first line") && s.contains("listening on"));
+    pty.wait("the editor", |s| {
+        s.contains("first line") && s.contains("listening on")
+    });
 
     // Discovery: the pid file names the socket, and send --pid / --latest find it.
     let pid = pty.child.id();
-    let info: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("caretline").join(format!("{pid}.json"))).unwrap()).unwrap();
+    let info: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("caretline").join(format!("{pid}.json"))).unwrap(),
+    )
+    .unwrap();
     assert_eq!(info["socket"], sock.to_str().unwrap());
-    let latest = bin().args(["send", "--latest", "hello"]).env("TMPDIR", &dir).output().unwrap();
-    assert!(String::from_utf8_lossy(&latest.stdout).contains("\"proto\":1"), "{latest:?}");
-    let by_pid = bin().args(["send", "--pid", &pid.to_string(), "state.get", "--raw"]).env("TMPDIR", &dir).output().unwrap();
+    let latest = bin()
+        .args(["send", "--latest", "hello"])
+        .env("TMPDIR", &dir)
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&latest.stdout).contains("\"proto\":1"),
+        "{latest:?}"
+    );
+    let by_pid = bin()
+        .args(["send", "--pid", &pid.to_string(), "state.get", "--raw"])
+        .env("TMPDIR", &dir)
+        .output()
+        .unwrap();
     assert!(String::from_utf8_lossy(&by_pid.stdout).contains("first line"));
 
     let mut client = Client::connect(&sock);
@@ -207,11 +247,15 @@ fn a_running_editor_takes_pushed_state_and_messages() {
     watcher.ask(json!({"op": "subscribe", "frame": {"format": "text"}}));
 
     // Pushed messages redraw the terminal at once.
-    let r = client.ask(json!({"id": 1, "op": "msgs", "msgs": [{"msg": "insert_text", "text": "PUSHED "}]}));
+    let r = client
+        .ask(json!({"id": 1, "op": "msgs", "msgs": [{"msg": "insert_text", "text": "PUSHED "}]}));
     let rev = r["result"]["rev"].as_u64().unwrap();
     pty.wait("the pushed text", |s| s.contains("PUSHED first line"));
     let ev = watcher.line();
-    assert_eq!((ev["rev"].as_u64(), ev["source"].as_str()), (Some(rev), Some("client")));
+    assert_eq!(
+        (ev["rev"].as_u64(), ev["source"].as_str()),
+        (Some(rev), Some("client"))
+    );
 
     // The local user's keys interleave with pushed ones in one order. The client wrote
     // through its own view, so the person's caret stayed before what it put in.
@@ -228,15 +272,24 @@ fn a_running_editor_takes_pushed_state_and_messages() {
     // A pushed save comes back as an effect and doesn't touch the file.
     let r = client.ask(json!({"op": "msgs", "msgs": [{"msg": "save"}]}));
     assert_eq!(r["result"]["effects"][0]["effect"], "write_file");
-    assert_eq!(std::fs::read_to_string(&doc).unwrap(), "first line\nsecond line\n");
+    assert_eq!(
+        std::fs::read_to_string(&doc).unwrap(),
+        "first line\nsecond line\n"
+    );
 
     // A whole state pushed in replaces the screen, keeping the terminal's size.
-    let mut st: Value = serde_json::from_str(&std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/wrapped-paragraph.state.json"),
-    ).unwrap()).unwrap();
+    let mut st: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/wrapped-paragraph.state.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     st["path"] = json!(doc.to_str().unwrap());
     client.ask(json!({"op": "state.set", "state": st}));
-    let screen = pty.wait("the pushed state", |s| !s.contains("PUSHED") && s.contains("doc.md"));
+    let screen = pty.wait("the pushed state", |s| {
+        !s.contains("PUSHED") && s.contains("doc.md")
+    });
     let got = client.ask(json!({"op": "state.get"}));
     let state = &got["result"]["state"];
     assert_eq!(state["text"], st["text"]);
@@ -253,16 +306,35 @@ fn a_running_editor_takes_pushed_state_and_messages() {
     }
 
     // The trace replays to the state the editor holds.
-    let replayed = bin().arg("--replay").arg(&trace).args(["--dump-state", "-"]).output().unwrap();
-    assert!(replayed.status.success(), "{}", String::from_utf8_lossy(&replayed.stderr));
+    let replayed = bin()
+        .arg("--replay")
+        .arg(&trace)
+        .args(["--dump-state", "-"])
+        .output()
+        .unwrap();
+    assert!(
+        replayed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&replayed.stderr)
+    );
     let replayed: Value = serde_json::from_slice(&replayed.stdout).unwrap();
     assert_eq!(&replayed, state);
     let r = client.ask(json!({"op": "trace.get", "all": true}));
-    let lines: Vec<String> = r["result"]["trace"].as_array().unwrap().iter().map(|l| l.to_string()).collect();
-    assert_eq!(lines.len(), std::fs::read_to_string(&trace).unwrap().lines().count());
+    let lines: Vec<String> = r["result"]["trace"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.to_string())
+        .collect();
+    assert_eq!(
+        lines.len(),
+        std::fs::read_to_string(&trace).unwrap().lines().count()
+    );
 
     // Pushed effects run only when asked: two quits (the first is armed by unsaved changes).
-    let r = client.ask(json!({"op": "msgs", "apply_effects": true, "msgs": [{"msg": "quit"}, {"msg": "quit"}]}));
+    let r = client.ask(
+        json!({"op": "msgs", "apply_effects": true, "msgs": [{"msg": "quit"}, {"msg": "quit"}]}),
+    );
     assert_eq!(r["result"]["executed"], true);
     let deadline = Instant::now() + Duration::from_secs(10);
     while pty.child.try_wait().unwrap().is_none() {
@@ -277,7 +349,12 @@ fn a_running_editor_takes_pushed_state_and_messages() {
 /// The view list's carets, by view id.
 fn carets(c: &mut Client) -> Vec<(u64, u64)> {
     let r = c.ask(json!({"op": "view.list"}));
-    r["result"]["views"].as_array().unwrap().iter().map(|v| (v["view"].as_u64().unwrap(), v["caret"].as_u64().unwrap())).collect()
+    r["result"]["views"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| (v["view"].as_u64().unwrap(), v["caret"].as_u64().unwrap()))
+        .collect()
 }
 
 #[test]
@@ -290,14 +367,25 @@ fn a_person_keeps_typing_while_a_client_pushes_text() {
     let sock = dir.join("ed.sock");
     let trace = dir.join("t.jsonl");
     let mut c = bin();
-    c.arg(&doc).arg("--listen").arg(&sock).arg("--trace").arg(&trace).arg("--no-mouse").env("TMPDIR", &dir);
+    c.arg(&doc)
+        .arg("--listen")
+        .arg(&sock)
+        .arg("--trace")
+        .arg(&trace)
+        .arg("--no-mouse")
+        .env("TMPDIR", &dir);
     let mut pty = Pty::spawn(c);
-    pty.wait("the editor", |s| s.contains("Hey there,") && s.contains("listening on"));
+    pty.wait("the editor", |s| {
+        s.contains("Hey there,") && s.contains("listening on")
+    });
     let mut client = Client::connect(&sock);
     pty.send(b"\x05"); // ctrl-e: the end of the line
     let deadline = Instant::now() + Duration::from_secs(10);
     while carets(&mut client)[0].1 != 11 {
-        assert!(Instant::now() < deadline, "the caret never reached the line's end");
+        assert!(
+            Instant::now() < deadline,
+            "the caret never reached the line's end"
+        );
         std::thread::sleep(Duration::from_millis(10));
     }
 
@@ -320,7 +408,10 @@ fn a_person_keeps_typing_while_a_client_pushes_text() {
             let at = match i % 4 {
                 0 | 1 => at,
                 2 => chars.len(),
-                _ => chars[at..].iter().position(|&c| c == '\n').map_or(chars.len(), |p| at + p + 1),
+                _ => chars[at..]
+                    .iter()
+                    .position(|&c| c == '\n')
+                    .map_or(chars.len(), |p| at + p + 1),
             };
             let note = format!("\n- note {i}");
             let r = if i % 2 == 0 {
@@ -349,12 +440,23 @@ fn a_person_keeps_typing_while_a_client_pushes_text() {
         if text.contains(&mine) {
             break text;
         }
-        assert!(Instant::now() < deadline, "the person's typing isn't contiguous: {mine:?} in {text:?}");
+        assert!(
+            Instant::now() < deadline,
+            "the person's typing isn't contiguous: {mine:?} in {text:?}"
+        );
         std::thread::sleep(Duration::from_millis(20));
     };
     let start = text.find(&mine).unwrap();
-    assert_eq!(carets(&mut client)[0].1 as usize, text[..start + mine.len()].chars().count(), "the person's caret is at the end of their typing");
-    assert_eq!(text.matches("- note").count(), pushes, "every push landed once");
+    assert_eq!(
+        carets(&mut client)[0].1 as usize,
+        text[..start + mine.len()].chars().count(),
+        "the person's caret is at the end of their typing"
+    );
+    assert_eq!(
+        text.matches("- note").count(),
+        pushes,
+        "every push landed once"
+    );
 
     // The person's undo takes back their typing and none of the pushes.
     let want = text.replacen(&mine, "Hey there, ", 1);
@@ -367,26 +469,51 @@ fn a_person_keeps_typing_while_a_client_pushes_text() {
         if got["result"]["state"]["text"] == json!(want) {
             break;
         }
-        assert!(Instant::now() < deadline, "undo: {} != {want:?}", got["result"]["state"]["text"]);
+        assert!(
+            Instant::now() < deadline,
+            "undo: {} != {want:?}",
+            got["result"]["state"]["text"]
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
 
     // The trace replays to the state the editor holds.
     let got = client.ask(json!({"op": "state.get"}));
-    let replayed = bin().arg("--replay").arg(&trace).args(["--dump-state", "-"]).output().unwrap();
-    assert!(replayed.status.success(), "{}", String::from_utf8_lossy(&replayed.stderr));
+    let replayed = bin()
+        .arg("--replay")
+        .arg(&trace)
+        .args(["--dump-state", "-"])
+        .output()
+        .unwrap();
+    assert!(
+        replayed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&replayed.stderr)
+    );
     let replayed: Value = serde_json::from_slice(&replayed.stdout).unwrap();
     assert_eq!(replayed, got["result"]["state"]);
 
     // caretline send set-text: one connection, its own view, the person's caret stays.
     let before = carets(&mut client)[0].1;
-    let cur = client.ask(json!({"op": "state.get", "history": false}))["result"]["state"]["text"].as_str().unwrap().to_string();
+    let cur = client.ask(json!({"op": "state.get", "history": false}))["result"]["state"]["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let file = dir.join("new.md");
     std::fs::write(&file, format!("{cur}tail from send\n")).unwrap();
-    let out = bin().args(["send", "--socket"]).arg(&sock).arg("set-text").arg(&file).output().unwrap();
+    let out = bin()
+        .args(["send", "--socket"])
+        .arg(&sock)
+        .arg("set-text")
+        .arg(&file)
+        .output()
+        .unwrap();
     assert!(out.status.success(), "{out:?}");
     let now = client.ask(json!({"op": "state.get", "history": false}));
-    assert_eq!(now["result"]["state"]["text"], json!(format!("{cur}tail from send\n")));
+    assert_eq!(
+        now["result"]["state"]["text"],
+        json!(format!("{cur}tail from send\n"))
+    );
     // Send's view closes with its connection: view 0 and this client's own are left.
     let deadline = Instant::now() + Duration::from_secs(10);
     while carets(&mut client).len() > 2 {

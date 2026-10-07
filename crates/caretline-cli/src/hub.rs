@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
-use caretline::protocol::{event_line, Change, Control, Executor, Subscription};
 use caretline::Session;
+use caretline::protocol::{Change, Control, Executor, Subscription, event_line};
 
 pub type ClientId = u64;
 
@@ -22,9 +22,17 @@ static NEXT_CLIENT: AtomicU64 = AtomicU64::new(1);
 
 /// One input to the server loop.
 pub enum Input {
-    Connect { client: ClientId, out: Sender<String> },
-    Line { client: ClientId, line: String },
-    Disconnect { client: ClientId },
+    Connect {
+        client: ClientId,
+        out: Sender<String>,
+    },
+    Line {
+        client: ClientId,
+        line: String,
+    },
+    Disconnect {
+        client: ClientId,
+    },
     /// A terminal event (the interactive editor only).
     Terminal(crossterm::event::Event),
     /// A terminal's reply to a query (the pixel probe, the cell size), read mid-session.
@@ -52,13 +60,27 @@ pub struct Hub {
 
 impl Hub {
     pub fn new(session: Session, trace: Option<File>) -> Hub {
-        let mut hub = Hub { session, clients: HashMap::new(), trace, traced: 0, clock: true, client_views: false };
+        let mut hub = Hub {
+            session,
+            clients: HashMap::new(),
+            trace,
+            traced: 0,
+            clock: true,
+            client_views: false,
+        };
         hub.flush_trace();
         hub
     }
 
     pub fn connect(&mut self, client: ClientId, out: Sender<String>) {
-        self.clients.insert(client, Client { out, sub: None, view: None });
+        self.clients.insert(
+            client,
+            Client {
+                out,
+                sub: None,
+                view: None,
+            },
+        );
     }
 
     /// Forgets a client, closing its own view; dropping its sender lets its writer finish and
@@ -66,10 +88,16 @@ impl Hub {
     pub fn disconnect(&mut self, client: ClientId) {
         let gone = self.clients.remove(&client);
         if let Some(v) = gone.and_then(|c| c.view)
-            && self.session.close_view(v) {
-                let change = Change { rev: self.session.rev(), msgs: Vec::new(), state_set: false, view: Some(v) };
-                self.changed(&change, "client");
-            }
+            && self.session.close_view(v)
+        {
+            let change = Change {
+                rev: self.session.rev(),
+                msgs: Vec::new(),
+                state_set: false,
+                view: Some(v),
+            };
+            self.changed(&change, "client");
+        }
     }
 
     pub fn has_clients(&self) -> bool {
@@ -77,7 +105,12 @@ impl Hub {
     }
 
     /// Answers one request from `client`, then notifies subscribers of any change.
-    pub fn request(&mut self, client: ClientId, line: &str, exec: Option<Executor<'_>>) -> Option<Change> {
+    pub fn request(
+        &mut self,
+        client: ClientId,
+        line: &str,
+        exec: Option<Executor<'_>>,
+    ) -> Option<Change> {
         if line.trim().is_empty() {
             return None;
         }
@@ -85,7 +118,9 @@ impl Hub {
         let handled = match self.client_views {
             true => {
                 let mut own = self.clients.get(&client).and_then(|c| c.view);
-                let handled = self.session.handle_client(line, exec, clock, Some(&mut own));
+                let handled = self
+                    .session
+                    .handle_client(line, exec, clock, Some(&mut own));
                 if let Some(c) = self.clients.get_mut(&client) {
                     c.view = own;
                 }
@@ -112,7 +147,9 @@ impl Hub {
         self.flush_trace();
         for c in self.clients.values() {
             if let Some(sub) = &c.sub {
-                let _ = c.out.send(event_line(&self.session, change, sub, Some(source)));
+                let _ = c
+                    .out
+                    .send(event_line(&self.session, change, sub, Some(source)));
             }
         }
     }
@@ -152,10 +189,18 @@ fn spawn_writer(mut w: impl Write + Send + 'static) -> (Sender<String>, thread::
     let (tx, rx) = mpsc::channel::<String>();
     let handle = thread::spawn(move || {
         while let Ok(line) = rx.recv() {
-            let mut ok = w.write_all(line.as_bytes()).and_then(|_| w.write_all(b"\n")).is_ok();
+            let mut ok = w
+                .write_all(line.as_bytes())
+                .and_then(|_| w.write_all(b"\n"))
+                .is_ok();
             while ok {
                 match rx.try_recv() {
-                    Ok(line) => ok = w.write_all(line.as_bytes()).and_then(|_| w.write_all(b"\n")).is_ok(),
+                    Ok(line) => {
+                        ok = w
+                            .write_all(line.as_bytes())
+                            .and_then(|_| w.write_all(b"\n"))
+                            .is_ok()
+                    }
                     Err(_) => break,
                 }
             }
@@ -310,7 +355,10 @@ pub fn listen(path: &Path, tx: Sender<Input>) -> Result<Listening, String> {
     check_socket_path(path)?;
     if path.exists() {
         if UnixStream::connect(path).is_ok() {
-            return Err(format!("{}: another server is listening there", path.display()));
+            return Err(format!(
+                "{}: another server is listening there",
+                path.display()
+            ));
         }
         let _ = std::fs::remove_file(path);
     }
@@ -319,11 +367,16 @@ pub fn listen(path: &Path, tx: Sender<Input>) -> Result<Listening, String> {
     thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
-            let Ok(write) = stream.try_clone() else { continue };
+            let Ok(write) = stream.try_clone() else {
+                continue;
+            };
             let _ = spawn_client(stream, write, &tx);
         }
     });
-    Ok(Listening { path: path.to_path_buf(), discovery: None })
+    Ok(Listening {
+        path: path.to_path_buf(),
+        discovery: None,
+    })
 }
 
 /// The headless server loop: answers requests until the input channel closes (or, for

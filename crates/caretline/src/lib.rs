@@ -44,6 +44,7 @@ macro_rules! setters {
 
 pub mod commands;
 pub mod diff;
+pub mod external;
 pub mod helix;
 pub mod host;
 pub mod keymap;
@@ -59,20 +60,26 @@ pub mod trace;
 pub mod update;
 pub mod view;
 pub mod views;
-pub mod external;
 
-pub use commands::{command_msg, commands, default_keymap, Binding, Category, CommandInfo, Platform};
-pub use host::{Ctx, Deco, Decoration, Edit, Host, MarkOp};
-pub use marks::{MarkAttrs, Mark, MarkId, Marks};
-pub use outline::{BlockInfo, Kind, NewBlock, Outline, OutlineConfig};
-pub use keymap::{keymap, keymap_for, outline_keymap, parse_keys, script_to_msgs, script_to_msgs_for, Key, KeyCode, Mods};
+pub use commands::{
+    command_msg, commands, default_keymap, Binding, Category, CommandInfo, Platform,
+};
 pub use external::ExtChange;
 /// A message's text changes ([`update_with_changes`]) and which side a mapped position keeps.
 pub use helix::{Assoc, ChangeSet};
-pub use msg::{By, Dir, Effect, Msg};
-pub use session::Session;
-pub use state::{Config, Document, ExternalUndo, Follow, Scroll, State, View, ViewConfig, Viewport};
-pub use update::{replay, update, update_with_changes};
-pub use views::{update_doc, update_doc_with_changes};
+pub use host::{Ctx, Deco, Decoration, Edit, Host, MarkOp};
+pub use keymap::{
+    keymap, keymap_for, outline_keymap, parse_keys, script_to_msgs, script_to_msgs_for, Key,
+    KeyCode, Mods,
+};
 pub use layout::OutlineLayout;
+pub use marks::{Mark, MarkAttrs, MarkId, Marks};
+pub use msg::{By, Dir, Effect, Msg};
+pub use outline::{BlockInfo, Kind, NewBlock, Outline, OutlineConfig};
+pub use session::Session;
+pub use state::{
+    Config, Document, ExternalUndo, Follow, Scroll, State, View, ViewConfig, Viewport,
+};
+pub use update::{replay, update, update_with_changes};
 pub use view::{view, Frame};
+pub use views::{update_doc, update_doc_with_changes};

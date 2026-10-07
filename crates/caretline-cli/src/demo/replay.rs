@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use caretline::trace::{apply_with_views, OnView, TraceLine, ViewOpen};
+use caretline::trace::{OnView, TraceLine, ViewOpen, apply_with_views};
 use caretline::{Frame, Msg, State, View};
 
 /// The longest pause a replay keeps, and the longest a whole replay takes.
@@ -58,8 +58,22 @@ impl Replay {
                 *d = d.mul_f64(k);
             }
         }
-        let total = lines.iter().filter(|l| matches!(l, TraceLine::Msg(_) | TraceLine::On(_))).count();
-        let mut r = Replay { lines, due, next: 0, state: None, views: Vec::new(), applied: 0, total, start: now, target: target.to_json(), pane_rows };
+        let total = lines
+            .iter()
+            .filter(|l| matches!(l, TraceLine::Msg(_) | TraceLine::On(_)))
+            .count();
+        let mut r = Replay {
+            lines,
+            due,
+            next: 0,
+            state: None,
+            views: Vec::new(),
+            applied: 0,
+            total,
+            start: now,
+            target: target.to_json(),
+            pane_rows,
+        };
         // The initial state shows at once.
         r.advance(now);
         r
@@ -119,16 +133,36 @@ impl Replay {
 
     /// Whether the replay landed on the state it started from.
     pub fn matches(&self) -> bool {
-        self.state.as_ref().is_some_and(|s| s.to_json() == self.target)
+        self.state
+            .as_ref()
+            .is_some_and(|s| s.to_json() == self.target)
     }
 
     /// The replayed editor, with a status line saying so.
     pub fn frame(&self) -> Frame {
         let Some(state) = &self.state else {
-            return caretline::view(&State::new("", None, caretline::Viewport { width: 80, height: 24 }));
+            return caretline::view(&State::new(
+                "",
+                None,
+                caretline::Viewport {
+                    width: 80,
+                    height: 24,
+                },
+            ));
         };
         let mut s = state.clone();
-        s.view.status = Some(format!("▶ replay {}/{} · any key stops", self.applied, self.total));
-        crate::runtime::compose_state(&s, &self.views, if self.views.is_empty() { 0 } else { self.pane_rows })
+        s.view.status = Some(format!(
+            "▶ replay {}/{} · any key stops",
+            self.applied, self.total
+        ));
+        crate::runtime::compose_state(
+            &s,
+            &self.views,
+            if self.views.is_empty() {
+                0
+            } else {
+                self.pane_rows
+            },
+        )
     }
 }

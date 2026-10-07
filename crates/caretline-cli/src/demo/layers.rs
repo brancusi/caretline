@@ -11,7 +11,8 @@ use std::time::Instant;
 use caretline::{Frame, Key, KeyCode, Msg};
 use caretline_layers::kitty::{KittyState, Options, TempFiles, Transport};
 use caretline_layers::{
-    Anchor, Content, FrameResolver, Grid, HINT, Layer, LayerOp, Layers, Limits, Renderers, Spotlight, apply, plan,
+    Anchor, Content, FrameResolver, Grid, HINT, Layer, LayerOp, Layers, Limits, Renderers,
+    Spotlight, apply, plan,
 };
 
 use crate::hub::Hub;
@@ -70,13 +71,20 @@ impl LayersDemo {
     /// whatever the text does.
     pub(crate) fn layers(&self, text: &str) -> Layers {
         let mut layers = Layers::default();
-        let Some(s) = text.find(SECTION) else { return layers };
-        let Some(w) = text[s..].find(WORD) else { return layers };
+        let Some(s) = text.find(SECTION) else {
+            return layers;
+        };
+        let Some(w) = text[s..].find(WORD) else {
+            return layers;
+        };
         let from = text[..s + w].chars().count();
-        let mut l = Layer::new(Anchor::Text { from, to: from + WORD.chars().count() })
-            .with_content(Content::hint(Some(TITLE), TEXT))
-            .with_arrow()
-            .with_ring();
+        let mut l = Layer::new(Anchor::Text {
+            from,
+            to: from + WORD.chars().count(),
+        })
+        .with_content(Content::hint(Some(TITLE), TEXT))
+        .with_arrow()
+        .with_ring();
         l.id = "hint".into();
         if self.spotlight {
             l.spotlight = Some(Spotlight::default());
@@ -97,7 +105,11 @@ impl LayersDemo {
         let renderers = Renderers::new().register(HINT, HintRenderer);
         let p = plan(&layers, &FrameResolver::new(frame), &grid, &renderers);
         let px = gfx.cell_px.filter(|_| self.pixels);
-        let surface = if px.is_some() { Surface::TextOnly } else { Surface::Cells };
+        let surface = if px.is_some() {
+            Surface::TextOnly
+        } else {
+            Surface::Cells
+        };
         let dim = layers::draw(frame, &p, &layers, surface);
         let bytes = match px {
             Some(cell) => {
@@ -106,9 +118,15 @@ impl LayersDemo {
                 let pics = layers::pictures(&p, cell, grid.area, &self.kitty, &mut self.rasters);
                 let file = self.kitty.options().transport == Transport::File;
                 let mut files = TmpFiles;
-                let out = self.kitty.frame(&p, &pics, cell, if file { Some(&mut files) } else { None });
+                let out =
+                    self.kitty
+                        .frame(&p, &pics, cell, if file { Some(&mut files) } else { None });
                 if !out.bytes.is_empty() {
-                    self.cost = Cost { bytes: out.bytes.len(), sent: (self.rasters.made - made) as usize, micros: t.elapsed().as_micros() };
+                    self.cost = Cost {
+                        bytes: out.bytes.len(),
+                        sent: (self.rasters.made - made) as usize,
+                        micros: t.elapsed().as_micros(),
+                    };
                 }
                 out.bytes
             }
@@ -120,21 +138,43 @@ impl LayersDemo {
 
     /// The demo's own status line, over the editor's.
     fn status(&self, frame: &mut Frame, gfx: &Gfx) {
-        let Some(y) = frame.height.checked_sub(1) else { return };
+        let Some(y) = frame.height.checked_sub(1) else {
+            return;
+        };
         let mode = match (gfx.cell_px, self.pixels) {
             (Some(c), true) => {
-                let via = if self.kitty.options().transport == Transport::File { "t=t" } else { "t=d" };
+                let via = if self.kitty.options().transport == Transport::File {
+                    "t=t"
+                } else {
+                    "t=d"
+                };
                 let last = if self.cost.bytes > 0 {
-                    format!(" · last {} B, {} raster, {:.1} ms", self.cost.bytes, self.cost.sent, self.cost.micros as f64 / 1e3)
+                    format!(
+                        " · last {} B, {} raster, {:.1} ms",
+                        self.cost.bytes,
+                        self.cost.sent,
+                        self.cost.micros as f64 / 1e3
+                    )
                 } else {
                     String::new()
                 };
                 format!("pixels {}×{} {via}{last} · p cells", c.w, c.h)
             }
             (Some(_), false) => "cells · p pixels".into(),
-            (None, _) => format!("cells ({})", if gfx.why.is_empty() { "no pixels" } else { &gfx.why }),
+            (None, _) => format!(
+                "cells ({})",
+                if gfx.why.is_empty() {
+                    "no pixels"
+                } else {
+                    &gfx.why
+                }
+            ),
         };
-        let spot = if self.spotlight { "s spotlight off" } else { "s spotlight" };
+        let spot = if self.spotlight {
+            "s spotlight off"
+        } else {
+            "s spotlight"
+        };
         let text = format!(" layers · {mode} · ↑↓ scroll · {spot} · q quit");
         layers::status(frame, y, &text);
     }
@@ -166,7 +206,10 @@ impl Demo for LayersDemo {
                     Transport::Direct => Transport::File,
                     Transport::File => Transport::Direct,
                 };
-                self.kitty.set_options(Options { transport, ..self.kitty.options() });
+                self.kitty.set_options(Options {
+                    transport,
+                    ..self.kitty.options()
+                });
                 // Send everything again the new way.
                 self.kitty.reset();
                 self.bump()
@@ -204,11 +247,25 @@ mod tests {
     use caretline_layers::kitty::CellPx;
 
     fn hub(w: u16, h: u16) -> Hub {
-        Hub::new(Session::new(super::super::layers_state(None, Viewport { width: w, height: h })), None)
+        Hub::new(
+            Session::new(super::super::layers_state(
+                None,
+                Viewport {
+                    width: w,
+                    height: h,
+                },
+            )),
+            None,
+        )
     }
 
     fn pixels(c: CellPx) -> Gfx {
-        Gfx { cell_px: Some(c), terminal: Some("ghostty 1.3.1".into()), why: String::new(), local: true }
+        Gfx {
+            cell_px: Some(c),
+            terminal: Some("ghostty 1.3.1".into()),
+            why: String::new(),
+            local: true,
+        }
     }
 
     fn frame(demo: &mut LayersDemo, hub: &Hub, gfx: &Gfx) -> (Frame, Decor) {
@@ -222,7 +279,13 @@ mod tests {
     }
 
     fn press(demo: &mut LayersDemo, hub: &mut Hub, code: KeyCode) {
-        demo.key(hub, &Key { code, mods: Default::default() });
+        demo.key(
+            hub,
+            &Key {
+                code,
+                mods: Default::default(),
+            },
+        );
     }
 
     #[test]
@@ -232,7 +295,11 @@ mod tests {
         let mut hub = hub(100, 30);
         let (f, d) = frame(&mut demo, &hub, &gfx);
         let first = text(&d.bytes);
-        assert_eq!(first.matches("a=t,").count(), 4, "panel, veil, arrow and ring");
+        assert_eq!(
+            first.matches("a=t,").count(),
+            4,
+            "panel, veil, arrow and ring"
+        );
         assert!(d.dim.is_empty(), "the veil dims, not the cells");
         // The box's cells hold its words and no border.
         let t = f.to_text();
@@ -242,11 +309,17 @@ mod tests {
         // A scroll: everything moves together, re-placed and re-cropped, no pixels.
         press(&mut demo, &mut hub, KeyCode::Down);
         let b = text(&frame(&mut demo, &hub, &gfx).1.bytes);
-        assert!(!b.is_empty() && !b.contains("a=t,") && !b.contains("a=d"), "{b}");
+        assert!(
+            !b.is_empty() && !b.contains("a=t,") && !b.contains("a=d"),
+            "{b}"
+        );
         // Spotlight off: the veil is deleted, nothing re-rasterised.
         press(&mut demo, &mut hub, KeyCode::Char('s'));
         let b = text(&frame(&mut demo, &hub, &gfx).1.bytes);
-        assert!(!b.contains("a=t,") && b.matches("a=d,d=I").count() == 1, "{b}");
+        assert!(
+            !b.contains("a=t,") && b.matches("a=d,d=I").count() == 1,
+            "{b}"
+        );
         // Cells: every image deleted; the box drawn in box glyphs.
         press(&mut demo, &mut hub, KeyCode::Char('p'));
         let (f, d) = frame(&mut demo, &hub, &gfx);
@@ -262,7 +335,13 @@ mod tests {
             let mut demo = LayersDemo::new();
             let mut hub = hub(90, 28);
             let mut all = Vec::new();
-            for k in [KeyCode::Down, KeyCode::Down, KeyCode::Char('s'), KeyCode::Up, KeyCode::Char('s')] {
+            for k in [
+                KeyCode::Down,
+                KeyCode::Down,
+                KeyCode::Char('s'),
+                KeyCode::Up,
+                KeyCode::Char('s'),
+            ] {
                 all.push(frame(&mut demo, &hub, &gfx).1.bytes);
                 press(&mut demo, &mut hub, k);
             }
@@ -278,7 +357,9 @@ mod tests {
     #[ignore]
     fn composite_png() {
         use tiny_skia::{Pixmap, PixmapPaint, Transform};
-        let Ok(out) = std::env::var("LAYERS_PNG") else { return };
+        let Ok(out) = std::env::var("LAYERS_PNG") else {
+            return;
+        };
         let cell = CellPx::new(8, 16);
         let mut demo = LayersDemo::new();
         let mut hub = hub(100, 30);
@@ -289,31 +370,71 @@ mod tests {
         let text = hub.session.state().doc.text.to_string();
         let layers = demo.layers(&text);
         let grid = Grid::from_frame(&f);
-        let p = plan(&layers, &FrameResolver::new(&f), &grid, &Renderers::new().register(HINT, HintRenderer));
+        let p = plan(
+            &layers,
+            &FrameResolver::new(&f),
+            &grid,
+            &Renderers::new().register(HINT, HintRenderer),
+        );
         layers::draw(&mut f, &p, &layers, Surface::TextOnly);
         let (w, h) = (f.width as u32 * 8, f.height as u32 * 16);
         let mut pm = Pixmap::new(w, h).unwrap();
         pm.fill(tiny_skia::Color::from_rgba8(18, 20, 26, 255));
-        let mut pics = layers::pictures(&p, cell, grid.area, &KittyState::default(), &mut Rasters::default());
+        let mut pics = layers::pictures(
+            &p,
+            cell,
+            grid.area,
+            &KittyState::default(),
+            &mut Rasters::default(),
+        );
         pics.sort_by_key(|p| p.z == caretline_layers::kitty::Z::Above);
         let draw = |pm: &mut Pixmap, pic: &caretline_layers::kitty::Picture| {
             let img = pic.image.as_ref().unwrap();
             let mut data = Vec::new();
             for c in img.rgba.chunks(4) {
                 let a = c[3] as u32;
-                data.extend_from_slice(&[(c[0] as u32 * a / 255) as u8, (c[1] as u32 * a / 255) as u8, (c[2] as u32 * a / 255) as u8, c[3]]);
+                data.extend_from_slice(&[
+                    (c[0] as u32 * a / 255) as u8,
+                    (c[1] as u32 * a / 255) as u8,
+                    (c[2] as u32 * a / 255) as u8,
+                    c[3],
+                ]);
             }
-            let src = Pixmap::from_vec(data, tiny_skia::IntSize::from_wh(img.w, img.h).unwrap()).unwrap();
+            let src =
+                Pixmap::from_vec(data, tiny_skia::IntSize::from_wh(img.w, img.h).unwrap()).unwrap();
             let sx = pic.at.w as f32 * 8.0 / img.w as f32;
             let sy = pic.at.h as f32 * 16.0 / img.h as f32;
-            let clip = pic.clip.unwrap_or(caretline_layers::Rect::new(0, 0, 100, 30));
+            let clip = pic
+                .clip
+                .unwrap_or(caretline_layers::Rect::new(0, 0, 100, 30));
             let mut mask = tiny_skia::Mask::new(w, h).unwrap();
-            let r = tiny_skia::Rect::from_xywh(clip.x as f32 * 8.0, clip.y as f32 * 16.0, clip.w as f32 * 8.0, clip.h as f32 * 16.0).unwrap();
-            mask.fill_path(&tiny_skia::PathBuilder::from_rect(r), tiny_skia::FillRule::Winding, false, Transform::identity());
-            let t = Transform::from_row(sx, 0.0, 0.0, sy, pic.at.x as f32 * 8.0, pic.at.y as f32 * 16.0);
+            let r = tiny_skia::Rect::from_xywh(
+                clip.x as f32 * 8.0,
+                clip.y as f32 * 16.0,
+                clip.w as f32 * 8.0,
+                clip.h as f32 * 16.0,
+            )
+            .unwrap();
+            mask.fill_path(
+                &tiny_skia::PathBuilder::from_rect(r),
+                tiny_skia::FillRule::Winding,
+                false,
+                Transform::identity(),
+            );
+            let t = Transform::from_row(
+                sx,
+                0.0,
+                0.0,
+                sy,
+                pic.at.x as f32 * 8.0,
+                pic.at.y as f32 * 16.0,
+            );
             pm.draw_pixmap(0, 0, src.as_ref(), &PixmapPaint::default(), t, Some(&mask));
         };
-        for pic in pics.iter().filter(|p| p.z == caretline_layers::kitty::Z::Below) {
+        for pic in pics
+            .iter()
+            .filter(|p| p.z == caretline_layers::kitty::Z::Below)
+        {
             draw(&mut pm, pic);
         }
         let mut glyph = tiny_skia::Paint::default();
@@ -321,12 +442,21 @@ mod tests {
         for y in 0..f.height {
             for x in 0..f.width {
                 if !f.cell(x, y).symbol.trim().is_empty() {
-                    let r = tiny_skia::Rect::from_xywh(x as f32 * 8.0 + 1.0, y as f32 * 16.0 + 5.0, 6.0, 8.0).unwrap();
+                    let r = tiny_skia::Rect::from_xywh(
+                        x as f32 * 8.0 + 1.0,
+                        y as f32 * 16.0 + 5.0,
+                        6.0,
+                        8.0,
+                    )
+                    .unwrap();
                     pm.fill_rect(r, &glyph, Transform::identity(), None);
                 }
             }
         }
-        for pic in pics.iter().filter(|p| p.z == caretline_layers::kitty::Z::Above) {
+        for pic in pics
+            .iter()
+            .filter(|p| p.z == caretline_layers::kitty::Z::Above)
+        {
             draw(&mut pm, pic);
         }
         pm.save_png(out).unwrap();
@@ -342,7 +472,10 @@ mod tests {
         let mut hub = hub(158, 37);
         let t = Instant::now();
         let first = frame(&mut demo, &hub, &gfx).1.bytes.len();
-        println!("first frame (raster + zlib + bytes): {first} B in {:.2} ms", t.elapsed().as_secs_f64() * 1e3);
+        println!(
+            "first frame (raster + zlib + bytes): {first} B in {:.2} ms",
+            t.elapsed().as_secs_f64() * 1e3
+        );
         let mut scroll = Vec::new();
         for _ in 0..6 {
             press(&mut demo, &mut hub, KeyCode::Down);
@@ -353,20 +486,38 @@ mod tests {
         println!("scroll steps (B, µs incl. plan and draw): {scroll:?}");
         let t = Instant::now();
         let same = frame(&mut demo, &hub, &gfx).1.bytes.len();
-        println!("unchanged frame: {same} B in {} µs", t.elapsed().as_micros());
+        println!(
+            "unchanged frame: {same} B in {} µs",
+            t.elapsed().as_micros()
+        );
         press(&mut demo, &mut hub, KeyCode::Char('s'));
-        println!("spotlight off: {} B", frame(&mut demo, &hub, &gfx).1.bytes.len());
+        println!(
+            "spotlight off: {} B",
+            frame(&mut demo, &hub, &gfx).1.bytes.len()
+        );
         press(&mut demo, &mut hub, KeyCode::Char('s'));
         let t = Instant::now();
         let b = frame(&mut demo, &hub, &gfx).1.bytes.len();
-        println!("spotlight on again (cached raster): {b} B in {:.2} ms", t.elapsed().as_secs_f64() * 1e3);
+        println!(
+            "spotlight on again (cached raster): {b} B in {:.2} ms",
+            t.elapsed().as_secs_f64() * 1e3
+        );
         let mut fresh = LayersDemo::new();
-        fresh.kitty.set_options(Options { transport: Transport::File, ..Options::default() });
+        fresh.kitty.set_options(Options {
+            transport: Transport::File,
+            ..Options::default()
+        });
         let t = Instant::now();
         let b = frame(&mut fresh, &hub, &gfx).1.bytes.len();
-        println!("first frame with t=t: {b} B in {:.2} ms", t.elapsed().as_secs_f64() * 1e3);
+        println!(
+            "first frame with t=t: {b} B in {:.2} ms",
+            t.elapsed().as_secs_f64() * 1e3
+        );
         for p in std::fs::read_dir(std::env::temp_dir()).unwrap().flatten() {
-            if p.file_name().to_string_lossy().starts_with("caretline-tty-graphics-protocol-") {
+            if p.file_name()
+                .to_string_lossy()
+                .starts_with("caretline-tty-graphics-protocol-")
+            {
                 let _ = std::fs::remove_file(p.path());
             }
         }

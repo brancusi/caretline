@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_caretline"))
@@ -67,8 +67,16 @@ fn serve_on_stdio_answers_every_request_in_order() {
     assert_eq!(ids, [1, 2, 3, 4, 5, 6, 7]);
     assert_eq!(out[0]["result"]["proto"], 1);
     assert_eq!(out[1]["result"]["rev"], 3);
-    assert_eq!(out[2]["result"]["effects"][0], json!({"effect": "clipboard_set", "text": "abc"}));
-    assert!(out[3]["result"]["frame"].as_str().unwrap().starts_with("abc\n"));
+    assert_eq!(
+        out[2]["result"]["effects"][0],
+        json!({"effect": "clipboard_set", "text": "abc"})
+    );
+    assert!(
+        out[3]["result"]["frame"]
+            .as_str()
+            .unwrap()
+            .starts_with("abc\n")
+    );
     assert_eq!(out[4]["error"]["kind"], "unknown_op");
     assert_eq!(out[5]["result"]["state"]["text"], "abc");
     assert_eq!(out[6]["result"]["trace"].as_array().unwrap().len(), 6);
@@ -81,7 +89,10 @@ fn serve_loads_a_file_and_never_writes_it() {
     std::fs::write(&doc, "on disk\n").unwrap();
     let out = serve_stdio(
         &[doc.to_str().unwrap()],
-        &[json!({"op": "keys", "keys": "X<c-s>"}), json!({"op": "state.get"})],
+        &[
+            json!({"op": "keys", "keys": "X<c-s>"}),
+            json!({"op": "state.get"}),
+        ],
     );
     assert_eq!(out[0]["result"]["effects"][0]["effect"], "write_file");
     assert_eq!(out[1]["result"]["state"]["text"], "Xon disk\n");
@@ -99,12 +110,20 @@ fn state_set_then_render_matches_snapshot_byte_for_byte() {
             continue;
         }
         let state: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let (w, h) = (state["viewport"]["width"].as_u64().unwrap(), state["viewport"]["height"].as_u64().unwrap());
+        let (w, h) = (
+            state["viewport"]["width"].as_u64().unwrap(),
+            state["viewport"]["height"].as_u64().unwrap(),
+        );
         for (format, size) in [("text", (w, h)), ("ansi", (w, h)), ("text", (w - 3, h + 2))] {
             let snap = bin()
                 .arg("--state")
                 .arg(&path)
-                .args(["--snapshot", &format!("{}x{}", size.0, size.1), "--format", format])
+                .args([
+                    "--snapshot",
+                    &format!("{}x{}", size.0, size.1),
+                    "--format",
+                    format,
+                ])
                 .output()
                 .unwrap();
             let want = String::from_utf8(snap.stdout).unwrap();
@@ -115,7 +134,11 @@ fn state_set_then_render_matches_snapshot_byte_for_byte() {
                     json!({"op": "render", "w": size.0, "h": size.1, "format": format}),
                 ],
             );
-            assert_eq!(out[1]["result"]["frame"].as_str().unwrap(), want, "{name} {format} {size:?}");
+            assert_eq!(
+                out[1]["result"]["frame"].as_str().unwrap(),
+                want,
+                "{name} {format} {size:?}"
+            );
         }
         seen += 1;
     }
@@ -147,7 +170,13 @@ fn wait_for_socket(path: &Path) {
 
 fn socket_server(name: &str, args: &[&str]) -> Server {
     let socket = scratch(name).join("s.sock");
-    let child = bin().args(["serve", "--no-clock"]).args(args).arg("--socket").arg(&socket).spawn().unwrap();
+    let child = bin()
+        .args(["serve", "--no-clock"])
+        .args(args)
+        .arg("--socket")
+        .arg(&socket)
+        .spawn()
+        .unwrap();
     wait_for_socket(&socket);
     Server { child, socket }
 }
@@ -161,7 +190,10 @@ impl Client {
     fn connect(path: &Path) -> Client {
         let s = UnixStream::connect(path).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        Client { w: s.try_clone().unwrap(), r: BufReader::new(s) }
+        Client {
+            w: s.try_clone().unwrap(),
+            r: BufReader::new(s),
+        }
     }
     fn send(&mut self, req: Value) {
         writeln!(self.w, "{req}").unwrap();
@@ -185,12 +217,25 @@ fn two_clients_share_one_session_and_see_each_others_changes() {
     let r = a.ask(json!({"id": "sub", "op": "subscribe", "frame": {"format": "text"}}));
     assert_eq!(r["result"]["subscribed"], true);
 
-    let r = b.ask(json!({"id": 1, "op": "msgs", "msgs": [{"msg": "insert_text", "text": "from b"}]}));
+    let r =
+        b.ask(json!({"id": 1, "op": "msgs", "msgs": [{"msg": "insert_text", "text": "from b"}]}));
     assert_eq!(r["result"]["rev"], 1);
     let ev = a.line();
-    assert_eq!((ev["event"].as_str(), ev["rev"].as_u64(), ev["source"].as_str()), (Some("state"), Some(1), Some("client")));
+    assert_eq!(
+        (
+            ev["event"].as_str(),
+            ev["rev"].as_u64(),
+            ev["source"].as_str()
+        ),
+        (Some("state"), Some(1), Some("client"))
+    );
     assert_eq!(ev["msgs"][0]["text"], "from b");
-    assert!(ev["frame"]["frame"].as_str().unwrap().starts_with("from b\n"));
+    assert!(
+        ev["frame"]["frame"]
+            .as_str()
+            .unwrap()
+            .starts_with("from b\n")
+    );
 
     // a's own change: its response comes first, then its event.
     let r = a.ask(json!({"id": 2, "op": "keys", "keys": "!"}));
@@ -233,7 +278,11 @@ fn send_talks_to_a_socket() {
     let server = socket_server("send", &["--size", "20x3"]);
     let sock = server.socket.to_str().unwrap();
     let send = |args: &[&str]| {
-        let out = bin().args(["send", "--socket", sock]).args(args).output().unwrap();
+        let out = bin()
+            .args(["send", "--socket", sock])
+            .args(args)
+            .output()
+            .unwrap();
         (out.status.success(), String::from_utf8(out.stdout).unwrap())
     };
     let (ok, out) = send(&["keys", "hi<cr>there"]);
@@ -248,7 +297,11 @@ fn send_talks_to_a_socket() {
 
     // set-state from a file, and raw JSON requests from stdin.
     let file = server.socket.with_file_name("s.json");
-    std::fs::write(&file, std::fs::read_to_string(fixtures().join("emoji-line.state.json")).unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        std::fs::read_to_string(fixtures().join("emoji-line.state.json")).unwrap(),
+    )
+    .unwrap();
     let (ok, _) = send(&["set-state", file.to_str().unwrap()]);
     assert!(ok);
     let mut child = bin()
@@ -257,10 +310,24 @@ fn send_talks_to_a_socket() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    writeln!(child.stdin.as_mut().unwrap(), "{}", json!({"id": 1, "op": "hello"})).unwrap();
-    writeln!(child.stdin.as_mut().unwrap(), "{}", json!({"id": 2, "op": "state.get"})).unwrap();
+    writeln!(
+        child.stdin.as_mut().unwrap(),
+        "{}",
+        json!({"id": 1, "op": "hello"})
+    )
+    .unwrap();
+    writeln!(
+        child.stdin.as_mut().unwrap(),
+        "{}",
+        json!({"id": 2, "op": "state.get"})
+    )
+    .unwrap();
     let out = child.wait_with_output().unwrap();
-    let lines: Vec<Value> = String::from_utf8(out.stdout).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let lines: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[1]["result"]["state"]["path"], "emoji.md");
 
@@ -272,13 +339,28 @@ fn send_talks_to_a_socket() {
 
 #[test]
 fn serve_ticks_to_real_time_unless_told_not_to() {
-    let mut child = bin().arg("serve").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
-    writeln!(child.stdin.as_mut().unwrap(), "{}", json!({"op": "keys", "keys": "a"})).unwrap();
+    let mut child = bin()
+        .arg("serve")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(
+        child.stdin.as_mut().unwrap(),
+        "{}",
+        json!({"op": "keys", "keys": "a"})
+    )
+    .unwrap();
     drop(child.stdin.take());
     let out = child.wait_with_output().unwrap();
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
-    let tick = v["result"]["msgs"][0]["now_ms"].as_u64().expect("a tick first");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let tick = v["result"]["msgs"][0]["now_ms"]
+        .as_u64()
+        .expect("a tick first");
     assert!(now - tick < 60_000);
 }
 
@@ -300,7 +382,11 @@ fn a_socket_path_too_long_is_a_clear_error() {
 fn a_killed_server_removes_its_socket() {
     for sig in [libc::SIGTERM, libc::SIGINT] {
         let socket = scratch(&format!("sig{sig}")).join("s.sock");
-        let mut child = bin().args(["serve", "--socket"]).arg(&socket).spawn().unwrap();
+        let mut child = bin()
+            .args(["serve", "--socket"])
+            .arg(&socket)
+            .spawn()
+            .unwrap();
         wait_for_socket(&socket);
         unsafe { libc::kill(child.id() as i32, sig) };
         child.wait().unwrap();

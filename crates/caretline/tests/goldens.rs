@@ -46,12 +46,20 @@ fn e06_caret_back_on_anchor_means_no_selection() {
 
 #[test]
 fn e07_collapse_never_jumps_rows() {
-    golden("First line\nSec⟦ond li▮⟧ne", "<left>", "First line\nSec▮ond line");
+    golden(
+        "First line\nSec⟦ond li▮⟧ne",
+        "<left>",
+        "First line\nSec▮ond line",
+    );
 }
 
 #[test]
 fn e08_up_with_selection_starts_from_its_start() {
-    golden("Line one\nLine ⟦two and▮⟧ more", "<up>", "Line ▮one\nLine two and more");
+    golden(
+        "Line one\nLine ⟦two and▮⟧ more",
+        "<up>",
+        "Line ▮one\nLine two and more",
+    );
 }
 
 #[test]
@@ -78,14 +86,28 @@ fn e12_escape_collapses_to_the_caret() {
 #[test]
 fn e13_shift_click_keeps_the_anchor() {
     let mut s = state("Hello ⟦wor▮⟧ld");
-    send(&mut s, [Msg::Click { col: 8, row: 0, extend: true }]);
+    send(
+        &mut s,
+        [Msg::Click {
+            col: 8,
+            row: 0,
+            extend: true,
+        }],
+    );
     assert_eq!(show(&s), "Hello ⟦wo▮⟧rld");
 }
 
 #[test]
 fn e14_click_places_the_caret() {
     let mut s = state("⟦Hello▮⟧ world");
-    send(&mut s, [Msg::Click { col: 9, row: 0, extend: false }]);
+    send(
+        &mut s,
+        [Msg::Click {
+            col: 9,
+            row: 0,
+            extend: false,
+        }],
+    );
     assert_eq!(show(&s), "Hello wor▮ld");
 }
 
@@ -246,7 +268,12 @@ fn e38_paste_replaces_the_selection() {
 #[test]
 fn e39_multi_line_paste_is_one_step() {
     let mut s = state("▮");
-    send(&mut s, [Msg::Paste { text: Some("- a\n- b".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("- a\n- b".into()),
+        }],
+    );
     assert_eq!(show(&s), "- a\n- b▮");
     keys(&mut s, "<c-z>");
     assert_eq!(show(&s), "▮");
@@ -370,7 +397,10 @@ fn saving_marks_clean_and_editing_marks_dirty() {
     let fx = keys(&mut s, "<c-s>");
     assert_eq!(
         fx,
-        vec![Effect::WriteFile { path: "test.md".into(), text: "abc".into() }]
+        vec![Effect::WriteFile {
+            path: "test.md".into(),
+            text: "abc".into()
+        }]
     );
     send(&mut s, [Msg::Saved]);
     assert!(!s.doc.dirty);
@@ -426,7 +456,12 @@ fn crlf_documents_stay_crlf() {
     // A CRLF is one grapheme: one backspace removes both characters.
     keys(&mut s, "<bs>");
     assert_eq!(s.doc.text.to_string(), "a\r\nb");
-    send(&mut s, [Msg::Paste { text: Some("x\ny".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("x\ny".into()),
+        }],
+    );
     assert_eq!(s.doc.text.to_string(), "ax\r\ny\r\nb");
 }
 
@@ -454,10 +489,22 @@ fn tab_inserts_a_tab_and_renders_to_the_stop() {
 #[test]
 fn word_motion_moves_by_words_skipping_spaces_and_punctuation() {
     golden("▮Hello, wide world!", "<a-right>", "Hello▮, wide world!");
-    golden("▮Hello, wide world!", "<a-right><a-right>", "Hello, wide▮ world!");
-    golden("▮Hello, wide world!", "<a-right><a-right><a-right><a-right>", "Hello, wide world!▮");
+    golden(
+        "▮Hello, wide world!",
+        "<a-right><a-right>",
+        "Hello, wide▮ world!",
+    );
+    golden(
+        "▮Hello, wide world!",
+        "<a-right><a-right><a-right><a-right>",
+        "Hello, wide world!▮",
+    );
     golden("Hello, wide world!▮", "<a-left>", "Hello, wide ▮world!");
-    golden("Hello, wide world!▮", "<a-left><a-left><a-left>", "▮Hello, wide world!");
+    golden(
+        "Hello, wide world!▮",
+        "<a-left><a-left><a-left>",
+        "▮Hello, wide world!",
+    );
     golden("snake_case wo▮rd", "<a-left><a-left>", "▮snake_case word");
     // Emacs twins.
     golden("one ▮two", "<a-f>", "one two▮");
@@ -513,7 +560,12 @@ fn wide_characters_take_two_columns() {
 #[test]
 fn emoji_and_cjk_render_with_the_caret_on_the_right_cell() {
     let mut s = state_wh("▮", 20, 3);
-    send(&mut s, [Msg::InsertText { text: "a👍🏽漢e\u{301}".into() }]);
+    send(
+        &mut s,
+        [Msg::InsertText {
+            text: "a👍🏽漢e\u{301}".into(),
+        }],
+    );
     assert_eq!(frame(&s).lines().next().unwrap(), "a👍🏽漢e\u{301}");
     // a(1) + emoji(2) + wide(2) + accented e(1).
     assert_eq!(cursor(&s), Some((6, 0)));
@@ -523,7 +575,12 @@ fn emoji_and_cjk_render_with_the_caret_on_the_right_cell() {
 fn a_keycap_emoji_takes_two_cells() {
     // `1️⃣` starts with an ASCII digit but is an emoji (2 cells), as terminals draw it.
     let mut s = state_wh("▮", 20, 3);
-    send(&mut s, [Msg::InsertText { text: "a1\u{fe0f}\u{20e3}b".into() }]);
+    send(
+        &mut s,
+        [Msg::InsertText {
+            text: "a1\u{fe0f}\u{20e3}b".into(),
+        }],
+    );
     assert_eq!(cursor(&s), Some((4, 0)));
     golden("a▮1\u{fe0f}\u{20e3}b", "<right>", "a1\u{fe0f}\u{20e3}▮b");
 }
@@ -555,19 +612,37 @@ fn wrapped_paragraph_frame() {
 fn arrows_across_wrapped_rows_keep_the_goal_column() {
     let mut s = wrapped("aaaa bbbb cc▮cc dddd eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll");
     keys(&mut s, "<down>");
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd eeee ffff gg▮gg\nxy\nhhhh iiii jjjj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd eeee ffff gg▮gg\nxy\nhhhh iiii jjjj kkkk llll"
+    );
     assert_eq!(cursor(&s), Some((12, 1)));
     keys(&mut s, "<down>");
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd eeee ffff gggg\nxy▮\nhhhh iiii jjjj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd eeee ffff gggg\nxy▮\nhhhh iiii jjjj kkkk llll"
+    );
     keys(&mut s, "<down>");
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii jj▮jj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii jj▮jj kkkk llll"
+    );
     keys(&mut s, "<down>");
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll▮");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll▮"
+    );
     keys(&mut s, "<up><up><up>");
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd eeee ffff gg▮gg\nxy\nhhhh iiii jjjj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd eeee ffff gg▮gg\nxy\nhhhh iiii jjjj kkkk llll"
+    );
     // A horizontal move resets the goal column.
     keys(&mut s, "<left><down><down>");
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii j▮jjj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii j▮jjj kkkk llll"
+    );
 }
 
 #[test]
@@ -575,9 +650,16 @@ fn logical_line_motion_ignores_wrapping() {
     let mut s = wrapped("aaaa bbbb cc▮cc dddd eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll");
     send(
         &mut s,
-        [Msg::Move { dir: caretline::Dir::Forward, by: caretline::By::Line, extend: false }],
+        [Msg::Move {
+            dir: caretline::Dir::Forward,
+            by: caretline::By::Line,
+            extend: false,
+        }],
     );
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd eeee ffff gggg\nxy▮\nhhhh iiii jjjj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd eeee ffff gggg\nxy▮\nhhhh iiii jjjj kkkk llll"
+    );
 }
 
 #[test]
@@ -585,18 +667,30 @@ fn home_and_end_work_on_visual_rows() {
     // On the second row of the wrapped line.
     let mut s = wrapped("aaaa bbbb cccc dddd eeee ff▮ff gggg\nxy\nhhhh iiii jjjj kkkk llll");
     keys(&mut s, "<home>");
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd ▮eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd ▮eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll"
+    );
     assert_eq!(cursor(&s), Some((0, 1)));
     keys(&mut s, "<end>");
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd eeee ffff gggg▮\nxy\nhhhh iiii jjjj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd eeee ffff gggg▮\nxy\nhhhh iiii jjjj kkkk llll"
+    );
     // On the first row, End stops where the row wraps (before the wrapping space), so the
     // caret stays on that row.
     let mut s = wrapped("aaaa bb▮bb cccc dddd eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll");
     keys(&mut s, "<end>");
-    assert_eq!(show(&s), "aaaa bbbb cccc dddd▮ eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "aaaa bbbb cccc dddd▮ eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll"
+    );
     assert_eq!(cursor(&s), Some((19, 0)));
     keys(&mut s, "<home>");
-    assert_eq!(show(&s), "▮aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll");
+    assert_eq!(
+        show(&s),
+        "▮aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii jjjj kkkk llll"
+    );
     // The Cmd and Ctrl twins.
     keys(&mut s, "<d-right>");
     assert_eq!(cursor(&s), Some((19, 0)));
@@ -616,7 +710,10 @@ fn delete_to_row_start_on_a_wrapped_row() {
 #[test]
 fn wrapped_continuation_rows_keep_the_indent() {
     let s = state_wh("▮  - item one two three four five six", 20, 4);
-    assert_eq!(frame(&s), "  - item one two\n  three four five\n  six\n test.md        1:1\n");
+    assert_eq!(
+        frame(&s),
+        "  - item one two\n  three four five\n  six\n test.md        1:1\n"
+    );
 }
 
 #[test]
@@ -634,7 +731,12 @@ fn narrow_viewports_turn_wrapping_off_and_scroll_sideways() {
 #[test]
 fn paste_of_multi_line_text_at_the_caret() {
     let mut s = state("x▮y");
-    send(&mut s, [Msg::Paste { text: Some("one\ntwo\nthree".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("one\ntwo\nthree".into()),
+        }],
+    );
     assert_eq!(show(&s), "xone\ntwo\nthree▮y");
     keys(&mut s, "<c-z>");
     assert_eq!(show(&s), "x▮y");
@@ -645,7 +747,12 @@ fn paste_of_multi_line_text_at_the_caret() {
 #[test]
 fn paste_normalizes_line_endings() {
     let mut s = state("▮");
-    send(&mut s, [Msg::Paste { text: Some("a\r\nb\rc".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("a\r\nb\rc".into()),
+        }],
+    );
     assert_eq!(show(&s), "a\nb\nc▮");
 }
 
@@ -653,12 +760,19 @@ fn paste_normalizes_line_endings() {
 // Scrolling and pages
 
 fn numbered(n: usize) -> String {
-    (1..=n).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n")
+    (1..=n)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[test]
 fn page_down_moves_a_screenful_and_keeps_the_column() {
-    let mut s = state_wh(&format!("line▮ 1\n{}", &numbered(60)["line 1\n".len()..]), 20, 11);
+    let mut s = state_wh(
+        &format!("line▮ 1\n{}", &numbered(60)["line 1\n".len()..]),
+        20,
+        11,
+    );
     keys(&mut s, "<pgdn>");
     assert_eq!(s.doc.text.char_to_line(s.caret()), 10);
     assert_eq!(cursor(&s).map(|c| c.0), Some(4));
@@ -674,10 +788,20 @@ fn a_page_keeps_the_overlap_on_screen() {
     let mut s = state_wh(&numbered(60).replacen("line 5", "▮line 5", 1), 20, 11);
     s.view.config.page_overlap = 2;
     keys(&mut s, "<pgdn>");
-    assert_eq!(s.doc.text.char_to_line(s.caret()), 12, "the caret moved eight rows");
-    assert_eq!(s.view.scroll.line, 8, "lines 9 and 10, the last two before, are still on screen");
+    assert_eq!(
+        s.doc.text.char_to_line(s.caret()),
+        12,
+        "the caret moved eight rows"
+    );
+    assert_eq!(
+        s.view.scroll.line, 8,
+        "lines 9 and 10, the last two before, are still on screen"
+    );
     keys(&mut s, "<pgup>");
-    assert_eq!((s.doc.text.char_to_line(s.caret()), s.view.scroll.line), (4, 0));
+    assert_eq!(
+        (s.doc.text.char_to_line(s.caret()), s.view.scroll.line),
+        (4, 0)
+    );
 }
 
 #[test]
@@ -703,15 +827,32 @@ fn wheel_scrolling_drags_the_caret_along() {
     // The caret moved down to stay two rows inside the view.
     assert_eq!(s.doc.text.char_to_line(s.caret()), 7);
     send(&mut s, [Msg::Scroll { rows: 100 }]);
-    assert_eq!(s.view.scroll.line, 30, "stops with the last line at the bottom");
+    assert_eq!(
+        s.view.scroll.line, 30,
+        "stops with the last line at the bottom"
+    );
 }
 
 #[test]
 fn clicking_below_the_text_goes_to_the_end() {
     let mut s = state_wh("ab\n▮cd", 20, 10);
-    send(&mut s, [Msg::Click { col: 1, row: 8, extend: false }]);
+    send(
+        &mut s,
+        [Msg::Click {
+            col: 1,
+            row: 8,
+            extend: false,
+        }],
+    );
     assert_eq!(show(&s), "ab\ncd▮");
-    send(&mut s, [Msg::Click { col: 15, row: 0, extend: false }]);
+    send(
+        &mut s,
+        [Msg::Click {
+            col: 15,
+            row: 0,
+            extend: false,
+        }],
+    );
     assert_eq!(show(&s), "ab▮\ncd");
 }
 
@@ -721,11 +862,23 @@ fn clicking_below_the_text_goes_to_the_end() {
 #[test]
 fn status_bar_shows_name_dirty_marker_and_position() {
     let mut s = state_wh("ab\nc▮d", 30, 3);
-    assert_eq!(frame(&s).lines().nth(2).unwrap(), " test.md                  2:2");
+    assert_eq!(
+        frame(&s).lines().nth(2).unwrap(),
+        " test.md                  2:2"
+    );
     keys(&mut s, "x");
-    assert_eq!(frame(&s).lines().nth(2).unwrap(), " test.md [+]              2:3");
+    assert_eq!(
+        frame(&s).lines().nth(2).unwrap(),
+        " test.md [+]              2:3"
+    );
     keys(&mut s, "<s-left><s-left>");
-    assert_eq!(frame(&s).lines().nth(2).unwrap(), " test.md [+]       2 sel  2:1");
+    assert_eq!(
+        frame(&s).lines().nth(2).unwrap(),
+        " test.md [+]       2 sel  2:1"
+    );
     keys(&mut s, "<c-c>");
-    assert_eq!(frame(&s).lines().nth(2).unwrap(), " test.md [+]  copi 2 sel  2:1");
+    assert_eq!(
+        frame(&s).lines().nth(2).unwrap(),
+        " test.md [+]  copi 2 sel  2:1"
+    );
 }

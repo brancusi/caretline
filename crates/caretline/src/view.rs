@@ -48,7 +48,15 @@ pub enum RowInfo {
     /// A row of text: visual row `row` of document line `line`, in block `block` (outline
     /// documents). `first` and `last` say whether it is the block's first or last row,
     /// `chars` the chars it shows (its line break excluded), `x` the column its text starts.
-    Text { block: Option<MarkId>, line: usize, row: u16, first: bool, last: bool, chars: Range<usize>, x: u16 },
+    Text {
+        block: Option<MarkId>,
+        line: usize,
+        row: u16,
+        first: bool,
+        last: bool,
+        chars: Range<usize>,
+        x: u16,
+    },
     /// The blank row before a block.
     Gap { before: MarkId },
     /// A host's row after a block (`index` from 0).
@@ -154,7 +162,16 @@ impl Frame {
 
     /// [`Frame::put`] for a document char, clipped at `limit`.
     #[allow(clippy::too_many_arguments)]
-    fn put_at(&mut self, x: usize, y: usize, symbol: &str, w: usize, role: Role, char_idx: Option<u32>, limit: usize) {
+    fn put_at(
+        &mut self,
+        x: usize,
+        y: usize,
+        symbol: &str,
+        w: usize,
+        role: Role,
+        char_idx: Option<u32>,
+        limit: usize,
+    ) {
         // The row stride is the frame's width; `limit` only clips where this grapheme may go.
         let row = y * self.width as usize;
         let width = (self.width as usize).min(limit);
@@ -166,13 +183,25 @@ impl Frame {
         }
         if x + w > width {
             for cx in x..width {
-                self.cells[row + cx] = Cell { symbol: " ".into(), role, char_idx };
+                self.cells[row + cx] = Cell {
+                    symbol: " ".into(),
+                    role,
+                    char_idx,
+                };
             }
             return;
         }
-        self.cells[row + x] = Cell { symbol: Tendril::from(symbol), role, char_idx };
+        self.cells[row + x] = Cell {
+            symbol: Tendril::from(symbol),
+            role,
+            char_idx,
+        };
         for cx in x + 1..x + w {
-            self.cells[row + cx] = Cell { symbol: Tendril::new(), role, char_idx };
+            self.cells[row + cx] = Cell {
+                symbol: Tendril::new(),
+                role,
+                char_idx,
+            };
         }
     }
 
@@ -275,7 +304,12 @@ pub fn render(doc: &Document, view: &View) -> Frame {
     let top = layout.top(&view.scroll);
     let hscroll = if layout.wraps() { 0 } else { view.scroll.col };
     let caret = view.focused.then(|| view.caret());
-    let ranges: Vec<(usize, usize)> = view.selection.iter().filter(|r| !r.is_empty()).map(|r| (r.from(), r.to())).collect();
+    let ranges: Vec<(usize, usize)> = view
+        .selection
+        .iter()
+        .filter(|r| !r.is_empty())
+        .map(|r| (r.from(), r.to()))
+        .collect();
     let selected = |pos: usize| ranges.iter().any(|&(f, t)| f <= pos && pos < t);
     let outline = layout.outline().cloned();
     let geometry = layout.geometry().cloned();
@@ -291,7 +325,9 @@ pub fn render(doc: &Document, view: &View) -> Frame {
         let mut r = first_row;
         // The blank row before a block.
         while r < lf.before && y < text_rows {
-            frame.rows.push(RowInfo::Gap { before: id.unwrap_or(MarkId(u64::MAX)) });
+            frame.rows.push(RowInfo::Gap {
+                before: id.unwrap_or(MarkId(u64::MAX)),
+            });
             y += 1;
             r += 1;
         }
@@ -305,9 +341,20 @@ pub fn render(doc: &Document, view: &View) -> Frame {
                 let row = tr0 + k;
                 let first = block.is_some_and(|b| b.first_line == l) && row == 0;
                 let last = block.is_some_and(|b| b.last_line() == l) && row + 1 == text_n;
-                frame.rows.push(RowInfo::Text { block: id, line: l, row: row as u16, first, last, chars: 0..0, x });
+                frame.rows.push(RowInfo::Text {
+                    block: id,
+                    line: l,
+                    row: row as u16,
+                    first,
+                    last,
+                    chars: 0..0,
+                    x,
+                });
                 if let (true, Some(g), Some(b)) = (first, &geometry, block) {
-                    let from = lf.x.saturating_sub(g.hang as usize).max(g.gutter as usize).min(lf.x);
+                    let from =
+                        lf.x.saturating_sub(g.hang as usize)
+                            .max(g.gutter as usize)
+                            .min(lf.x);
                     for cx in from..lf.x.min(width as usize) {
                         frame.cells[(y0 + k) * width as usize + cx].role = Role::Hang;
                     }
@@ -318,7 +365,13 @@ pub fn render(doc: &Document, view: &View) -> Frame {
                     }
                     if let Some(d) = &deco.gutter {
                         let role = frame.named(&d.role);
-                        frame.put_str(0, y0 + k, &d.text, (g.gutter as usize).min(from).min(width as usize), role);
+                        frame.put_str(
+                            0,
+                            y0 + k,
+                            &d.text,
+                            (g.gutter as usize).min(from).min(width as usize),
+                            role,
+                        );
                     }
                 }
             }
@@ -328,7 +381,10 @@ pub fn render(doc: &Document, view: &View) -> Frame {
                 None => width as usize,
             };
             let mut seen = vec![false; shown];
-            let formatter = layout.formatter_at_row(RowPos { line: l, row: lf.before + tr0 });
+            let formatter = layout.formatter_at_row(RowPos {
+                line: l,
+                row: lf.before + tr0,
+            });
             for g in formatter {
                 if g.line_idx != l {
                     break;
@@ -355,10 +411,18 @@ pub fn render(doc: &Document, view: &View) -> Frame {
                 }
                 let col = (lf.x + g.visual_pos.col) as isize - hscroll as isize - offset as isize;
                 let w = g.width();
-                let role = if selected(g.char_idx) { Role::Selection } else { Role::Text };
+                let role = if selected(g.char_idx) {
+                    Role::Selection
+                } else {
+                    Role::Text
+                };
                 // The caret may sit one past the column (after a word that fills the row, on
                 // the space that hangs there), never past the frame.
-                if Some(g.char_idx) == caret && col >= 0 && (col as usize) <= limit && (col as usize) < width as usize {
+                if Some(g.char_idx) == caret
+                    && col >= 0
+                    && (col as usize) <= limit
+                    && (col as usize) < width as usize
+                {
                     frame.cursor = Some((col as u16, sy as u16));
                 }
                 if col < lf.x as isize {
@@ -391,11 +455,16 @@ pub fn render(doc: &Document, view: &View) -> Frame {
         // A host's rows after it.
         let mut k = r.saturating_sub(lf.before + text_n);
         while k < lf.after && y < text_rows {
-            frame.rows.push(RowInfo::Extra { block: id.unwrap_or(MarkId(u64::MAX)), index: k as u16 });
+            frame.rows.push(RowInfo::Extra {
+                block: id.unwrap_or(MarkId(u64::MAX)),
+                index: k as u16,
+            });
             y += 1;
             k += 1;
         }
-        line = (l < layout.last_line()).then(|| layout.visible_at_or_after(l + 1)).flatten();
+        line = (l < layout.last_line())
+            .then(|| layout.visible_at_or_after(l + 1))
+            .flatten();
         first_row = 0;
     }
     while frame.rows.len() < text_rows {
@@ -413,7 +482,12 @@ pub fn render(doc: &Document, view: &View) -> Frame {
 
 /// What is drawn beside block `b`: the host's decoration, else (with `hang_glyphs`) the plain
 /// Markdown glyph of its marker, else nothing.
-pub fn decoration(doc: &Document, view: &View, g: &crate::layout::OutlineLayout, b: &crate::outline::BlockInfo) -> crate::host::Decoration {
+pub fn decoration(
+    doc: &Document,
+    view: &View,
+    g: &crate::layout::OutlineLayout,
+    b: &crate::outline::BlockInfo,
+) -> crate::host::Decoration {
     use crate::host::{Ctx, Deco, Decoration};
     if let Some(d) = doc.host().decorate(&Ctx::new(doc, view), b) {
         return d;
@@ -424,7 +498,14 @@ pub fn decoration(doc: &Document, view: &View, g: &crate::layout::OutlineLayout,
             None => hang_glyph(b.hang),
         };
         if !text.is_empty() {
-            return Decoration { hang: Some(Deco { text, role: "hang".into(), id: None }), gutter: None };
+            return Decoration {
+                hang: Some(Deco {
+                    text,
+                    role: "hang".into(),
+                    id: None,
+                }),
+                gutter: None,
+            };
         }
     }
     Decoration::default()
@@ -461,22 +542,35 @@ pub fn hit(doc: &Document, view: &View, col: u16, row: u16) -> Hit {
         }
         let text_n = layout.text_rows_of(at.line);
         if at.row >= lf.before + text_n {
-            return Hit::Extra { block: b.id, index: (at.row - lf.before - text_n) as u16 };
+            return Hit::Extra {
+                block: b.id,
+                index: (at.row - lf.before - text_n) as u16,
+            };
         }
         if let Some(g) = layout.geometry() {
             let c = col as usize;
             if c < lf.x {
                 // Only a block's first row carries its decoration.
-                let deco = (at.row == lf.before && b.first_line == at.line).then(|| decoration(doc, view, g, b)).unwrap_or_default();
+                let deco = (at.row == lf.before && b.first_line == at.line)
+                    .then(|| decoration(doc, view, g, b))
+                    .unwrap_or_default();
                 if c < g.gutter as usize {
-                    return Hit::Gutter { block: b.id, deco: deco.gutter.and_then(|d| d.id) };
+                    return Hit::Gutter {
+                        block: b.id,
+                        deco: deco.gutter.and_then(|d| d.id),
+                    };
                 }
-                return Hit::Hang { block: b.id, deco: deco.hang.and_then(|d| d.id) };
+                return Hit::Hang {
+                    block: b.id,
+                    deco: deco.hang.and_then(|d| d.id),
+                };
             }
         }
     }
     let c = col as usize + if layout.wraps() { 0 } else { view.scroll.col };
-    Hit::Text { pos: layout.click_at(at, c) }
+    Hit::Text {
+        pos: layout.click_at(at, c),
+    }
 }
 
 /// The status bar: the file name and dirty marker on the left, the message in the middle,

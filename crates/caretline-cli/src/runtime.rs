@@ -4,30 +4,30 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
-use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use caretline::protocol::Change;
 use caretline::view::Role;
-use caretline::{keymap_for, Effect, Frame, Key, KeyCode, Mods, Msg, Session, State};
+use caretline::{Effect, Frame, Key, KeyCode, Mods, Msg, Session, State, keymap_for};
 
 use crate::hub::{self, Hub, Input};
+use crossterm::cursor::SetCursorStyle;
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     Event, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
     PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
-use crossterm::cursor::SetCursorStyle;
-use crossterm::{execute, queue};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, supports_keyboard_enhancement, BeginSynchronizedUpdate,
-    EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
+    BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
+    disable_raw_mode, enable_raw_mode, supports_keyboard_enhancement,
 };
+use crossterm::{execute, queue};
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::Terminal;
 
 pub fn now_ms() -> u64 {
     SystemTime::now()
@@ -79,9 +79,10 @@ fn read_system_clipboard() -> Option<String> {
     ];
     for (cmd, args) in candidates {
         if let Ok(out) = Command::new(cmd).args(*args).stderr(Stdio::null()).output()
-            && out.status.success() {
-                return String::from_utf8(out.stdout).ok();
-            }
+            && out.status.success()
+        {
+            return String::from_utf8(out.stdout).ok();
+        }
     }
     None
 }
@@ -138,7 +139,10 @@ fn base64(bytes: &[u8]) -> String {
 /// a half-written file.
 fn write_file(path: &str, text: &str) -> io::Result<()> {
     let target = Path::new(path);
-    let dir = target.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let dir = target
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
     let name = target
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -183,22 +187,33 @@ fn no_color() -> bool {
 /// (crate::layers). Other named roles draw plain.
 fn style_in(frame: &Frame, role: Role) -> Style {
     use crate::layers::{ACCENT, INK, PANEL};
-    let Role::Named(_) = role else { return style(role) };
+    let Role::Named(_) = role else {
+        return style(role);
+    };
     let rgb = |c: (u8, u8, u8)| Color::Rgb(c.0, c.1, c.2);
     let plain = no_color();
     match frame.role_name(role) {
         "layer.callout" if !plain => Style::default().fg(rgb(INK)).bg(rgb(PANEL)),
         "layer.border" | "layer.arrow" if plain => Style::default().add_modifier(Modifier::BOLD),
         "layer.border" => Style::default().fg(rgb(ACCENT)).bg(rgb(PANEL)),
-        "layer.arrow" => Style::default().fg(rgb(ACCENT)).add_modifier(Modifier::BOLD),
+        "layer.arrow" => Style::default()
+            .fg(rgb(ACCENT))
+            .add_modifier(Modifier::BOLD),
         "layer.title" if plain => Style::default().add_modifier(Modifier::BOLD),
-        "layer.title" => Style::default().fg(rgb(ACCENT)).bg(rgb(PANEL)).add_modifier(Modifier::BOLD),
+        "layer.title" => Style::default()
+            .fg(rgb(ACCENT))
+            .bg(rgb(PANEL))
+            .add_modifier(Modifier::BOLD),
         "layer.title.px" if plain => Style::default().add_modifier(Modifier::BOLD),
-        "layer.title.px" => Style::default().fg(rgb(ACCENT)).add_modifier(Modifier::BOLD),
+        "layer.title.px" => Style::default()
+            .fg(rgb(ACCENT))
+            .add_modifier(Modifier::BOLD),
         "layer.ring" if plain => Style::default().add_modifier(Modifier::UNDERLINED),
         "layer.ring" => Style::default().bg(Color::Rgb(0x2c, 0x3a, 0x5c)),
         "layer.chip" if plain => Style::default().add_modifier(Modifier::REVERSED),
-        "layer.chip" => Style::default().fg(rgb(ACCENT)).bg(Color::Rgb(0x33, 0x40, 0x5c)),
+        "layer.chip" => Style::default()
+            .fg(rgb(ACCENT))
+            .bg(Color::Rgb(0x33, 0x40, 0x5c)),
         _ => Style::default(),
     }
 }
@@ -331,7 +346,9 @@ pub struct Decor {
 
 /// How layers draw: `CARETLINE_LAYERS=auto|pixels|cells` (default auto).
 fn layers_mode() -> String {
-    std::env::var("CARETLINE_LAYERS").unwrap_or_default().to_ascii_lowercase()
+    std::env::var("CARETLINE_LAYERS")
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
 
 /// Probes the terminal for pixels: the graphics query, XTVERSION and the cell size, fenced by
@@ -340,12 +357,19 @@ fn layers_mode() -> String {
 fn probe_gfx(parser: &mut crate::rawin::Parser) -> Gfx {
     use caretline_layers::probe::Probe;
     let mode = layers_mode();
-    let local = std::env::var_os("SSH_CONNECTION").is_none() && std::env::var_os("SSH_TTY").is_none();
-    let off = |why: &str| Gfx { cell_px: None, terminal: None, why: why.to_string(), local };
+    let local =
+        std::env::var_os("SSH_CONNECTION").is_none() && std::env::var_os("SSH_TTY").is_none();
+    let off = |why: &str| Gfx {
+        cell_px: None,
+        terminal: None,
+        why: why.to_string(),
+        local,
+    };
     if mode == "cells" {
         return off("CARETLINE_LAYERS=cells");
     }
-    if mode != "pixels" && (std::env::var_os("TMUX").is_some() || std::env::var_os("STY").is_some()) {
+    if mode != "pixels" && (std::env::var_os("TMUX").is_some() || std::env::var_os("STY").is_some())
+    {
         return off("inside a multiplexer");
     }
     let replies = crate::rawin::probe(parser, &mut io::stdout(), Duration::from_millis(200));
@@ -363,12 +387,20 @@ fn probe_gfx(parser: &mut crate::rawin::Parser) -> Gfx {
     } else if p.cell.is_none() {
         "no cell size".to_string()
     } else if !trusted {
-        format!("{} untested (CARETLINE_LAYERS=pixels)", if name.is_empty() { "terminal" } else { &name })
+        format!(
+            "{} untested (CARETLINE_LAYERS=pixels)",
+            if name.is_empty() { "terminal" } else { &name }
+        )
     } else {
         terminal.clone().unwrap_or_else(|| "pixels".into())
     };
     let on = p.fenced && p.graphics_ok() && trusted;
-    Gfx { cell_px: if on { p.cell } else { None }, terminal, why, local }
+    Gfx {
+        cell_px: if on { p.cell } else { None },
+        terminal,
+        why,
+        local,
+    }
 }
 
 /// Applies messages from a demo, performing their effects (a save, a quit).
@@ -387,10 +419,18 @@ pub fn compose(hub: &Hub, pane_rows: u16) -> Frame {
 /// [`compose`] for a state and its other views.
 pub fn compose_state(state: &State, views: &[(u32, caretline::View)], pane_rows: u16) -> Frame {
     let top = caretline::view(state);
-    let Some((_, v)) = views.first().filter(|_| pane_rows > 0) else { return top };
+    let Some((_, v)) = views.first().filter(|_| pane_rows > 0) else {
+        return top;
+    };
     let mut s = State::from_parts(state.doc.clone(), v.clone());
     if (s.view.viewport.width, s.view.viewport.height) != (top.width, pane_rows) {
-        caretline::update(&mut s, Msg::Resize { width: top.width, height: pane_rows });
+        caretline::update(
+            &mut s,
+            Msg::Resize {
+                width: top.width,
+                height: pane_rows,
+            },
+        );
     }
     let mut pane = caretline::view(&s);
     if let Some((x, y)) = pane.cursor.take() {
@@ -441,7 +481,8 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
     let listening = match &opts.listen {
         Some(path) => {
             let mut l = hub::listen(path, tx.clone())?;
-            l.advertise(opts.file).map_err(|e| format!("discovery file: {e}"))?;
+            l.advertise(opts.file)
+                .map_err(|e| format!("discovery file: {e}"))?;
             Some(l)
         }
         None => None,
@@ -453,10 +494,19 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
     // protocol alone: crossterm's query would read stdin from under the raw reader.
     let raw = opts.demo.as_ref().is_some_and(|d| d.wants_pixels());
     let mut parser = crate::rawin::Parser::default();
-    let gfx = if raw { probe_gfx(&mut parser) } else { Gfx::default() };
+    let gfx = if raw {
+        probe_gfx(&mut parser)
+    } else {
+        Gfx::default()
+    };
     let kitty = !raw && supports_keyboard_enhancement().unwrap_or(false);
     let mut out = io::stdout();
-    let _ = execute!(out, EnterAlternateScreen, EnableBracketedPaste, SetCursorStyle::SteadyBar);
+    let _ = execute!(
+        out,
+        EnterAlternateScreen,
+        EnableBracketedPaste,
+        SetCursorStyle::SteadyBar
+    );
     if mouse {
         let _ = execute!(out, EnableMouseCapture);
     }
@@ -487,10 +537,15 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
     }
     drop(tx);
 
-    let status = listening.as_ref().map(|l| format!("listening on {}", l.path.display()));
+    let status = listening
+        .as_ref()
+        .map(|l| format!("listening on {}", l.path.display()));
     let started = Instant::now();
     let mut stats = Stats::default();
-    let pacing = Pacing { max_fps: opts.max_fps, frame_clock: opts.frame_clock };
+    let pacing = Pacing {
+        max_fps: opts.max_fps,
+        frame_clock: opts.frame_clock,
+    };
     let result = event_loop(&mut hub, rx, status, pacing, &mut stats, opts.demo, gfx);
     restore_terminal(kitty, mouse);
     if opts.stats {
@@ -505,7 +560,10 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
         );
     }
     if let Some(l) = &listening {
-        eprintln!("caretline: served the state protocol on {}", l.path.display());
+        eprintln!(
+            "caretline: served the state protocol on {}",
+            l.path.display()
+        );
     }
     drop(listening);
     result
@@ -518,8 +576,12 @@ fn terminal_msgs(state: &State, ev: Event) -> Vec<Msg> {
             match to_key(&k).and_then(|key| keymap_for(state.doc.outline.is_some(), &key)) {
                 // The keymap is pure, so a paste key carries no text; fill it in here from
                 // the system clipboard so the trace records exactly what was pasted.
-                Some(Msg::Paste { text: None }) => vec![Msg::Paste { text: read_system_clipboard() }],
-                Some(Msg::PastePlain { text: None }) => vec![Msg::PastePlain { text: read_system_clipboard() }],
+                Some(Msg::Paste { text: None }) => vec![Msg::Paste {
+                    text: read_system_clipboard(),
+                }],
+                Some(Msg::PastePlain { text: None }) => vec![Msg::PastePlain {
+                    text: read_system_clipboard(),
+                }],
                 Some(msg) => vec![msg],
                 None => vec![],
             }
@@ -531,7 +593,11 @@ fn terminal_msgs(state: &State, ev: Event) -> Vec<Msg> {
             let extend = m.modifiers.contains(KeyModifiers::SHIFT);
             match m.kind {
                 MouseEventKind::Down(MouseButton::Left) if m.row < text_rows => {
-                    vec![Msg::Click { col: m.column, row: m.row, extend }]
+                    vec![Msg::Click {
+                        col: m.column,
+                        row: m.row,
+                        extend,
+                    }]
                 }
                 MouseEventKind::Drag(MouseButton::Left) => vec![Msg::Click {
                     col: m.column,
@@ -558,7 +624,12 @@ fn dispatch_local(hub: &mut Hub, msgs: Vec<Msg>, quit: &mut bool, source: &str) 
         let (_, m) = hub.session.apply_with(msg, &mut |e| perform(e, quit));
         applied.extend(m);
     }
-    let change = Change { rev: hub.session.rev(), msgs: applied, state_set: false, view: None };
+    let change = Change {
+        rev: hub.session.rev(),
+        msgs: applied,
+        state_set: false,
+        view: None,
+    };
     hub.changed(&change, source);
 }
 
@@ -572,20 +643,41 @@ struct Pacing {
 type Term = Terminal<CrosstermBackend<BufWriter<io::Stdout>>>;
 
 /// Sizes view 0 to the terminal less the demo's pane, and the pane's view to the pane.
-fn fit_views(hub: &mut Hub, demo: &Option<Box<dyn Demo>>, term: Option<(u16, u16)>, quit: &mut bool) {
-    let (Some(demo), Some((w, h))) = (demo, term) else { return };
+fn fit_views(
+    hub: &mut Hub,
+    demo: &Option<Box<dyn Demo>>,
+    term: Option<(u16, u16)>,
+    quit: &mut bool,
+) {
+    let (Some(demo), Some((w, h))) = (demo, term) else {
+        return;
+    };
     let rows = demo.pane_rows(hub, h).min(h.saturating_sub(2));
     let v = hub.session.state().view.viewport;
     let top = h - rows;
     if (v.width, v.height) != (w, top) {
-        dispatch_local(hub, vec![Msg::Resize { width: w, height: top }], quit, "runtime");
+        dispatch_local(
+            hub,
+            vec![Msg::Resize {
+                width: w,
+                height: top,
+            }],
+            quit,
+            "runtime",
+        );
     }
     if rows > 0
         && let Some((id, view)) = hub.session.views().first()
         && (view.viewport.width, view.viewport.height) != (w, rows)
     {
         let id = *id;
-        hub.session.apply_on(id, Msg::Resize { width: w, height: rows });
+        hub.session.apply_on(
+            id,
+            Msg::Resize {
+                width: w,
+                height: rows,
+            },
+        );
     }
 }
 
@@ -607,14 +699,20 @@ fn event_loop(
     let mut start = vec![Msg::Tick { now_ms: now_ms() }];
     let v = hub.session.state().view.viewport;
     if let Some((w, h)) = term
-        && (w, h) != (v.width, v.height) {
-            start.push(Msg::Resize { width: w, height: h });
-        }
+        && (w, h) != (v.width, v.height)
+    {
+        start.push(Msg::Resize {
+            width: w,
+            height: h,
+        });
+    }
     if let Some(text) = status {
         start.push(Msg::ShowStatus { text });
     }
     if pacing.frame_clock > 0 {
-        start.push(Msg::FrameClock { fps: pacing.frame_clock });
+        start.push(Msg::FrameClock {
+            fps: pacing.frame_clock,
+        });
     }
     dispatch_local(hub, start, &mut quit, "runtime");
     fit_views(hub, &demo, term, &mut quit);
@@ -624,7 +722,13 @@ fn event_loop(
 
     // The keys overlay (F1 or Alt-?): its scroll offset while it is shown.
     let mut help: Option<usize> = None;
-    let process = |hub: &mut Hub, demo: &mut Option<Box<dyn Demo>>, term: &mut Option<(u16, u16)>, help: &mut Option<usize>, gfx: &mut Gfx, input: Input, quit: &mut bool| match input {
+    let process = |hub: &mut Hub,
+                   demo: &mut Option<Box<dyn Demo>>,
+                   term: &mut Option<(u16, u16)>,
+                   help: &mut Option<usize>,
+                   gfx: &mut Gfx,
+                   input: Input,
+                   quit: &mut bool| match input {
         // A reply read mid-session: the cell size after a font change. Others (a late probe
         // answer) change nothing.
         Input::Reply(caretline_layers::probe::Reply::CellSize(c)) => {
@@ -643,7 +747,15 @@ fn event_loop(
             if let (Some(c), Some((w, h))) = (change, *term) {
                 let v = hub.session.state().view.viewport;
                 if c.state_set && (w, h) != (v.width, v.height) {
-                    dispatch_local(hub, vec![Msg::Resize { width: w, height: h }], quit, "runtime");
+                    dispatch_local(
+                        hub,
+                        vec![Msg::Resize {
+                            width: w,
+                            height: h,
+                        }],
+                        quit,
+                        "runtime",
+                    );
                 }
             }
         }
@@ -651,14 +763,26 @@ fn event_loop(
             if let Event::Key(k) = &ev
                 && matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat)
             {
-                let asks = k.code == event::KeyCode::F(1) || (k.code == event::KeyCode::Char('?') && k.modifiers.contains(KeyModifiers::ALT));
+                let asks = k.code == event::KeyCode::F(1)
+                    || (k.code == event::KeyCode::Char('?')
+                        && k.modifiers.contains(KeyModifiers::ALT));
                 match (*help, k.code) {
                     (Some(o), event::KeyCode::Down | event::KeyCode::PageDown) => {
-                        *help = Some(o + if k.code == event::KeyCode::Down { 1 } else { 10 });
+                        *help = Some(
+                            o + if k.code == event::KeyCode::Down {
+                                1
+                            } else {
+                                10
+                            },
+                        );
                         return;
                     }
                     (Some(o), event::KeyCode::Up | event::KeyCode::PageUp) => {
-                        *help = Some(o.saturating_sub(if k.code == event::KeyCode::Up { 1 } else { 10 }));
+                        *help = Some(o.saturating_sub(if k.code == event::KeyCode::Up {
+                            1
+                        } else {
+                            10
+                        }));
                         return;
                     }
                     (Some(_), _) => {
@@ -678,10 +802,13 @@ fn event_loop(
                 // Ask again; the answer comes back as an `Input::Reply`.
                 if let (Some(c), Ok(ws)) = (gfx.cell_px, crossterm::terminal::window_size())
                     && ws.width > 0
-                    && (ws.width as u32 != ws.columns as u32 * c.w as u32 || ws.height as u32 != ws.rows as u32 * c.h as u32)
+                    && (ws.width as u32 != ws.columns as u32 * c.w as u32
+                        || ws.height as u32 != ws.rows as u32 * c.h as u32)
                 {
                     let mut out = io::stdout();
-                    let _ = out.write_all(caretline_layers::probe::cell_size_request()).and_then(|_| out.flush());
+                    let _ = out
+                        .write_all(caretline_layers::probe::cell_size_request())
+                        .and_then(|_| out.flush());
                 }
                 if demo.is_some() {
                     fit_views(hub, demo, *term, quit);
@@ -716,10 +843,25 @@ fn event_loop(
     // arrives, so a fast client never waits for the terminal. A fixed grid, rather than a gap
     // after each paint, keeps frames that arrive at the display rate with a little jitter
     // from colliding.
-    let gap = if pacing.max_fps > 0 { Duration::from_secs_f64(1.0 / pacing.max_fps as f64) } else { Duration::ZERO };
+    let gap = if pacing.max_fps > 0 {
+        Duration::from_secs_f64(1.0 / pacing.max_fps as f64)
+    } else {
+        Duration::ZERO
+    };
     let epoch = Instant::now();
-    let slot = |t: Instant| if gap.is_zero() { 0 } else { (t - epoch).as_nanos() / gap.as_nanos() };
-    let mut drawn: Option<(u64, u64, Option<usize>, Option<caretline_layers::kitty::CellPx>)> = None;
+    let slot = |t: Instant| {
+        if gap.is_zero() {
+            0
+        } else {
+            (t - epoch).as_nanos() / gap.as_nanos()
+        }
+    };
+    let mut drawn: Option<(
+        u64,
+        u64,
+        Option<usize>,
+        Option<caretline_layers::kitty::CellPx>,
+    )> = None;
     let mut painted_slot: Option<u128> = None;
     // The frame clock's next deadline, on an absolute schedule so it doesn't drift.
     let mut next_frame: Option<Instant> = None;
@@ -731,7 +873,12 @@ fn event_loop(
                 let due = *next_frame.get_or_insert(now);
                 if now >= due {
                     stats.frames += 1;
-                    dispatch_local(hub, vec![Msg::Frame { now_ms: now_ms() }], &mut quit, "runtime");
+                    dispatch_local(
+                        hub,
+                        vec![Msg::Frame { now_ms: now_ms() }],
+                        &mut quit,
+                        "runtime",
+                    );
                     // Behind by more than a frame (a stall): skip ahead instead of bursting.
                     let next = due + period;
                     next_frame = Some(if next <= now { now + period } else { next });
@@ -740,7 +887,14 @@ fn event_loop(
             None => next_frame = None,
         }
         let demo_wake = demo.as_mut().and_then(|d| d.poll(hub, now));
-        let key = |hub: &Hub, demo: &Option<Box<dyn Demo>>, help: Option<usize>| (hub.session.rev(), demo.as_ref().map_or(0, |d| d.generation()), help, gfx.cell_px);
+        let key = |hub: &Hub, demo: &Option<Box<dyn Demo>>, help: Option<usize>| {
+            (
+                hub.session.rev(),
+                demo.as_ref().map_or(0, |d| d.generation()),
+                help,
+                gfx.cell_px,
+            )
+        };
         let dirty = drawn != Some(key(hub, &demo, help));
         let free = gap.is_zero() || painted_slot != Some(slot(now));
         if dirty && free {
@@ -748,18 +902,28 @@ fn event_loop(
             let mut frame = match &demo {
                 Some(d) => match d.overlay() {
                     Some(f) => f,
-                    None => compose(hub, term.map_or(0, |(_, h)| d.pane_rows(hub, h).min(h.saturating_sub(2)))),
+                    None => compose(
+                        hub,
+                        term.map_or(0, |(_, h)| d.pane_rows(hub, h).min(h.saturating_sub(2))),
+                    ),
                 },
                 None => hub.session.frame(),
             };
             let decor = match (&mut demo, help) {
                 // The keys overlay hides the demo's images too.
-                (Some(d), Some(_)) => Decor { dim: Vec::new(), bytes: d.hide() },
+                (Some(d), Some(_)) => Decor {
+                    dim: Vec::new(),
+                    bytes: d.hide(),
+                },
                 (Some(d), None) => d.decorate(hub, &mut frame, &gfx),
                 (None, _) => Decor::default(),
             };
             if let Some(offset) = help {
-                crate::keys::overlay(&mut frame, hub.session.state().doc.outline.is_some(), offset);
+                crate::keys::overlay(
+                    &mut frame,
+                    hub.session.state().doc.outline.is_some(),
+                    offset,
+                );
             }
             draw(&mut terminal, &frame, &decor)?;
             stats.paints += 1;
@@ -771,7 +935,10 @@ fn event_loop(
         // Sleep until input, the next repaint a pending change is waiting for, the next
         // clock frame or the demo's next step, whichever is first.
         let dirty = drawn != Some(key(hub, &demo, help));
-        let wake = [dirty.then_some(paint_at).flatten(), next_frame, demo_wake].into_iter().flatten().min();
+        let wake = [dirty.then_some(paint_at).flatten(), next_frame, demo_wake]
+            .into_iter()
+            .flatten()
+            .min();
         let input = match wake {
             Some(t) => match rx.recv_timeout(t.saturating_duration_since(Instant::now())) {
                 Ok(input) => Some(input),
@@ -785,13 +952,17 @@ fn event_loop(
         };
         if let Some(input) = input {
             stats.inputs += 1;
-            process(hub, &mut demo, &mut term, &mut help, &mut gfx, input, &mut quit);
+            process(
+                hub, &mut demo, &mut term, &mut help, &mut gfx, input, &mut quit,
+            );
             // Apply everything already queued before drawing again.
             while !quit {
                 match rx.try_recv() {
                     Ok(input) => {
                         stats.inputs += 1;
-                        process(hub, &mut demo, &mut term, &mut help, &mut gfx, input, &mut quit)
+                        process(
+                            hub, &mut demo, &mut term, &mut help, &mut gfx, input, &mut quit,
+                        )
                     }
                     Err(_) => break,
                 }
@@ -835,16 +1006,22 @@ fn draw(terminal: &mut Term, frame: &Frame, decor: &Decor) -> Result<(), String>
                     }
                     let w = caretline::view::display_width(&cell.symbol).max(1);
                     let mut st = style_in(frame, cell.role);
-                    if decor.dim.get(y as usize * frame.width as usize + x as usize) == Some(&true) {
+                    if decor
+                        .dim
+                        .get(y as usize * frame.width as usize + x as usize)
+                        == Some(&true)
+                    {
                         st = st.add_modifier(Modifier::DIM);
                     }
                     buf.set_stringn(x, y, &cell.symbol, w, st);
                 }
             }
             if let Some((x, y)) = frame.cursor
-                && x < area.width && y < area.height {
-                    f.set_cursor_position((x, y));
-                }
+                && x < area.width
+                && y < area.height
+            {
+                f.set_cursor_position((x, y));
+            }
         })
         .map(|_| ())
         .map_err(|e| format!("draw: {e}"));

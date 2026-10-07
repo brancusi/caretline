@@ -22,10 +22,17 @@ fn round_trip(state: &State) {
 fn fresh_and_edited_states_round_trip() {
     let mut s = state_wh("Hello ⟦wor▮⟧ld\nsecond line with 漢字 and 👍🏽", 24, 6);
     round_trip(&s);
-    keys(&mut s, "X<wait:2000>yz<cr><c-z><a-left><s-down><c-c><end><c-v>");
+    keys(
+        &mut s,
+        "X<wait:2000>yz<cr><c-z><a-left><s-down><c-c><end><c-v>",
+    );
     round_trip(&s);
     // The goal column lives in the selection and survives too.
-    let mut w = state_wh("aaaa bbbb cc▮cc dddd eeee ffff gggg\nxy\nhhhh iiii jjjj", 20, 6);
+    let mut w = state_wh(
+        "aaaa bbbb cc▮cc dddd eeee ffff gggg\nxy\nhhhh iiii jjjj",
+        20,
+        6,
+    );
     keys(&mut w, "<down><down>");
     round_trip(&w);
     let back = State::from_json(&w.to_json()).unwrap();
@@ -34,7 +41,10 @@ fn fresh_and_edited_states_round_trip() {
     keys(&mut a, "<down>");
     keys(&mut b, "<down>");
     assert_eq!(show(&a), show(&b));
-    assert_eq!(show(&a), "aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii jj▮jj");
+    assert_eq!(
+        show(&a),
+        "aaaa bbbb cccc dddd eeee ffff gggg\nxy\nhhhh iiii jj▮jj"
+    );
 }
 
 #[test]
@@ -109,15 +119,27 @@ fn replaying_a_trace_gives_the_live_state() {
     let start = state_wh("The quick brown fox\njumps over ▮the lazy dog", 30, 8);
     let mut live = Recorder::new(start);
     let mut now = 1_000;
-    for script in ["hello", "<a-left><s-a-right>", "<c-x>", "<down><c-v>", "<c-s>", "<c-z><c-z><c-y>"] {
+    for script in [
+        "hello",
+        "<a-left><s-a-right>",
+        "<c-x>",
+        "<down><c-v>",
+        "<c-s>",
+        "<c-z><c-z><c-y>",
+    ] {
         now += 700;
         live.dispatch(Msg::Tick { now_ms: now });
         for msg in caretline::script_to_msgs(script, now).unwrap() {
             live.dispatch(msg);
         }
     }
-    live.dispatch(Msg::Resize { width: 18, height: 5 });
-    live.dispatch(Msg::Paste { text: Some("pasted\ntext".into()) });
+    live.dispatch(Msg::Resize {
+        width: 18,
+        height: 5,
+    });
+    live.dispatch(Msg::Paste {
+        text: Some("pasted\ntext".into()),
+    });
 
     let (replayed, count) = replay_trace(&live.trace).unwrap();
     assert!(count > 10);
@@ -131,7 +153,14 @@ fn random_sessions_replay_exactly() {
     let mut rng = StdRng::seed_from_u64(99);
     for seed in 0..8 {
         let text = common::gen::text(&mut rng);
-        let start = State::new(&text, Some(format!("doc{seed}.md")), Viewport { width: 40, height: 12 });
+        let start = State::new(
+            &text,
+            Some(format!("doc{seed}.md")),
+            Viewport {
+                width: 40,
+                height: 12,
+            },
+        );
         let mut live = Recorder::new(start);
         for _ in 0..300 {
             let msg = common::gen::msg(&mut rng, &live.state);

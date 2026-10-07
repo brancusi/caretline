@@ -29,7 +29,11 @@ pub fn cell_size_request() -> &'static [u8] {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
     /// A kitty graphics answer: `ESC _ G i=<id>;OK ESC \` or an error message.
-    Graphics { id: Option<u32>, ok: bool, message: String },
+    Graphics {
+        id: Option<u32>,
+        ok: bool,
+        message: String,
+    },
     /// XTVERSION: `ESC P > | <name and version> ESC \`.
     Version(String),
     /// `CSI 6 ; h ; w t`: the cell size in pixels.
@@ -58,13 +62,18 @@ pub fn scan(input: &[u8]) -> Scan {
         [] | [0x1b] => Scan::Partial,
         [0x1b, b'_', rest @ ..] => match rest {
             [] => Scan::Partial,
-            [b'G', ..] => string(input, 2).map_or(Scan::Partial, |(body, n)| Scan::Reply(graphics(&body[1..]), n)),
+            [b'G', ..] => string(input, 2).map_or(Scan::Partial, |(body, n)| {
+                Scan::Reply(graphics(&body[1..]), n)
+            }),
             _ => Scan::No,
         },
         [0x1b, b'P', rest @ ..] => match rest {
             [] | [b'>'] => Scan::Partial,
             [b'>', b'|', ..] => string(input, 2).map_or(Scan::Partial, |(body, n)| {
-                Scan::Reply(Reply::Version(String::from_utf8_lossy(&body[2..]).into_owned()), n)
+                Scan::Reply(
+                    Reply::Version(String::from_utf8_lossy(&body[2..]).into_owned()),
+                    n,
+                )
             }),
             _ => Scan::No,
         },
@@ -86,13 +95,21 @@ fn graphics(body: &[u8]) -> Reply {
         .split(',')
         .find_map(|kv| kv.strip_prefix("i="))
         .and_then(|v| v.parse().ok());
-    Reply::Graphics { id, ok: message == "OK", message: message.to_string() }
+    Reply::Graphics {
+        id,
+        ok: message == "OK",
+        message: message.to_string(),
+    }
 }
 
 fn csi(rest: &[u8]) -> Scan {
     // Parameters and intermediates, then a final byte.
     let Some(end) = rest.iter().position(|b| (0x40..=0x7e).contains(b)) else {
-        return if rest.iter().all(|b| (0x20..=0x3f).contains(b)) { Scan::Partial } else { Scan::No };
+        return if rest.iter().all(|b| (0x20..=0x3f).contains(b)) {
+            Scan::Partial
+        } else {
+            Scan::No
+        };
     };
     let (params, fin) = (&rest[..end], rest[end]);
     if params.iter().any(|b| !(0x20..=0x3f).contains(b)) {
@@ -102,14 +119,20 @@ fn csi(rest: &[u8]) -> Scan {
     let text = String::from_utf8_lossy(params);
     match fin {
         b'c' if text.starts_with('?') => {
-            let attrs = text[1..].split(';').filter_map(|s| s.parse().ok()).collect();
+            let attrs = text[1..]
+                .split(';')
+                .filter_map(|s| s.parse().ok())
+                .collect();
             Scan::Reply(Reply::Da1(attrs), n)
         }
         b't' => {
             let nums: Vec<u32> = text.split(';').map(|s| s.parse().unwrap_or(0)).collect();
             match nums.as_slice() {
                 [6, h, w] => Scan::Reply(
-                    Reply::CellSize(CellPx::new((*w).min(u16::MAX as u32) as u16, (*h).min(u16::MAX as u32) as u16)),
+                    Reply::CellSize(CellPx::new(
+                        (*w).min(u16::MAX as u32) as u16,
+                        (*h).min(u16::MAX as u32) as u16,
+                    )),
                     n,
                 ),
                 [4, h, w] => Scan::Reply(Reply::WindowSize { w: *w, h: *h }, n),

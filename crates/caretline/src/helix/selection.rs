@@ -9,6 +9,8 @@
 //! defined as a selection range.
 //!
 //! All positioning is done via `char` offsets into the buffer.
+use crate::helix::stdx::range::is_subset;
+use crate::helix::stdx::rope::RopeSliceExt;
 use crate::helix::{
     graphemes::{
         ensure_grapheme_boundary_next, ensure_grapheme_boundary_prev, next_grapheme_boundary,
@@ -18,8 +20,6 @@ use crate::helix::{
     movement::Direction,
     Assoc, ChangeSet, RopeSlice,
 };
-use crate::helix::stdx::range::is_subset;
-use crate::helix::stdx::rope::RopeSliceExt;
 use smallvec::{smallvec, SmallVec};
 use std::{borrow::Cow, iter, slice};
 

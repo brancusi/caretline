@@ -10,7 +10,7 @@ use crate::helix::graphemes::{next_grapheme_boundary, prev_grapheme_boundary};
 use crate::helix::line_ending::line_end_char_index;
 use crate::helix::{Assoc, Range, RopeSlice, Selection, Tendril, Transaction};
 use crate::layout::Layout;
-use crate::marks::{MarkAttrs, ClipMark, Clipboard, Mark, MarkId, Marks};
+use crate::marks::{ClipMark, Clipboard, Mark, MarkAttrs, MarkId, Marks};
 use crate::msg::{By, Dir, Effect, Msg};
 use crate::outline::markdown;
 use crate::outline::{BlockInfo, Hang, Kind, NewBlock, Outline};
@@ -73,14 +73,33 @@ fn edit(
     merge: bool,
     fix: impl FnOnce(&mut Marks, RopeSlice),
 ) {
-    let txn = Transaction::change(&state.doc.text, changes.into_iter().map(|(a, b, t)| (a, b, t.map(|t| Tendril::from(t.as_str())))))
-        .with_selection(selection);
-    update::commit_with(state, txn, Step { kind: None, replaced: false, merge }, fix);
+    let txn = Transaction::change(
+        &state.doc.text,
+        changes
+            .into_iter()
+            .map(|(a, b, t)| (a, b, t.map(|t| Tendril::from(t.as_str())))),
+    )
+    .with_selection(selection);
+    update::commit_with(
+        state,
+        txn,
+        Step {
+            kind: None,
+            replaced: false,
+            merge,
+        },
+        fix,
+    );
 }
 
 /// Maps a selection through changes (positions at an insertion move past it).
 fn mapped(state: &State, changes: &[(usize, usize, Option<String>)], assoc: Assoc) -> Selection {
-    let txn = Transaction::change(&state.doc.text, changes.iter().map(|(a, b, t)| (*a, *b, t.as_deref().map(Tendril::from))));
+    let txn = Transaction::change(
+        &state.doc.text,
+        changes
+            .iter()
+            .map(|(a, b, t)| (*a, *b, t.as_deref().map(Tendril::from))),
+    );
     let cs = txn.changes();
     state.view.selection.clone().transform(|r| Range {
         anchor: cs.map_pos(r.anchor, assoc),
@@ -115,7 +134,8 @@ fn next_line_start(text: RopeSlice, line: usize) -> Option<usize> {
 
 /// The marker text of an item (`- `, `* `, `12. `, `- [x] `).
 fn marker_of(text: RopeSlice, b: &BlockInfo) -> String {
-    text.slice(b.start + b.indent..b.content_start()).to_string()
+    text.slice(b.start + b.indent..b.content_start())
+        .to_string()
 }
 
 /// The marker for the item after `b` (Enter): the same bullet, the next number, the new tag.
@@ -136,7 +156,11 @@ fn next_marker(state: &State, text: RopeSlice, b: &BlockInfo) -> String {
 fn empty_marker(state: &State, text: RopeSlice, b: &BlockInfo) -> String {
     let cfg = state.doc.outline.as_ref().expect("outline");
     let m = marker_of(text, b);
-    if b.tag.is_some() { continued_tag(cfg, &m) } else { m }
+    if b.tag.is_some() {
+        continued_tag(cfg, &m)
+    } else {
+        m
+    }
 }
 
 /// The marker after a tagged bullet `m` (`- [c] `): the same bullet with the config's new tag,
@@ -161,9 +185,15 @@ fn newline(state: &mut State, soft: bool) -> Option<Vec<Effect>> {
         let b = o.blocks[i].clone();
         let le = le(state);
         let at = b.end + le.chars().count();
-        edit(state, vec![(b.end, b.end, Some(le))], caret_at(at), false, |m, _| {
-            m.mint(at);
-        });
+        edit(
+            state,
+            vec![(b.end, b.end, Some(le))],
+            caret_at(at),
+            false,
+            |m, _| {
+                m.mint(at);
+            },
+        );
         return Some(Vec::new());
     }
     let mut merge = false;
@@ -187,7 +217,15 @@ fn newline_at(state: &mut State, soft: bool, merge: bool) {
     let ls = text.line_to_char(line);
     let lend = line_end(text, line);
     let first = line == b.first_line;
-    let soft_break = |state: &mut State| edit(state, vec![(p, p, Some(le.clone()))], caret_at(p + n), merge, |_, _| {});
+    let soft_break = |state: &mut State| {
+        edit(
+            state,
+            vec![(p, p, Some(le.clone()))],
+            caret_at(p + n),
+            merge,
+            |_, _| {},
+        )
+    };
 
     if b.fence || b.atomic {
         return soft_break(state);
@@ -198,18 +236,36 @@ fn newline_at(state: &mut State, soft: bool, merge: bool) {
         }
         if b.is_empty() {
             // An empty item ends the list: it becomes a paragraph.
-            return edit(state, vec![(b.start, b.content_start(), None)], caret_at(b.start), merge, |_, _| {});
+            return edit(
+                state,
+                vec![(b.start, b.content_start(), None)],
+                caret_at(b.start),
+                merge,
+                |_, _| {},
+            );
         }
         let indent = " ".repeat(b.indent);
         if p == b.content_start() {
             // At the content's start: a new empty item above; the item keeps its id.
             let ins = format!("{indent}{}{le}", empty_marker(state, text, &b));
             let len = ins.chars().count();
-            return edit(state, vec![(b.start, b.start, Some(ins))], caret_at(p + len), merge, |_, _| {});
+            return edit(
+                state,
+                vec![(b.start, b.start, Some(ins))],
+                caret_at(p + len),
+                merge,
+                |_, _| {},
+            );
         }
         let ins = format!("{le}{indent}{}", next_marker(state, text, &b));
         let len = ins.chars().count();
-        return edit(state, vec![(p, p, Some(ins))], caret_at(p + len), merge, |_, _| {});
+        return edit(
+            state,
+            vec![(p, p, Some(ins))],
+            caret_at(p + len),
+            merge,
+            |_, _| {},
+        );
     }
     if matches!(b.hang, Hang::Heading(_) | Hang::Quote) {
         if soft {
@@ -217,14 +273,26 @@ fn newline_at(state: &mut State, soft: bool, merge: bool) {
         }
         if first && p == b.content_start() && !b.is_empty() {
             let start = b.start;
-            return edit(state, vec![(start, start, Some(le.clone()))], caret_at(p + n), merge, move |m, _| {
-                m.mint(start);
-            });
+            return edit(
+                state,
+                vec![(start, start, Some(le.clone()))],
+                caret_at(p + n),
+                merge,
+                move |m, _| {
+                    m.mint(start);
+                },
+            );
         }
         // A heading or quote is one line: what follows the caret is a new paragraph.
-        return edit(state, vec![(p, p, Some(le.clone()))], caret_at(p + n), merge, move |m, _| {
-            m.mint(p + n);
-        });
+        return edit(
+            state,
+            vec![(p, p, Some(le.clone()))],
+            caret_at(p + n),
+            merge,
+            move |m, _| {
+                m.mint(p + n);
+            },
+        );
     }
     // A paragraph. The paragraphs it makes keep its depth (a nested paragraph's indentation).
     let pad = " ".repeat(b.indent);
@@ -232,20 +300,36 @@ fn newline_at(state: &mut State, soft: bool, merge: bool) {
     if first && p == b.content_start() {
         // At its very start: a new empty paragraph above; the paragraph keeps its id.
         let start = b.start;
-        return edit(state, vec![(start, start, Some(format!("{pad}{le}")))], caret_at(p + w + n), merge, move |m, _| {
-            m.mint(start);
-        });
+        return edit(
+            state,
+            vec![(start, start, Some(format!("{pad}{le}")))],
+            caret_at(p + w + n),
+            merge,
+            move |m, _| {
+                m.mint(start);
+            },
+        );
     }
     if !first && p == ls {
         // At the start of a later line: the paragraph ends above, and this line starts a new
         // one (an empty line here is dropped when more follows).
         if ls == lend && line < b.last_line() {
             let next = text.line_to_char(line + 1);
-            return edit(state, vec![(ls, next, (w > 0).then(|| pad.clone()))], caret_at(ls + w), merge, move |m, _| {
-                m.mint(ls);
-            });
+            return edit(
+                state,
+                vec![(ls, next, (w > 0).then(|| pad.clone()))],
+                caret_at(ls + w),
+                merge,
+                move |m, _| {
+                    m.mint(ls);
+                },
+            );
         }
-        let changes = if w > 0 { vec![(ls, ls, Some(pad.clone()))] } else { vec![] };
+        let changes = if w > 0 {
+            vec![(ls, ls, Some(pad.clone()))]
+        } else {
+            vec![]
+        };
         return edit(state, changes, caret_at(ls + w), merge, move |m, _| {
             m.mint(ls);
         });
@@ -281,9 +365,15 @@ fn type_text(state: &mut State, typed: &str) -> Option<Vec<Effect>> {
     let le = le(state);
     let at = b.end + le.chars().count();
     let caret = at + typed.chars().count();
-    edit(state, vec![(b.end, b.end, Some(format!("{le}{typed}")))], caret_at(caret), false, |m, _| {
-        m.mint(at);
-    });
+    edit(
+        state,
+        vec![(b.end, b.end, Some(format!("{le}{typed}")))],
+        caret_at(caret),
+        false,
+        |m, _| {
+            m.mint(at);
+        },
+    );
     Some(Vec::new())
 }
 
@@ -325,13 +415,21 @@ fn backward(state: &mut State, how: Back) -> Option<Vec<Effect>> {
         return None;
     }
     // A word or row delete stops at the content's start (never into the marker).
-    let floor = if text.char_to_line(p) == b.first_line { b.content_start() } else { 0 };
+    let floor = if text.char_to_line(p) == b.first_line {
+        b.content_start()
+    } else {
+        0
+    };
     let layout = (how == Back::Row).then(|| Layout::new(state));
     update::delete(state, None, |text, _, head| {
         let from = match how {
             Back::Row => {
                 let start = update::row_start(layout.as_ref().expect("layout"), head);
-                if start == head { prev_grapheme_boundary(text, head) } else { start }
+                if start == head {
+                    prev_grapheme_boundary(text, head)
+                } else {
+                    start
+                }
             }
             _ => {
                 let prev = prev_grapheme_boundary(text, head);
@@ -357,7 +455,13 @@ fn backspace_at_start(state: &mut State, o: &Outline, i: usize) -> Vec<Effect> {
             Some(_) => (b.start + b.indent + 2, b.content_start()),
             None => (b.start, b.content_start()),
         };
-        edit(state, vec![(from, to, None)], caret_at(from), false, |_, _| {});
+        edit(
+            state,
+            vec![(from, to, None)],
+            caret_at(from),
+            false,
+            |_, _| {},
+        );
         return Vec::new();
     }
     if i == 0 {
@@ -376,7 +480,13 @@ fn backspace_at_start(state: &mut State, o: &Outline, i: usize) -> Vec<Effect> {
         return Vec::new();
     }
     let prev_end = line_end(text, b.first_line - 1);
-    edit(state, vec![(prev_end, b.start, None)], caret_at(prev_end), false, |_, _| {});
+    edit(
+        state,
+        vec![(prev_end, b.start, None)],
+        caret_at(prev_end),
+        false,
+        |_, _| {},
+    );
     Vec::new()
 }
 
@@ -406,21 +516,35 @@ fn forward(state: &mut State, how: Fwd) -> Option<Vec<Effect>> {
         let to = match how {
             Fwd::Row => {
                 let end = update::row_end(layout.as_ref().expect("layout"), head);
-                if end == head { next_grapheme_boundary(text, head) } else { end }
+                if end == head {
+                    next_grapheme_boundary(text, head)
+                } else {
+                    end
+                }
             }
             Fwd::Line => {
                 let end = line_end_char_index(&text, text.char_to_line(head));
-                if end == head { next_grapheme_boundary(text, head) } else { end }
+                if end == head {
+                    next_grapheme_boundary(text, head)
+                } else {
+                    end
+                }
             }
             _ => {
-                if head < text.len_chars() && crate::helix::chars::char_is_line_ending(text.char(head)) {
+                if head < text.len_chars()
+                    && crate::helix::chars::char_is_line_ending(text.char(head))
+                {
                     next_grapheme_boundary(text, head)
                 } else {
                     update::word_right(text, head)
                 }
             }
         };
-        if head < ceiling { (head, to.min(ceiling)) } else { (head, to) }
+        if head < ceiling {
+            (head, to.min(ceiling))
+        } else {
+            (head, to)
+        }
     });
     Some(Vec::new())
 }
@@ -428,7 +552,9 @@ fn forward(state: &mut State, how: Fwd) -> Option<Vec<Effect>> {
 /// Delete at a block's end: the next block joins it (or, if it's atomic, is selected).
 fn delete_at_end(state: &mut State, o: &Outline, i: usize) -> Vec<Effect> {
     let b = o.blocks[i].clone();
-    let Some(c) = o.blocks.get(i + 1).cloned() else { return Vec::new() };
+    let Some(c) = o.blocks.get(i + 1).cloned() else {
+        return Vec::new();
+    };
     if c.atomic {
         return focus(state, &c);
     }
@@ -439,7 +565,13 @@ fn delete_at_end(state: &mut State, o: &Outline, i: usize) -> Vec<Effect> {
         });
         return Vec::new();
     }
-    edit(state, vec![(b.end, c.content_start(), None)], caret_at(b.end), false, |_, _| {});
+    edit(
+        state,
+        vec![(b.end, c.content_start(), None)],
+        caret_at(b.end),
+        false,
+        |_, _| {},
+    );
     Vec::new()
 }
 
@@ -455,19 +587,43 @@ fn remove_block(state: &mut State, o: &Outline, i: usize, backward: bool) -> Vec
     } else {
         (b.start, b.end)
     };
-    let caret = if backward && b.first_line > 0 { line_end(text, b.first_line - 1) } else { from };
-    let caret = if caret > from { caret - (to - from) } else { caret };
+    let caret = if backward && b.first_line > 0 {
+        line_end(text, b.first_line - 1)
+    } else {
+        from
+    };
+    let caret = if caret > from {
+        caret - (to - from)
+    } else {
+        caret
+    };
     let name: String = text.slice(b.content_start()..b.end).to_string();
-    edit(state, vec![(from, to, None)], caret_at(caret), false, |_, _| {});
-    let label = name.split("](").nth(1).and_then(|s| s.trim_end_matches(')').rsplit('/').next().map(str::to_string));
-    notice(state, &format!("removed {}", label.unwrap_or_else(|| "the block".into())))
+    edit(
+        state,
+        vec![(from, to, None)],
+        caret_at(caret),
+        false,
+        |_, _| {},
+    );
+    let label = name.split("](").nth(1).and_then(|s| {
+        s.trim_end_matches(')')
+            .rsplit('/')
+            .next()
+            .map(str::to_string)
+    });
+    notice(
+        state,
+        &format!("removed {}", label.unwrap_or_else(|| "the block".into())),
+    )
 }
 
 // ---------------------------------------------------------------------------------------
 // Tab and Shift-Tab
 
 fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
-    let Some(o) = state.blocks() else { return notice(state, "only in outline documents") };
+    let Some(o) = state.blocks() else {
+        return notice(state, "only in outline documents");
+    };
     let cfg = state.doc.outline.clone().expect("outline");
     let text = state.doc.text.slice(..);
     let r = state.view.selection.primary();
@@ -482,9 +638,15 @@ fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
             let ls = text.line_to_char(line);
             let pad = " ".repeat(b.indent + unit);
             let w = pad.chars().count();
-            edit(state, vec![(ls, ls, Some(pad))], caret_at(p + w), false, move |m, _| {
-                m.mint(ls);
-            });
+            edit(
+                state,
+                vec![(ls, ls, Some(pad))],
+                caret_at(p + w),
+                false,
+                move |m, _| {
+                    m.mint(ls);
+                },
+            );
             return Vec::new();
         }
     }
@@ -492,7 +654,11 @@ fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
     let unit = unit as i32;
     // The depth of the last non-empty block above: a block nests at most one below it,
     // whatever its kind and the kind of the block above.
-    let mut above: Option<u16> = o.blocks[..*range.start()].iter().rev().find(|b| !b.is_empty()).map(|b| b.depth);
+    let mut above: Option<u16> = o.blocks[..*range.start()]
+        .iter()
+        .rev()
+        .find(|b| !b.is_empty())
+        .map(|b| b.depth);
     let mut changes = Vec::new();
     for i in range {
         let b = &o.blocks[i];
@@ -500,7 +666,11 @@ fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
         if !b.fence {
             let max = above.map_or(0, |d| d as i32 + 1);
             let want = if delta > 0 {
-                if (b.depth as i32) < max { b.depth as i32 + 1 } else { b.depth as i32 }
+                if (b.depth as i32) < max {
+                    b.depth as i32 + 1
+                } else {
+                    b.depth as i32
+                }
             } else {
                 (b.depth as i32 - 1).max(0)
             };
@@ -519,7 +689,11 @@ fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
         }
     }
     if changes.is_empty() {
-        let why = if delta > 0 { "nothing to nest under" } else { "already at the top level" };
+        let why = if delta > 0 {
+            "nothing to nest under"
+        } else {
+            "already at the top level"
+        };
         return notice(state, why);
     }
     let sel = mapped(state, &changes, Assoc::After);
@@ -531,7 +705,9 @@ fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
 // Moving blocks
 
 fn move_block(state: &mut State, dir: Dir) -> Vec<Effect> {
-    let Some(o) = state.blocks() else { return notice(state, "only in outline documents") };
+    let Some(o) = state.blocks() else {
+        return notice(state, "only in outline documents");
+    };
     let rope = state.doc.text.clone();
     let text = rope.slice(..);
     let i = o.index_at(text, state.caret());
@@ -586,16 +762,32 @@ fn move_block(state: &mut State, dir: Dir) -> Vec<Effect> {
             pos
         }
     };
-    let sel = state.view.selection.clone().transform(|r| Range { anchor: shift(r.anchor), head: shift(r.head), old_visual_position: None });
-    edit(state, vec![(u_start, l_end, Some(new_text))], sel, false, move |m, _| {
-        m.remove_range(u_start, u_start + new_len);
-        for mk in &l_marks {
-            let _ = m.insert(Mark { pos: mk.pos - l_start + u_start, ..mk.clone() });
-        }
-        for mk in &u_marks {
-            let _ = m.insert(Mark { pos: mk.pos - u_start + u_start + l_len, ..mk.clone() });
-        }
+    let sel = state.view.selection.clone().transform(|r| Range {
+        anchor: shift(r.anchor),
+        head: shift(r.head),
+        old_visual_position: None,
     });
+    edit(
+        state,
+        vec![(u_start, l_end, Some(new_text))],
+        sel,
+        false,
+        move |m, _| {
+            m.remove_range(u_start, u_start + new_len);
+            for mk in &l_marks {
+                let _ = m.insert(Mark {
+                    pos: mk.pos - l_start + u_start,
+                    ..mk.clone()
+                });
+            }
+            for mk in &u_marks {
+                let _ = m.insert(Mark {
+                    pos: mk.pos - u_start + u_start + l_len,
+                    ..mk.clone()
+                });
+            }
+        },
+    );
     Vec::new()
 }
 
@@ -603,8 +795,12 @@ fn move_block(state: &mut State, dir: Dir) -> Vec<Effect> {
 // Selecting
 
 fn select_block(state: &mut State, id: MarkId) -> Vec<Effect> {
-    let Some(o) = state.blocks() else { return notice(state, "only in outline documents") };
-    let Some(b) = o.get(id).cloned() else { return notice(state, "no such block") };
+    let Some(o) = state.blocks() else {
+        return notice(state, "only in outline documents");
+    };
+    let Some(b) = o.get(id).cloned() else {
+        return notice(state, "no such block");
+    };
     state.view.selection = Selection::single(b.content_start(), b.end);
     Vec::new()
 }
@@ -613,7 +809,9 @@ fn select_block(state: &mut State, id: MarkId) -> Vec<Effect> {
 // Host blocks, paste, copy
 
 fn insert_blocks(state: &mut State, after: Option<MarkId>, blocks: &[NewBlock]) -> Vec<Effect> {
-    let Some(o) = state.blocks() else { return notice(state, "only in outline documents") };
+    let Some(o) = state.blocks() else {
+        return notice(state, "only in outline documents");
+    };
     if blocks.is_empty() {
         return Vec::new();
     }
@@ -642,8 +840,16 @@ fn insert_blocks(state: &mut State, after: Option<MarkId>, blocks: &[NewBlock]) 
         line += lines.matches('\n').count();
         body.push_str(&lines);
     }
-    let ins = if after.is_some() { format!("\n{body}") } else { format!("{body}\n") };
-    let ins = if le == "\n" { ins } else { ins.replace('\n', &le) };
+    let ins = if after.is_some() {
+        format!("\n{body}")
+    } else {
+        format!("{body}\n")
+    };
+    let ins = if le == "\n" {
+        ins
+    } else {
+        ins.replace('\n', &le)
+    };
     let base = state.doc.text.char_to_line(at);
     let changes = vec![(at, at, Some(ins))];
     let sel = mapped(state, &changes, Assoc::Before);
@@ -651,7 +857,14 @@ fn insert_blocks(state: &mut State, after: Option<MarkId>, blocks: &[NewBlock]) 
         for (line, mark, gap) in starts {
             let pos = new.line_to_char(base + line);
             let attrs = MarkAttrs::gap(gap);
-            let placed = mark.is_some_and(|id| m.insert(Mark { pos, id, attrs: attrs.clone() }).is_ok());
+            let placed = mark.is_some_and(|id| {
+                m.insert(Mark {
+                    pos,
+                    id,
+                    attrs: attrs.clone(),
+                })
+                .is_ok()
+            });
             if !placed {
                 if let Some(id) = m.at(pos) {
                     m.set_gap(id, attrs.gap);
@@ -665,7 +878,12 @@ fn insert_blocks(state: &mut State, after: Option<MarkId>, blocks: &[NewBlock]) 
 }
 
 fn paste(state: &mut State, text: Option<&str>, plain: bool) -> Option<Vec<Effect>> {
-    let own = text.is_none_or(|t| state.doc.clipboard.is_own(&update::normalize_line_endings(t, "\n")));
+    let own = text.is_none_or(|t| {
+        state
+            .doc
+            .clipboard
+            .is_own(&update::normalize_line_endings(t, "\n"))
+    });
     if own && !plain {
         if let Some(fx) = paste_whole(state) {
             return Some(fx);
@@ -673,7 +891,11 @@ fn paste(state: &mut State, text: Option<&str>, plain: bool) -> Option<Vec<Effec
         // Whole blocks elsewhere (inside a block's text): as Markdown blocks.
         if state.doc.clipboard.blocks && single(state).is_some() {
             if let Some(md) = state.doc.clipboard.external.clone() {
-                let (blocks, _) = markdown::parse_markdown(&md, false, state.doc.outline.as_ref().expect("outline"));
+                let (blocks, _) = markdown::parse_markdown(
+                    &md,
+                    false,
+                    state.doc.outline.as_ref().expect("outline"),
+                );
                 if !blocks.is_empty() {
                     paste_blocks(state, &blocks);
                     return Some(Vec::new());
@@ -688,9 +910,13 @@ fn paste(state: &mut State, text: Option<&str>, plain: bool) -> Option<Vec<Effec
         return None;
     }
     single(state)?;
-    let (blocks, images) = markdown::parse_markdown(&text, plain, state.doc.outline.as_ref().expect("outline"));
+    let (blocks, images) =
+        markdown::parse_markdown(&text, plain, state.doc.outline.as_ref().expect("outline"));
     if blocks.is_empty() {
-        return Some(notice(state, &format!("left out {}", plural(images, "image"))));
+        return Some(notice(
+            state,
+            &format!("left out {}", plural(images, "image")),
+        ));
     }
     paste_blocks(state, &blocks);
     if images > 0 {
@@ -700,7 +926,11 @@ fn paste(state: &mut State, text: Option<&str>, plain: bool) -> Option<Vec<Effec
 }
 
 fn plural(n: usize, what: &str) -> String {
-    if n == 1 { format!("1 {what}") } else { format!("{n} {what}s") }
+    if n == 1 {
+        format!("1 {what}")
+    } else {
+        format!("{n} {what}s")
+    }
 }
 
 /// Pasted blocks: the first joins the text before the caret (taking its shape when nothing
@@ -729,7 +959,11 @@ fn paste_blocks(state: &mut State, blocks: &[NewBlock]) {
     for (k, nb) in blocks.iter().enumerate() {
         let mut nb = nb.clone();
         nb.depth += base;
-        let piece = if k == 0 && !before_empty { nb.text.clone() } else { nb.to_lines(&cfg) };
+        let piece = if k == 0 && !before_empty {
+            nb.text.clone()
+        } else {
+            nb.to_lines(&cfg)
+        };
         if k > 0 {
             body.push('\n');
             line += 1;
@@ -738,24 +972,37 @@ fn paste_blocks(state: &mut State, blocks: &[NewBlock]) {
         line += piece.matches('\n').count();
         body.push_str(&piece);
     }
-    let body = if le == "\n" { body } else { body.replace('\n', &le) };
+    let body = if le == "\n" {
+        body
+    } else {
+        body.replace('\n', &le)
+    };
     let base_line = text.char_to_line(from);
     let caret = from + body.chars().count();
     let (own, own_start) = (b.id, b.start);
-    edit(state, vec![(from, p, Some(body))], caret_at(caret), merge, move |m, new| {
-        // The first piece joins the caret's block, which keeps its line.
-        if let Some(mk) = m.remove(own) {
-            let _ = m.insert(Mark { pos: own_start, ..mk });
-        }
-        for (line, gap) in starts {
-            let pos = new.line_to_char(base_line + line);
-            if let Some(id) = m.at(pos) {
-                m.set_gap(id, gap);
-            } else {
-                m.mint_with(pos, MarkAttrs::gap(gap));
+    edit(
+        state,
+        vec![(from, p, Some(body))],
+        caret_at(caret),
+        merge,
+        move |m, new| {
+            // The first piece joins the caret's block, which keeps its line.
+            if let Some(mk) = m.remove(own) {
+                let _ = m.insert(Mark {
+                    pos: own_start,
+                    ..mk
+                });
             }
-        }
-    });
+            for (line, gap) in starts {
+                let pos = new.line_to_char(base_line + line);
+                if let Some(id) = m.at(pos) {
+                    m.set_gap(id, gap);
+                } else {
+                    m.mint_with(pos, MarkAttrs::gap(gap));
+                }
+            }
+        },
+    );
 }
 
 fn copy(state: &mut State, cut: bool) -> Option<Vec<Effect>> {
@@ -771,7 +1018,11 @@ fn copy(state: &mut State, cut: bool) -> Option<Vec<Effect>> {
     let raw = text.slice(r.from()..r.to()).to_string();
     let md = markdown::to_markdown(state, &o, r.from(), r.to());
     let n_blocks = o.indices_between(text, r.from(), r.to()).count();
-    let what = if n_blocks > 1 { plural(n_blocks, "block") } else { update::count_label(&raw) };
+    let what = if n_blocks > 1 {
+        plural(n_blocks, "block")
+    } else {
+        update::count_label(&raw)
+    };
     state.view.status = Some(format!("{} {what}", if cut { "cut" } else { "copied" }));
     let mut marks = Vec::new();
     if cut {
@@ -779,11 +1030,20 @@ fn copy(state: &mut State, cut: bool) -> Option<Vec<Effect>> {
         marks = removed
             .iter()
             .filter(|m| r.from() <= m.pos && m.pos <= r.to())
-            .map(|m| ClipMark { offset: m.pos - r.from(), id: m.id, attrs: m.attrs.clone() })
+            .map(|m| ClipMark {
+                offset: m.pos - r.from(),
+                id: m.id,
+                attrs: m.attrs.clone(),
+            })
             .collect();
     }
     let external = (md != raw).then(|| md.clone());
-    state.doc.clipboard = Clipboard { text: raw, external, marks, blocks: false };
+    state.doc.clipboard = Clipboard {
+        text: raw,
+        external,
+        marks,
+        blocks: false,
+    };
     Some(vec![Effect::ClipboardSet { text: md }])
 }
 
@@ -818,7 +1078,11 @@ fn copy_blocks(state: &mut State, o: &Outline, i0: usize, i1: usize, cut: bool) 
     let raw = format!("{lines}{le}");
     let md = markdown::to_markdown(state, o, first.content_start(), last.end);
     let n = i1 - i0 + 1;
-    state.view.status = Some(format!("{} {}", if cut { "cut" } else { "copied" }, plural(n, "block")));
+    state.view.status = Some(format!(
+        "{} {}",
+        if cut { "cut" } else { "copied" },
+        plural(n, "block")
+    ));
     let mut marks = Vec::new();
     if cut {
         // The lines go with one line break: the one after them, or the one before the last
@@ -829,15 +1093,25 @@ fn copy_blocks(state: &mut State, o: &Outline, i0: usize, i1: usize, cut: bool) 
             None => (0, last.end),
         };
         let caret = from.min(text.len_chars() - (to - from));
-        let txn = Transaction::change(&state.doc.text, [(from, to, None)].into_iter()).with_selection(caret_at(caret));
+        let txn = Transaction::change(&state.doc.text, [(from, to, None)].into_iter())
+            .with_selection(caret_at(caret));
         let removed = update::commit_with(state, txn, Step::default(), |_, _| {});
         marks = removed
             .iter()
             .filter(|m| first.start <= m.pos && m.pos <= last.end)
-            .map(|m| ClipMark { offset: m.pos - first.start, id: m.id, attrs: m.attrs.clone() })
+            .map(|m| ClipMark {
+                offset: m.pos - first.start,
+                id: m.id,
+                attrs: m.attrs.clone(),
+            })
             .collect();
     }
-    state.doc.clipboard = Clipboard { text: raw, external: Some(md.clone()), marks, blocks: true };
+    state.doc.clipboard = Clipboard {
+        text: raw,
+        external: Some(md.clone()),
+        marks,
+        blocks: true,
+    };
     vec![Effect::ClipboardSet { text: md }]
 }
 
@@ -874,7 +1148,13 @@ fn paste_whole(state: &mut State) -> Option<Vec<Effect>> {
     // The register's blocks, re-indented to the target's depth.
     let reg = crate::helix::Rope::from(clip.text.trim_end_matches(['\n', '\r']));
     let ro = crate::outline::derive(reg.slice(..), &Marks::new(), &cfg);
-    let base = ro.blocks.iter().filter(|x| x.is_item()).map(|x| x.depth).min().unwrap_or(0);
+    let base = ro
+        .blocks
+        .iter()
+        .filter(|x| x.is_item())
+        .map(|x| x.depth)
+        .min()
+        .unwrap_or(0);
     let target = if b.is_item() { b.depth } else { 0 };
     let unit = cfg.indent.max(1) as usize;
     let mut body_lines: Vec<String> = Vec::new();
@@ -888,15 +1168,27 @@ fn paste_whole(state: &mut State) -> Option<Vec<Effect>> {
         let blk = ro.block_of_line(k);
         if blk.first_line == k && blk.is_item() {
             let depth = (blk.depth as isize - base as isize + target as isize).max(0) as usize;
-            body_lines.push(format!("{}{}", " ".repeat(depth * unit), &s[blk.indent.min(s.len())..]));
+            body_lines.push(format!(
+                "{}{}",
+                " ".repeat(depth * unit),
+                &s[blk.indent.min(s.len())..]
+            ));
         } else {
             body_lines.push(s);
         }
     }
     let le = le(state);
     let body = body_lines.join(&le);
-    let reg_line = |offset: usize| line_offsets.partition_point(|&s| s <= offset).saturating_sub(1);
-    let carried: Vec<(usize, ClipMark)> = clip.marks.iter().map(|c| (reg_line(c.offset), c.clone())).collect();
+    let reg_line = |offset: usize| {
+        line_offsets
+            .partition_point(|&s| s <= offset)
+            .saturating_sub(1)
+    };
+    let carried: Vec<(usize, ClipMark)> = clip
+        .marks
+        .iter()
+        .map(|c| (reg_line(c.offset), c.clone()))
+        .collect();
     let starts: Vec<usize> = ro.blocks.iter().map(|x| x.first_line).collect();
     let (from, to, ins, first_line) = if empty {
         (b.start, b.end, body, b.first_line)
@@ -908,31 +1200,41 @@ fn paste_whole(state: &mut State) -> Option<Vec<Effect>> {
     };
     let caret = from + ins.chars().count() - if before { le.chars().count() } else { 0 };
     let own = empty.then_some(b.id);
-    edit(state, vec![(from, to, Some(ins))], caret_at(caret), merge, move |m, new| {
-        // The emptied item's id stays on the first pasted line unless the register brings one.
-        let lead = carried.iter().any(|(l, _)| *l == 0);
-        if let Some(id) = own {
-            if let Some(mk) = m.remove(id) {
-                if !lead {
-                    let _ = m.insert(Mark { pos: from, ..mk });
+    edit(
+        state,
+        vec![(from, to, Some(ins))],
+        caret_at(caret),
+        merge,
+        move |m, new| {
+            // The emptied item's id stays on the first pasted line unless the register brings one.
+            let lead = carried.iter().any(|(l, _)| *l == 0);
+            if let Some(id) = own {
+                if let Some(mk) = m.remove(id) {
+                    if !lead {
+                        let _ = m.insert(Mark { pos: from, ..mk });
+                    }
                 }
             }
-        }
-        for (l, c) in carried {
-            let pos = new.line_to_char(first_line + l);
-            if m.at(pos).is_none() && !m.contains(c.id) {
-                let _ = m.insert(Mark { pos, id: c.id, attrs: c.attrs.clone() });
+            for (l, c) in carried {
+                let pos = new.line_to_char(first_line + l);
+                if m.at(pos).is_none() && !m.contains(c.id) {
+                    let _ = m.insert(Mark {
+                        pos,
+                        id: c.id,
+                        attrs: c.attrs.clone(),
+                    });
+                }
             }
-        }
-        // Every pasted block starts a block here, an empty paragraph too (nothing else would
-        // tell it from a line of the block above).
-        for l in starts {
-            let pos = new.line_to_char(first_line + l);
-            if m.at(pos).is_none() {
-                m.mint(pos);
+            // Every pasted block starts a block here, an empty paragraph too (nothing else would
+            // tell it from a line of the block above).
+            for l in starts {
+                let pos = new.line_to_char(first_line + l);
+                if m.at(pos).is_none() {
+                    m.mint(pos);
+                }
             }
-        }
-    });
+        },
+    );
     Some(Vec::new())
 }
 
@@ -948,12 +1250,24 @@ pub(crate) fn normalize(state: &mut State, prev: &Selection, msg: &Msg) {
 }
 
 /// [`normalize`] for any selection of `doc`: the fixed selection, when it changes.
-pub(crate) fn normalized(doc: &Document, selection: &Selection, prev: &Selection, msg: &Msg) -> Option<Selection> {
+pub(crate) fn normalized(
+    doc: &Document,
+    selection: &Selection,
+    prev: &Selection,
+    msg: &Msg,
+) -> Option<Selection> {
     let o = doc.blocks()?;
     let rope = doc.text.clone();
     let text = rope.slice(..);
     let moving = matches!(msg, Msg::Move { .. });
-    let back = matches!(msg, Msg::Move { dir: Dir::Backward, by: By::Grapheme | By::Word, .. });
+    let back = matches!(
+        msg,
+        Msg::Move {
+            dir: Dir::Backward,
+            by: By::Grapheme | By::Word,
+            ..
+        }
+    );
     let snap = |pos: usize, back: bool| -> usize {
         let i = o.index_at(text, pos);
         let b = &o.blocks[i];
@@ -967,7 +1281,10 @@ pub(crate) fn normalized(doc: &Document, selection: &Selection, prev: &Selection
             pos
         }
     };
-    let was_focused = |b: &BlockInfo| prev.iter().any(|r| r.from() == b.content_start() && r.to() == b.end && !r.is_empty());
+    let was_focused = |b: &BlockInfo| {
+        prev.iter()
+            .any(|r| r.from() == b.content_start() && r.to() == b.end && !r.is_empty())
+    };
     let focus_range = |b: &BlockInfo, r: &Range| Range {
         anchor: b.content_start(),
         head: b.end,
@@ -975,7 +1292,11 @@ pub(crate) fn normalized(doc: &Document, selection: &Selection, prev: &Selection
     };
     let fix = |r: &Range| -> Range {
         let mut head = snap(r.head, back);
-        let mut anchor = if r.anchor == r.head { head } else { snap(r.anchor, false) };
+        let mut anchor = if r.anchor == r.head {
+            head
+        } else {
+            snap(r.anchor, false)
+        };
         if anchor == head {
             let b = o.block_at(text, head);
             if b.atomic && head >= b.content_start() && head <= b.end {
@@ -992,7 +1313,11 @@ pub(crate) fn normalized(doc: &Document, selection: &Selection, prev: &Selection
                             if nb.atomic && p >= nb.content_start() && p <= nb.end {
                                 focus_range(nb, r)
                             } else {
-                                Range { anchor: p, head: p, old_visual_position: r.old_visual_position }
+                                Range {
+                                    anchor: p,
+                                    head: p,
+                                    old_visual_position: r.old_visual_position,
+                                }
                             }
                         }
                         None => focus_range(b, r),
@@ -1000,7 +1325,11 @@ pub(crate) fn normalized(doc: &Document, selection: &Selection, prev: &Selection
                 }
                 return focus_range(b, r);
             }
-            return Range { anchor, head, old_visual_position: r.old_visual_position };
+            return Range {
+                anchor,
+                head,
+                old_visual_position: r.old_visual_position,
+            };
         }
         // A selection takes an atomic block whole.
         let hb = o.block_at(text, head);
@@ -1019,7 +1348,11 @@ pub(crate) fn normalized(doc: &Document, selection: &Selection, prev: &Selection
                 anchor = if anchor < head { cs } else { end };
             }
         }
-        Range { anchor, head, old_visual_position: r.old_visual_position }
+        Range {
+            anchor,
+            head,
+            old_visual_position: r.old_visual_position,
+        }
     };
     let ranges: crate::helix::SmallVec<[Range; 1]> = selection.iter().map(fix).collect();
     let primary = selection.primary_index();
@@ -1041,7 +1374,10 @@ pub(crate) fn block_step(state: &State, pos: usize, dir: Dir) -> usize {
     let text = state.doc.text.slice(..);
     let i = o.index_at(text, pos);
     match dir {
-        Dir::Forward => o.blocks.get(i + 1).map_or(text.len_chars(), |b| b.content_start()),
+        Dir::Forward => o
+            .blocks
+            .get(i + 1)
+            .map_or(text.len_chars(), |b| b.content_start()),
         Dir::Backward => {
             let b = &o.blocks[i];
             if pos > b.content_start() {
@@ -1064,7 +1400,11 @@ pub(crate) fn settle(state: &mut State) {
 pub(crate) enum Pins {
     /// A key at the caret (typing, Backspace, Delete): if the caret's block changes kind or
     /// depth, it and the block after it keep their blank rows.
-    Near { id: MarkId, shape: (Kind, u16), gaps: Vec<(MarkId, bool)> },
+    Near {
+        id: MarkId,
+        shape: (Kind, u16),
+        gaps: Vec<(MarkId, bool)>,
+    },
     /// Tab, Shift-Tab, a host command's `keep_gaps`: every block keeps its blank row.
     All(Vec<(MarkId, bool)>),
 }
@@ -1083,10 +1423,19 @@ pub(crate) fn pins_for(state: &State, msg: &Msg) -> Option<Pins> {
         | Msg::KillLine => {
             let i = o.index_at(state.doc.text.slice(..), state.caret());
             let b = &o.blocks[i];
-            let gaps = o.blocks[i..(i + 2).min(o.blocks.len())].iter().map(|b| (b.id, b.gap)).collect();
-            Some(Pins::Near { id: b.id, shape: (b.kind, b.depth), gaps })
+            let gaps = o.blocks[i..(i + 2).min(o.blocks.len())]
+                .iter()
+                .map(|b| (b.id, b.gap))
+                .collect();
+            Some(Pins::Near {
+                id: b.id,
+                shape: (b.kind, b.depth),
+                gaps,
+            })
         }
-        Msg::Indent | Msg::Outdent => Some(Pins::All(o.blocks.iter().map(|b| (b.id, b.gap)).collect())),
+        Msg::Indent | Msg::Outdent => {
+            Some(Pins::All(o.blocks.iter().map(|b| (b.id, b.gap)).collect()))
+        }
         _ => None,
     }
 }
@@ -1120,9 +1469,18 @@ pub(crate) fn pin(state: &mut State, pins: Pins) {
         return;
     }
     let txn = Transaction::new(&state.doc.text);
-    update::commit_with(state, txn, Step { kind: None, replaced: false, merge: true }, move |m, _| {
-        for (id, gap) in changes {
-            m.set_gap(id, Some(gap));
-        }
-    });
+    update::commit_with(
+        state,
+        txn,
+        Step {
+            kind: None,
+            replaced: false,
+            merge: true,
+        },
+        move |m, _| {
+            for (id, gap) in changes {
+                m.set_gap(id, Some(gap));
+            }
+        },
+    );
 }

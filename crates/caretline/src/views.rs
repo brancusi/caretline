@@ -47,12 +47,19 @@ pub fn update_doc_with_changes(
 }
 
 /// [`update_doc`], returning the text changes made in order (not composed).
-pub(crate) fn update_doc_logged(doc: &mut Document, views: &mut [View], acting: usize, msg: Msg) -> (Vec<Effect>, Vec<ChangeSet>) {
+pub(crate) fn update_doc_logged(
+    doc: &mut Document,
+    views: &mut [View],
+    acting: usize,
+    msg: Msg,
+) -> (Vec<Effect>, Vec<ChangeSet>) {
     doc.change_log.0.clear();
     if msg.is_external() {
         return crate::external::apply(doc, views, msg);
     }
-    let Some(view) = views.get(acting) else { return (Vec::new(), Vec::new()) };
+    let Some(view) = views.get(acting) else {
+        return (Vec::new(), Vec::new());
+    };
     if view.read_only && msg.edits() {
         return (vec![Effect::Refused], Vec::new());
     }
@@ -63,7 +70,10 @@ pub(crate) fn update_doc_logged(doc: &mut Document, views: &mut [View], acting: 
     if run_view.is_some_and(|v| v != acting) {
         doc.run = None;
     }
-    let mut state = State { doc: std::mem::take(doc), view: std::mem::take(&mut views[acting]) };
+    let mut state = State {
+        doc: std::mem::take(doc),
+        view: std::mem::take(&mut views[acting]),
+    };
     let effects = step(&mut state, msg);
     *doc = state.doc;
     views[acting] = state.view;
@@ -87,7 +97,10 @@ pub(crate) fn update_doc_logged(doc: &mut Document, views: &mut [View], acting: 
 /// the view on the same text).
 pub(crate) fn tops(doc: &Document, views: &[View]) -> Vec<usize> {
     let last = doc.text.len_lines().saturating_sub(1);
-    views.iter().map(|v| doc.text.line_to_char(v.scroll.line.min(last))).collect()
+    views
+        .iter()
+        .map(|v| doc.text.line_to_char(v.scroll.line.min(last)))
+        .collect()
 }
 
 /// Maps a view through text changes made elsewhere (`changes`, in order), then fits it to
@@ -164,7 +177,10 @@ pub(crate) fn fold(state: &mut State, id: MarkId, set: Option<bool>) {
 
 /// The lines a view hides, as sorted, disjoint `[from, to)` line ranges: the children of
 /// every folded block.
-pub fn hidden_lines(o: &Outline, folds: &std::collections::BTreeSet<MarkId>) -> Vec<(usize, usize)> {
+pub fn hidden_lines(
+    o: &Outline,
+    folds: &std::collections::BTreeSet<MarkId>,
+) -> Vec<(usize, usize)> {
     if folds.is_empty() {
         return Vec::new();
     }
@@ -173,7 +189,10 @@ pub fn hidden_lines(o: &Outline, folds: &std::collections::BTreeSet<MarkId>) -> 
         let Some(i) = o.index_of(id) else { continue };
         let end = o.subtree_end(i);
         if end > i + 1 {
-            ranges.push((o.blocks[i + 1].first_line, o.blocks[end - 1].last_line() + 1));
+            ranges.push((
+                o.blocks[i + 1].first_line,
+                o.blocks[end - 1].last_line() + 1,
+            ));
         }
     }
     ranges.sort();
@@ -196,13 +215,24 @@ pub(crate) fn hidden_range(hidden: &[(usize, usize)], line: usize) -> Option<(us
 /// After a message, moves selection ends out of folded blocks: forward motion to the first
 /// line after them, anything else to the fold's own end.
 pub(crate) fn unhide(state: &mut State, msg: &Msg) {
-    let forward = matches!(msg, Msg::Move { dir: crate::msg::Dir::Forward, .. });
+    let forward = matches!(
+        msg,
+        Msg::Move {
+            dir: crate::msg::Dir::Forward,
+            ..
+        }
+    );
     if let Some(sel) = unhidden(&state.doc, &state.view, &state.view.selection, forward) {
         state.view.selection = sel;
     }
 }
 
-fn unhidden(doc: &Document, view: &View, selection: &Selection, forward: bool) -> Option<Selection> {
+fn unhidden(
+    doc: &Document,
+    view: &View,
+    selection: &Selection,
+    forward: bool,
+) -> Option<Selection> {
     if view.folds.is_empty() {
         return None;
     }
@@ -229,7 +259,11 @@ fn unhidden(doc: &Document, view: &View, selection: &Selection, forward: bool) -
     };
     let ranges: SmallVec<[Range; 1]> = selection
         .iter()
-        .map(|r| Range { anchor: out(r.anchor), head: out(r.head), old_visual_position: r.old_visual_position })
+        .map(|r| Range {
+            anchor: out(r.anchor),
+            head: out(r.head),
+            old_visual_position: r.old_visual_position,
+        })
         .collect();
     let fixed = Selection::new(ranges, selection.primary_index());
     (fixed != *selection).then_some(fixed)

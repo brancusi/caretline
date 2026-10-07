@@ -23,7 +23,7 @@ use clap::Parser;
 use caretline::trace::TraceLine;
 
 use crate::hub::Hub;
-use crate::runtime::{self, dispatch_demo, Demo, KeyAction};
+use crate::runtime::{self, Demo, KeyAction, dispatch_demo};
 use replay::Replay;
 
 const TOUR: &str = include_str!("tour.md");
@@ -97,7 +97,9 @@ pub struct DemoArgs {
 }
 
 pub fn main(argv: &[String]) -> Result<(), String> {
-    let args = DemoArgs::parse_from(std::iter::once("caretline demo".to_string()).chain(argv.iter().cloned()));
+    let args = DemoArgs::parse_from(
+        std::iter::once("caretline demo".to_string()).chain(argv.iter().cloned()),
+    );
     match args.demo.as_str() {
         "scenes" => scenes::main(&args),
         "agent" if args.headless => agent::headless(),
@@ -135,9 +137,13 @@ pub(crate) fn initial_state(kind: Kind, path: Option<String>, viewport: Viewport
     let text = state.doc.text.to_string();
     let caret = match kind {
         // The end of step 1's paragraph: the person just types.
-        Kind::Tour => text.find("edge of the window.").map(|i| i + "edge of the window.".len()),
+        Kind::Tour => text
+            .find("edge of the window.")
+            .map(|i| i + "edge of the window.".len()),
         // The empty item under "Yours".
-        Kind::Agent => text.find("## Yours").and_then(|y| text[y..].find("\n- ").map(|i| y + i + 3)),
+        Kind::Agent => text
+            .find("## Yours")
+            .and_then(|y| text[y..].find("\n- ").map(|i| y + i + 3)),
     };
     if let Some(byte) = caret {
         let pos = text[..byte].chars().count();
@@ -170,7 +176,9 @@ pub(crate) fn tour_section(text: &str, line: usize) -> (Option<u32>, u32) {
 /// mark (shown in the marks section).
 pub(crate) fn tour_hint(text: &str, line: usize, mark: Option<u64>) -> String {
     let (section, total) = tour_section(text, line);
-    let Some(n) = section else { return "tour done ✦ next: caretline demo agent".into() };
+    let Some(n) = section else {
+        return "tour done ✦ next: caretline demo agent".into();
+    };
     let what = match n {
         0 => "↓ to start: the status bar follows the caret".to_string(),
         1 => "type past the edge: lines wrap at words".into(),
@@ -189,7 +197,11 @@ pub(crate) fn tour_hint(text: &str, line: usize, mark: Option<u64>) -> String {
         11 => "⌃P replays your session from the start".into(),
         _ => "↓ for the next step".into(),
     };
-    if n == 0 { what } else { format!("{n}/{total} · {what}") }
+    if n == 0 {
+        what
+    } else {
+        format!("{n}/{total} · {what}")
+    }
 }
 
 /// What the agent thread reports, for the status bar.
@@ -218,7 +230,10 @@ impl EditorDemo {
             Kind::Tour => {
                 let state = hub.session.state();
                 let caret = state.view.caret();
-                let line = state.doc.text.char_to_line(caret.min(state.doc.text.len_chars()));
+                let line = state
+                    .doc
+                    .text
+                    .char_to_line(caret.min(state.doc.text.len_chars()));
                 let mark = state.blocks().and_then(|o| {
                     let i = o.index_at(state.doc.text.slice(..), caret);
                     o.blocks.get(i).map(|b| b.id.0)
@@ -230,7 +245,10 @@ impl EditorDemo {
                 if let Some(e) = p.error {
                     format!("agent stopped: {e}")
                 } else if p.done {
-                    format!("agent done: {} writes, {} refused and retried · ⌃P replays you both", p.writes, p.stale)
+                    format!(
+                        "agent done: {} writes, {} refused and retried · ⌃P replays you both",
+                        p.writes, p.stale
+                    )
                 } else if p.started {
                     "you + agent editing · ⌃Z undoes only yours · ⌃P replay".into()
                 } else {
@@ -247,7 +265,9 @@ impl EditorDemo {
     /// ⌃O: folds or opens the caret's block, or the nearest one above it with children.
     fn toggle_fold(&self, hub: &mut Hub) {
         let state = hub.session.state();
-        let Some(outline) = state.blocks() else { return };
+        let Some(outline) = state.blocks() else {
+            return;
+        };
         let blocks = &outline.blocks;
         if blocks.is_empty() {
             return;
@@ -257,7 +277,10 @@ impl EditorDemo {
         let has_children = |i: usize| blocks.get(i + 1).is_some_and(|b| b.depth > blocks[i].depth);
         if !has_children(i) {
             let depth = blocks[i].depth;
-            match (0..i).rev().find(|&k| blocks[k].depth < depth && has_children(k)) {
+            match (0..i)
+                .rev()
+                .find(|&k| blocks[k].depth < depth && has_children(k))
+            {
                 Some(k) => i = k,
                 None => {
                     self.status(hub, "⌃O folds an item that has children".into());
@@ -267,10 +290,16 @@ impl EditorDemo {
         }
         let id = blocks[i].id;
         let depth = blocks[i].depth;
-        let hidden = blocks[i + 1..].iter().take_while(|b| b.depth > depth).count();
+        let hidden = blocks[i + 1..]
+            .iter()
+            .take_while(|b| b.depth > depth)
+            .count();
         let folding = !state.view.folds.contains(&id);
         let text = if folding {
-            format!("folded {hidden} item{} · ⌃O opens", if hidden == 1 { "" } else { "s" })
+            format!(
+                "folded {hidden} item{} · ⌃O opens",
+                if hidden == 1 { "" } else { "s" }
+            )
         } else {
             "opened".to_string()
         };
@@ -282,7 +311,9 @@ impl EditorDemo {
         let mut state = hub.session.state().clone();
         let text = &state.doc.text;
         let ranges = state.view.selection.ranges().to_vec();
-        let Some(last) = ranges.iter().max_by_key(|r| r.head) else { return };
+        let Some(last) = ranges.iter().max_by_key(|r| r.head) else {
+            return;
+        };
         let line = text.char_to_line(last.head);
         if line + 1 >= text.len_lines() {
             self.status(hub, "no row below".into());
@@ -290,10 +321,16 @@ impl EditorDemo {
         }
         let col = last.head - text.line_to_char(line);
         let next = text.line(line + 1);
-        let len = next.len_chars() - if next.chars().last() == Some('\n') { 1 } else { 0 };
+        let len = next.len_chars()
+            - if next.chars().last() == Some('\n') {
+                1
+            } else {
+                0
+            };
         let pos = text.line_to_char(line + 1) + col.min(len);
         let primary = state.view.selection.primary_index();
-        let mut all: caretline::helix::SmallVec<[caretline::helix::Range; 1]> = ranges.into_iter().collect();
+        let mut all: caretline::helix::SmallVec<[caretline::helix::Range; 1]> =
+            ranges.into_iter().collect();
         all.push(caretline::helix::Range::point(pos));
         let n = all.len();
         state.view.selection = Selection::new(all, primary);
@@ -312,24 +349,37 @@ impl EditorDemo {
         let mut view = hub.session.state().view.clone();
         view.status = Some("view 1 · the same document, its own caret and scroll".into());
         hub.session.open_view(view);
-        self.status(hub, "a second view below · type here, watch it there".into());
+        self.status(
+            hub,
+            "a second view below · type here, watch it there".into(),
+        );
     }
 
     /// ⌃D: the whole editor as JSON, written next to the document.
     fn dump(&self, hub: &mut Hub) {
         let state = hub.session.state();
         let json = state.to_json();
-        let lean = serde_json::to_string(&state.without_history()).map(|h| h.len()).unwrap_or(0);
+        let lean = serde_json::to_string(&state.without_history())
+            .map(|h| h.len())
+            .unwrap_or(0);
         let history = json.len().saturating_sub(lean);
         let path = self.dir.join("state.json");
         // A headless snapshot has no directory: it measures, and writes nothing.
-        let written = if self.dir.as_os_str().is_empty() { Ok(()) } else { std::fs::write(&path, &json) };
+        let written = if self.dir.as_os_str().is_empty() {
+            Ok(())
+        } else {
+            std::fs::write(&path, &json)
+        };
         let text = match written {
             Ok(()) => format!(
                 "state.json · {} · undo {} · {} msgs",
                 kb(json.len()),
                 kb(history),
-                hub.session.trace().iter().filter(|l| matches!(l, TraceLine::Msg(_) | TraceLine::On(_))).count()
+                hub.session
+                    .trace()
+                    .iter()
+                    .filter(|l| matches!(l, TraceLine::Msg(_) | TraceLine::On(_)))
+                    .count()
             ),
             Err(e) => format!("couldn't write state.json: {e}"),
         };
@@ -338,13 +388,19 @@ impl EditorDemo {
 }
 
 fn kb(n: usize) -> String {
-    if n < 1024 { format!("{n} B") } else { format!("{:.1} KB", n as f64 / 1024.0) }
+    if n < 1024 {
+        format!("{n} B")
+    } else {
+        format!("{:.1} KB", n as f64 / 1024.0)
+    }
 }
 
 /// Ctrl and a letter, nothing else.
 fn ctrl(key: &Key) -> Option<char> {
     match key.code {
-        KeyCode::Char(c) if key.mods.ctrl && !key.mods.alt && !key.mods.cmd => Some(c.to_ascii_lowercase()),
+        KeyCode::Char(c) if key.mods.ctrl && !key.mods.alt && !key.mods.cmd => {
+            Some(c.to_ascii_lowercase())
+        }
         _ => None,
     }
 }
@@ -360,7 +416,12 @@ impl Demo for EditorDemo {
             return KeyAction::Consumed;
         }
         // Esc with several carets keeps one, the primary.
-        if key.code == KeyCode::Esc && !key.mods.ctrl && !key.mods.alt && !key.mods.cmd && !key.mods.shift {
+        if key.code == KeyCode::Esc
+            && !key.mods.ctrl
+            && !key.mods.alt
+            && !key.mods.cmd
+            && !key.mods.shift
+        {
             let sel = &hub.session.state().view.selection;
             if sel.ranges().len() > 1 && sel.ranges().iter().all(|r| r.anchor == r.head) {
                 let mut state = hub.session.state().clone();
@@ -375,8 +436,18 @@ impl Demo for EditorDemo {
             Some('g') => self.toggle_view(hub),
             Some('d') => self.dump(hub),
             Some('p') => {
-                let pane = hub.session.views().first().map(|(_, v)| v.viewport.height).unwrap_or(0);
-                self.replay = Some(Replay::new(hub.session.trace(), hub.session.state(), pane, Instant::now()));
+                let pane = hub
+                    .session
+                    .views()
+                    .first()
+                    .map(|(_, v)| v.viewport.height)
+                    .unwrap_or(0);
+                self.replay = Some(Replay::new(
+                    hub.session.trace(),
+                    hub.session.state(),
+                    pane,
+                    Instant::now(),
+                ));
                 self.generation += 1;
             }
             _ => return KeyAction::Pass,
@@ -419,7 +490,11 @@ impl Demo for EditorDemo {
     }
 
     fn pane_rows(&self, hub: &Hub, height: u16) -> u16 {
-        if hub.session.views().is_empty() { 0 } else { pane_rows(height) }
+        if hub.session.views().is_empty() {
+            0
+        } else {
+            pane_rows(height)
+        }
     }
 
     fn overlay(&self) -> Option<Frame> {
@@ -444,13 +519,24 @@ fn editor_demo(args: &DemoArgs, kind: Kind) -> Result<(), String> {
     if let Some(size) = &args.snapshot {
         let (w, h) = crate::parse_size(size)?;
         let frame = snapshot(kind, w, h, args.keys.as_deref())?;
-        print!("{}", if args.format == "ansi" { frame.to_ansi() } else { frame.to_text() });
+        print!(
+            "{}",
+            if args.format == "ansi" {
+                frame.to_ansi()
+            } else {
+                frame.to_text()
+            }
+        );
         return Ok(());
     }
     let dir = demo_dir(args)?;
     let path = dir.join(name);
     let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
-    let state = initial_state(kind, Some(path.to_string_lossy().into_owned()), Viewport { width, height });
+    let state = initial_state(
+        kind,
+        Some(path.to_string_lossy().into_owned()),
+        Viewport { width, height },
+    );
     // The document is on disk too, so ⌃S has somewhere to go and the person can keep it.
     let text = state.doc.text.to_string();
     std::fs::write(&path, &text).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -464,7 +550,14 @@ fn editor_demo(args: &DemoArgs, kind: Kind) -> Result<(), String> {
         }
         Kind::Tour => None,
     };
-    let demo = EditorDemo { kind, dir: dir.clone(), hint: None, replay: None, generation: 0, agent };
+    let demo = EditorDemo {
+        kind,
+        dir: dir.clone(),
+        hint: None,
+        replay: None,
+        generation: 0,
+        agent,
+    };
     let file = path.to_string_lossy().into_owned();
     let result = runtime::run_interactive(
         state,
@@ -497,7 +590,14 @@ fn layers_demo(args: &DemoArgs) -> Result<(), String> {
     if let Some(size) = &args.snapshot {
         let (w, h) = crate::parse_size(size)?;
         let frame = layers_snapshot(w, h, args.keys.as_deref())?;
-        print!("{}", if args.format == "ansi" { frame.to_ansi() } else { frame.to_text() });
+        print!(
+            "{}",
+            if args.format == "ansi" {
+                frame.to_ansi()
+            } else {
+                frame.to_text()
+            }
+        );
         return Ok(());
     }
     let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -521,7 +621,16 @@ fn layers_demo(args: &DemoArgs) -> Result<(), String> {
 /// The layers demo's frame at `w`x`h` after `keys`, in cells.
 pub(crate) fn layers_snapshot(w: u16, h: u16, keys: Option<&str>) -> Result<Frame, String> {
     let mut demo = layers::LayersDemo::new();
-    let mut hub = Hub::new(Session::new(layers_state(Some("tour.md".into()), Viewport { width: w, height: h })), None);
+    let mut hub = Hub::new(
+        Session::new(layers_state(
+            Some("tour.md".into()),
+            Viewport {
+                width: w,
+                height: h,
+            },
+        )),
+        None,
+    );
     for item in caretline::parse_keys(keys.unwrap_or(""))? {
         if let caretline::keymap::ScriptItem::Key(key) = item {
             match demo.key(&mut hub, &key) {
@@ -537,7 +646,10 @@ pub(crate) fn layers_snapshot(w: u16, h: u16, keys: Option<&str>) -> Result<Fram
         }
     }
     let mut frame = runtime::compose(&hub, 0);
-    let gfx = runtime::Gfx { why: "snapshot".into(), ..Default::default() };
+    let gfx = runtime::Gfx {
+        why: "snapshot".into(),
+        ..Default::default()
+    };
     demo.decorate(&hub, &mut frame, &gfx);
     Ok(frame)
 }
@@ -554,16 +666,41 @@ pub(crate) fn snapshot(kind: Kind, w: u16, h: u16, keys: Option<&str>) -> Result
         agent: Arc::new(Mutex::new(Progress::default())),
     };
     let rows = if kind == Kind::Agent { pane_rows(h) } else { 0 };
-    let state = initial_state(kind, Some(format!("{}.md", if kind == Kind::Tour { "tour" } else { "agent" })), Viewport { width: w, height: h - rows });
+    let state = initial_state(
+        kind,
+        Some(format!(
+            "{}.md",
+            if kind == Kind::Tour { "tour" } else { "agent" }
+        )),
+        Viewport {
+            width: w,
+            height: h - rows,
+        },
+    );
     let mut hub = Hub::new(Session::new(state), None);
     if kind == Kind::Agent {
         // What the agent does first: a view of its own at the end of the document.
         let mut view = hub.session.state().view.clone();
-        view.viewport = Viewport { width: w, height: rows };
+        view.viewport = Viewport {
+            width: w,
+            height: rows,
+        };
         view.status = None;
         let id = hub.session.open_view(view);
-        hub.session.apply_on(id, Msg::Move { dir: caretline::Dir::Forward, by: caretline::By::DocEnd, extend: false });
-        hub.session.apply_on(id, Msg::ShowStatus { text: agent::CONNECTING.into() });
+        hub.session.apply_on(
+            id,
+            Msg::Move {
+                dir: caretline::Dir::Forward,
+                by: caretline::By::DocEnd,
+                extend: false,
+            },
+        );
+        hub.session.apply_on(
+            id,
+            Msg::ShowStatus {
+                text: agent::CONNECTING.into(),
+            },
+        );
     }
     demo.after(&mut hub);
     for item in caretline::parse_keys(keys.unwrap_or(""))? {
@@ -584,11 +721,23 @@ pub(crate) fn snapshot(kind: Kind, w: u16, h: u16, keys: Option<&str>) -> Result
         demo.after(&mut hub);
     }
     // A view opened by the keys (⌃G) takes the bottom of the terminal, as it would live.
-    let rows = if hub.session.views().is_empty() { 0 } else { pane_rows(h) };
+    let rows = if hub.session.views().is_empty() {
+        0
+    } else {
+        pane_rows(h)
+    };
     if hub.session.state().view.viewport.height != h - rows {
-        dispatch_demo(&mut hub, vec![Msg::Resize { width: w, height: h - rows }]);
+        dispatch_demo(
+            &mut hub,
+            vec![Msg::Resize {
+                width: w,
+                height: h - rows,
+            }],
+        );
     }
-    Ok(demo.overlay().unwrap_or_else(|| runtime::compose(&hub, rows)))
+    Ok(demo
+        .overlay()
+        .unwrap_or_else(|| runtime::compose(&hub, rows)))
 }
 
 /// For tests: whether `dir` holds what a demo wrote.
@@ -609,12 +758,22 @@ mod tests {
         assert!(tour_hint(TOUR, line("- one pear"), None).starts_with("4/11 · ⌃N"));
         assert!(tour_hint(TOUR, line("Hold on to me"), Some(7)).contains("#7"));
         assert!(tour_hint(TOUR, line("That's the tour"), None).starts_with("tour done"));
-        assert!(!TOUR.contains("[ ]") && !TOUR.contains("⌃T"), "the tour shows no tasks");
+        assert!(
+            !TOUR.contains("[ ]") && !TOUR.contains("⌃T"),
+            "the tour shows no tasks"
+        );
     }
 
     #[test]
     fn the_tour_starts_with_the_caret_at_step_one() {
-        let s = initial_state(Kind::Tour, None, Viewport { width: 80, height: 24 });
+        let s = initial_state(
+            Kind::Tour,
+            None,
+            Viewport {
+                width: 80,
+                height: 24,
+            },
+        );
         let text = s.doc.text.to_string();
         let before: String = text.chars().take(s.view.caret()).collect();
         assert!(before.ends_with("edge of the window."), "{before:?}");
@@ -624,11 +783,31 @@ mod tests {
     fn fold_dump_and_replay_keys_work() {
         let dir = std::env::temp_dir().join(format!("caretline-demo-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let state = initial_state(Kind::Tour, None, Viewport { width: 80, height: 40 });
+        let state = initial_state(
+            Kind::Tour,
+            None,
+            Viewport {
+                width: 80,
+                height: 40,
+            },
+        );
         let mut hub = Hub::new(Session::new(state), None);
-        let mut demo = EditorDemo { kind: Kind::Tour, dir: dir.clone(), hint: None, replay: None, generation: 0, agent: Default::default() };
+        let mut demo = EditorDemo {
+            kind: Kind::Tour,
+            dir: dir.clone(),
+            hint: None,
+            replay: None,
+            generation: 0,
+            agent: Default::default(),
+        };
         demo.after(&mut hub);
-        let ctrl_key = |c| Key { code: KeyCode::Char(c), mods: caretline::Mods { ctrl: true, ..Default::default() } };
+        let ctrl_key = |c| Key {
+            code: KeyCode::Char(c),
+            mods: caretline::Mods {
+                ctrl: true,
+                ..Default::default()
+            },
+        };
 
         // Fold: the caret on "Put the caret on this line…".
         let text = hub.session.state().doc.text.to_string();
@@ -636,7 +815,10 @@ mod tests {
         let mut s = hub.session.state().clone();
         s.view.selection = Selection::point(at);
         hub.session.set_state(s);
-        assert!(matches!(demo.key(&mut hub, &ctrl_key('o')), KeyAction::Consumed));
+        assert!(matches!(
+            demo.key(&mut hub, &ctrl_key('o')),
+            KeyAction::Consumed
+        ));
         assert_eq!(hub.session.state().view.folds.len(), 1, "folded");
 
         // A second view, and closing it.
@@ -653,19 +835,49 @@ mod tests {
         demo.key(&mut hub, &ctrl_key('n'));
         demo.key(&mut hub, &ctrl_key('n'));
         assert_eq!(hub.session.state().view.selection.ranges().len(), 3);
-        dispatch_demo(&mut hub, vec![Msg::InsertText { text: "two ".into() }]);
-        assert_eq!(hub.session.state().doc.text.to_string().matches("two one").count(), 3);
-        let esc = Key { code: KeyCode::Esc, mods: Default::default() };
+        dispatch_demo(
+            &mut hub,
+            vec![Msg::InsertText {
+                text: "two ".into(),
+            }],
+        );
+        assert_eq!(
+            hub.session
+                .state()
+                .doc
+                .text
+                .to_string()
+                .matches("two one")
+                .count(),
+            3
+        );
+        let esc = Key {
+            code: KeyCode::Esc,
+            mods: Default::default(),
+        };
         demo.key(&mut hub, &esc);
         assert_eq!(hub.session.state().view.selection.ranges().len(), 1);
 
         // Dump.
         demo.key(&mut hub, &ctrl_key('d'));
         assert!(wrote(&dir, "state.json"));
-        assert!(hub.session.state().view.status.as_deref().unwrap().starts_with("state.json · "));
+        assert!(
+            hub.session
+                .state()
+                .view
+                .status
+                .as_deref()
+                .unwrap()
+                .starts_with("state.json · ")
+        );
 
         // Replay: runs to the end and finds the identical state.
-        dispatch_demo(&mut hub, vec![Msg::InsertText { text: "hello".into() }]);
+        dispatch_demo(
+            &mut hub,
+            vec![Msg::InsertText {
+                text: "hello".into(),
+            }],
+        );
         demo.key(&mut hub, &ctrl_key('p'));
         assert!(demo.overlay().is_some());
         let far = Instant::now() + std::time::Duration::from_secs(120);

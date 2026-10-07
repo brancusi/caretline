@@ -2,8 +2,23 @@
 //! (a task, a status, a due date) is the host's, added through `Host` (see docs/).
 
 const WORDS: &[&str] = &[
-    "task", "tasks", "todo", "done", "doing", "waiting", "cancelled", "completed", "checkbox", "checkboxes", "journal",
-    "vault", "thc", "priority", "due", "note", "notes",
+    "task",
+    "tasks",
+    "todo",
+    "done",
+    "doing",
+    "waiting",
+    "cancelled",
+    "completed",
+    "checkbox",
+    "checkboxes",
+    "journal",
+    "vault",
+    "thc",
+    "priority",
+    "due",
+    "note",
+    "notes",
 ];
 
 fn files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
@@ -33,10 +48,19 @@ fn the_engine_names_no_host_concept() {
             let lower = line.to_lowercase();
             for w in lower.split(|c: char| !c.is_alphanumeric()) {
                 if WORDS.contains(&w) {
-                    found.push(format!("{}:{}: {w}: {}", p.strip_prefix(root).unwrap().display(), n + 1, line.trim()));
+                    found.push(format!(
+                        "{}:{}: {w}: {}",
+                        p.strip_prefix(root).unwrap().display(),
+                        n + 1,
+                        line.trim()
+                    ));
                 }
             }
         }
     }
-    assert!(found.is_empty(), "host words in caretline:\n{}", found.join("\n"));
+    assert!(
+        found.is_empty(),
+        "host words in caretline:\n{}",
+        found.join("\n")
+    );
 }

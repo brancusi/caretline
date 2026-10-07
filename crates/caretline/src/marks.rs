@@ -79,7 +79,11 @@ pub struct Mark {
 
 impl Mark {
     pub fn new(pos: usize, id: MarkId) -> Mark {
-        Mark { pos, id, attrs: MarkAttrs::default() }
+        Mark {
+            pos,
+            id,
+            attrs: MarkAttrs::default(),
+        }
     }
 }
 
@@ -211,7 +215,9 @@ impl Marks {
         let unique_ids = all.iter().all(|m| ids.insert(m.id));
         all.sort_by_key(|m| m.pos);
         if unique_ids && all.windows(2).all(|w| w[0].pos != w[1].pos) {
-            self.next = self.next.max(all.iter().map(|m| m.id.0 + 1).max().unwrap_or(0));
+            self.next = self
+                .next
+                .max(all.iter().map(|m| m.id.0 + 1).max().unwrap_or(0));
             self.marks = all;
             return Ok(());
         }
@@ -258,7 +264,11 @@ impl Marks {
     }
 
     /// Sets a mark's payload, keeping its other attributes; returns the old payload.
-    pub fn set_data(&mut self, id: MarkId, data: Option<serde_json::Value>) -> Option<Option<serde_json::Value>> {
+    pub fn set_data(
+        &mut self,
+        id: MarkId,
+        data: Option<serde_json::Value>,
+    ) -> Option<Option<serde_json::Value>> {
         let m = self.marks.iter_mut().find(|m| m.id == id)?;
         Some(std::mem::replace(&mut m.attrs.data, data))
     }
@@ -281,7 +291,9 @@ impl Marks {
                 Operation::Retain(n) => at += n,
                 Operation::Delete(n) => {
                     let ins = match (i.checked_sub(1).and_then(|j| ops.get(j)), ops.get(i + 1)) {
-                        (Some(Operation::Insert(s)), _) | (_, Some(Operation::Insert(s))) => Some(s),
+                        (Some(Operation::Insert(s)), _) | (_, Some(Operation::Insert(s))) => {
+                            Some(s)
+                        }
                         _ => None,
                     };
                     // What was typed in its place ends with a line break: the line after the
@@ -298,7 +310,9 @@ impl Marks {
                 }
             }
         }
-        let Some(first) = first else { return Vec::new() };
+        let Some(first) = first else {
+            return Vec::new();
+        };
         let delta = new.len_chars() as isize - old.len_chars() as isize;
         let start = self.marks.partition_point(|m| m.pos < first);
         let end = self.marks.partition_point(|m| m.pos <= last_end).max(start);
@@ -334,7 +348,10 @@ impl Marks {
             self.marks.push(Mark { pos: p, ..m });
         }
         for m in suffix {
-            self.marks.push(Mark { pos: (m.pos as isize + delta) as usize, ..m });
+            self.marks.push(Mark {
+                pos: (m.pos as isize + delta) as usize,
+                ..m
+            });
         }
         removed.sort_by_key(|m| m.pos);
         removed
@@ -351,7 +368,10 @@ impl Marks {
         self.marks.sort_by_key(|m| m.pos);
         let mut last: Option<usize> = None;
         self.marks.retain(|m| {
-            let ok = m.pos <= len && is_line_start(text, m.pos) && last != Some(m.pos) && seen.insert(m.id);
+            let ok = m.pos <= len
+                && is_line_start(text, m.pos)
+                && last != Some(m.pos)
+                && seen.insert(m.id);
             if ok {
                 last = Some(m.pos);
             }
@@ -369,7 +389,12 @@ impl Marks {
     pub fn diff(&self, target: &Marks) -> Fixup {
         let (a, b) = (&self.marks, &target.marks);
         let pre = a.iter().zip(b.iter()).take_while(|(x, y)| x == y).count();
-        let suf = a[pre..].iter().rev().zip(b[pre..].iter().rev()).take_while(|(x, y)| x == y).count();
+        let suf = a[pre..]
+            .iter()
+            .rev()
+            .zip(b[pre..].iter().rev())
+            .take_while(|(x, y)| x == y)
+            .count();
         let (am, bm) = (&a[pre..a.len() - suf], &b[pre..b.len() - suf]);
         if am.is_empty() && bm.is_empty() {
             return Fixup::default();
@@ -391,7 +416,12 @@ impl Marks {
         if fixup.is_empty() {
             return;
         }
-        let gone: HashSet<MarkId> = fixup.drop.iter().copied().chain(fixup.set.iter().map(|m| m.id)).collect();
+        let gone: HashSet<MarkId> = fixup
+            .drop
+            .iter()
+            .copied()
+            .chain(fixup.set.iter().map(|m| m.id))
+            .collect();
         self.marks.retain(|m| !gone.contains(&m.id));
         for m in &fixup.set {
             match self.index_of(m.pos) {
@@ -479,19 +509,30 @@ impl Clipboard {
 
     /// Whether `text` (from the system clipboard) is this register's own copy.
     pub fn is_own(&self, text: &str) -> bool {
-        !self.text.is_empty() && (self.external.as_deref().unwrap_or(&self.text) == text || self.text == text)
+        !self.text.is_empty()
+            && (self.external.as_deref().unwrap_or(&self.text) == text || self.text == text)
     }
 }
 
 impl From<&str> for Clipboard {
     fn from(text: &str) -> Clipboard {
-        Clipboard { text: text.to_string(), external: None, marks: Vec::new(), blocks: false }
+        Clipboard {
+            text: text.to_string(),
+            external: None,
+            marks: Vec::new(),
+            blocks: false,
+        }
     }
 }
 
 impl From<String> for Clipboard {
     fn from(text: String) -> Clipboard {
-        Clipboard { text, external: None, marks: Vec::new(), blocks: false }
+        Clipboard {
+            text,
+            external: None,
+            marks: Vec::new(),
+            blocks: false,
+        }
     }
 }
 
@@ -527,8 +568,13 @@ impl Serialize for Clipboard {
         if self.marks.is_empty() && self.external.is_none() && !self.blocks {
             ClipboardRepr::Text(self.text.clone()).serialize(s)
         } else {
-            ClipboardRepr::Full { text: self.text.clone(), external: self.external.clone(), marks: self.marks.clone(), blocks: self.blocks }
-                .serialize(s)
+            ClipboardRepr::Full {
+                text: self.text.clone(),
+                external: self.external.clone(),
+                marks: self.marks.clone(),
+                blocks: self.blocks,
+            }
+            .serialize(s)
         }
     }
 }
@@ -537,7 +583,17 @@ impl<'de> Deserialize<'de> for Clipboard {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Clipboard, D::Error> {
         Ok(match ClipboardRepr::deserialize(d)? {
             ClipboardRepr::Text(text) => Clipboard::from(text),
-            ClipboardRepr::Full { text, external, marks, blocks } => Clipboard { text, external, marks, blocks },
+            ClipboardRepr::Full {
+                text,
+                external,
+                marks,
+                blocks,
+            } => Clipboard {
+                text,
+                external,
+                marks,
+                blocks,
+            },
         })
     }
 }
@@ -547,14 +603,21 @@ mod tests {
     use super::*;
     use crate::helix::{Rope, Transaction};
 
-    fn run(text: &str, marks: &[usize], change: (usize, usize, Option<&str>)) -> (String, Vec<(usize, u64)>, Vec<u64>) {
+    fn run(
+        text: &str,
+        marks: &[usize],
+        change: (usize, usize, Option<&str>),
+    ) -> (String, Vec<(usize, u64)>, Vec<u64>) {
         let mut rope = Rope::from(text);
         let old = rope.clone();
         let mut m = Marks::new();
         for &p in marks {
             m.mint(p);
         }
-        let txn = Transaction::change(&rope, std::iter::once((change.0, change.1, change.2.map(Into::into))));
+        let txn = Transaction::change(
+            &rope,
+            std::iter::once((change.0, change.1, change.2.map(Into::into))),
+        );
         txn.apply(&mut rope);
         let removed = m.map(old.slice(..), rope.slice(..), txn.changes());
         (
@@ -566,8 +629,17 @@ mod tests {
 
     #[test]
     fn inserting_all_at_once_is_inserting_each() {
-        let m = |pos: usize, id: u64| Mark { pos, id: MarkId(id), attrs: MarkAttrs::default() };
-        for batch in [vec![m(10, 3), m(0, 1), m(5, 2)], vec![m(0, 1), m(5, 1)], vec![m(0, 1), m(0, 2)], vec![m(7, 9)]] {
+        let m = |pos: usize, id: u64| Mark {
+            pos,
+            id: MarkId(id),
+            attrs: MarkAttrs::default(),
+        };
+        for batch in [
+            vec![m(10, 3), m(0, 1), m(5, 2)],
+            vec![m(0, 1), m(5, 1)],
+            vec![m(0, 1), m(0, 2)],
+            vec![m(7, 9)],
+        ] {
             let (mut a, mut b) = (Marks::new(), Marks::new());
             a.insert(m(3, 7)).unwrap();
             b.insert(m(3, 7)).unwrap();
@@ -580,17 +652,26 @@ mod tests {
 
     #[test]
     fn typing_at_a_line_start_keeps_the_mark_there() {
-        assert_eq!(run("ab\ncd", &[0, 3], (3, 3, Some("x"))), ("ab\nxcd".into(), vec![(0, 0), (3, 1)], vec![]));
+        assert_eq!(
+            run("ab\ncd", &[0, 3], (3, 3, Some("x"))),
+            ("ab\nxcd".into(), vec![(0, 0), (3, 1)], vec![])
+        );
     }
 
     #[test]
     fn a_break_inserted_at_a_mark_moves_it_down() {
-        assert_eq!(run("ab\ncd", &[0, 3], (3, 3, Some("\n"))), ("ab\n\ncd".into(), vec![(0, 0), (4, 1)], vec![]));
+        assert_eq!(
+            run("ab\ncd", &[0, 3], (3, 3, Some("\n"))),
+            ("ab\n\ncd".into(), vec![(0, 0), (4, 1)], vec![])
+        );
     }
 
     #[test]
     fn deleting_the_break_before_a_mark_removes_it() {
-        assert_eq!(run("ab\ncd", &[0, 3], (2, 3, None)), ("abcd".into(), vec![(0, 0)], vec![1]));
+        assert_eq!(
+            run("ab\ncd", &[0, 3], (2, 3, None)),
+            ("abcd".into(), vec![(0, 0)], vec![1])
+        );
     }
 
     #[test]
@@ -623,7 +704,16 @@ mod tests {
         assert_eq!(serde_json::to_string(&c).unwrap(), "\"abc\"");
         let back: Clipboard = serde_json::from_str("\"abc\"").unwrap();
         assert_eq!(back, c);
-        let full = Clipboard { text: "a\nb".into(), external: None, marks: vec![ClipMark { offset: 2, id: MarkId(4), attrs: MarkAttrs::default() }], blocks: false };
+        let full = Clipboard {
+            text: "a\nb".into(),
+            external: None,
+            marks: vec![ClipMark {
+                offset: 2,
+                id: MarkId(4),
+                attrs: MarkAttrs::default(),
+            }],
+            blocks: false,
+        };
         let json = serde_json::to_string(&full).unwrap();
         assert_eq!(serde_json::from_str::<Clipboard>(&json).unwrap(), full);
     }

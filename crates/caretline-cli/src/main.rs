@@ -17,9 +17,9 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
-use caretline::trace::{parse_msgs, replay_trace};
 use caretline::outline::markdown;
-use caretline::{script_to_msgs_for, update, view, Msg, OutlineConfig, State, Viewport};
+use caretline::trace::{parse_msgs, replay_trace};
+use caretline::{Msg, OutlineConfig, State, Viewport, script_to_msgs_for, update, view};
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -167,8 +167,18 @@ fn serve(args: ServeArgs) -> Result<(), String> {
     let mut state = match &args.state {
         Some(path) => State::from_json(&read_input(path)?).map_err(|e| format!("{path}: {e}"))?,
         None => match &args.file {
-            Some(path) => new_state(&read_file_or_empty(path)?, Some(path.clone()), Viewport { width, height }, args.outline || args.layout),
-            None => new_state("", None, Viewport { width, height }, args.outline || args.layout),
+            Some(path) => new_state(
+                &read_file_or_empty(path)?,
+                Some(path.clone()),
+                Viewport { width, height },
+                args.outline || args.layout,
+            ),
+            None => new_state(
+                "",
+                None,
+                Viewport { width, height },
+                args.outline || args.layout,
+            ),
         },
     };
     if (args.outline || args.layout) && state.doc.outline.is_none() {
@@ -226,8 +236,14 @@ fn parse_size(s: &str) -> Result<(u16, u16), String> {
     let (w, h) = s
         .split_once(['x', 'X'])
         .ok_or_else(|| format!("bad size {s:?}: expected WIDTHxHEIGHT, like 80x24"))?;
-    let w: u16 = w.trim().parse().map_err(|_| format!("bad width in {s:?}"))?;
-    let h: u16 = h.trim().parse().map_err(|_| format!("bad height in {s:?}"))?;
+    let w: u16 = w
+        .trim()
+        .parse()
+        .map_err(|_| format!("bad width in {s:?}"))?;
+    let h: u16 = h
+        .trim()
+        .parse()
+        .map_err(|_| format!("bad height in {s:?}"))?;
     if w == 0 || h == 0 {
         return Err(format!("bad size {s:?}: both sides must be at least 1"));
     }
@@ -259,7 +275,8 @@ fn run() -> Result<(), String> {
     let argv: Vec<String> = std::env::args().collect();
     match argv.get(1).map(String::as_str) {
         Some("serve") => {
-            let args = std::iter::once("caretline serve".to_string()).chain(argv[2..].iter().cloned());
+            let args =
+                std::iter::once("caretline serve".to_string()).chain(argv[2..].iter().cloned());
             return serve(ServeArgs::parse_from(args));
         }
         Some("send") => return client::main(&argv[2..]),
@@ -277,9 +294,17 @@ fn run() -> Result<(), String> {
                 let (width, height) = parse_size(size)?;
                 Viewport { width, height }
             }
-            None => Viewport { width: 80, height: 24 },
+            None => Viewport {
+                width: 80,
+                height: 24,
+            },
         };
-        let mut state = new_state(&text, Some(path.clone()), viewport, args.outline || args.layout);
+        let mut state = new_state(
+            &text,
+            Some(path.clone()),
+            viewport,
+            args.outline || args.layout,
+        );
         state.view.config.status_bar = !args.no_status_bar;
         println!("{}", state.to_json());
         return Ok(());
@@ -293,7 +318,12 @@ fn run() -> Result<(), String> {
         let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
         let viewport = Viewport { width, height };
         match &args.file {
-            Some(path) => new_state(&read_file_or_empty(path)?, Some(path.clone()), viewport, args.outline || args.layout),
+            Some(path) => new_state(
+                &read_file_or_empty(path)?,
+                Some(path.clone()),
+                viewport,
+                args.outline || args.layout,
+            ),
             None => new_state("", None, viewport, args.outline || args.layout),
         }
     };

@@ -452,8 +452,16 @@ impl<'t> DocumentFormatter<'t> {
                 }
                 // (caretline) With `hang_spaces`, a word that started at the row's start can't
                 // move to a fresh row: it breaks here.
-                Ordering::Equal if word_width > self.text_fmt.max_wrap as usize || (self.text_fmt.hang_spaces && self.visual_pos.col == 0) => return,
-                Ordering::Greater if word_width > self.text_fmt.max_wrap as usize || (self.text_fmt.hang_spaces && self.visual_pos.col == 0) => {
+                Ordering::Equal
+                    if word_width > self.text_fmt.max_wrap as usize
+                        || (self.text_fmt.hang_spaces && self.visual_pos.col == 0) =>
+                {
+                    return
+                }
+                Ordering::Greater
+                    if word_width > self.text_fmt.max_wrap as usize
+                        || (self.text_fmt.hang_spaces && self.visual_pos.col == 0) =>
+                {
                     self.peeked_grapheme = self.word_buf.pop();
                     return;
                 }
@@ -478,7 +486,11 @@ impl<'t> DocumentFormatter<'t> {
 
             // (caretline) Prose (`hang_spaces`) breaks between words at whitespace only, as a
             // text editor does; code breaks after any non-word character, as Helix does.
-            let is_word_boundary = if self.text_fmt.hang_spaces { grapheme.is_whitespace() } else { grapheme.is_word_boundary() };
+            let is_word_boundary = if self.text_fmt.hang_spaces {
+                grapheme.is_whitespace()
+            } else {
+                grapheme.is_word_boundary()
+            };
             word_width += grapheme.width();
             self.word_buf.push(grapheme);
 

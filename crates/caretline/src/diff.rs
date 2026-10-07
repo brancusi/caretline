@@ -20,7 +20,13 @@ pub fn changes(old: &str, new: &str) -> Vec<(usize, usize, String)> {
     let b: Vec<char> = new.chars().collect();
     let pre = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
     let room = a.len().min(b.len()) - pre;
-    let suf = a.iter().rev().zip(b.iter().rev()).take(room).take_while(|(x, y)| x == y).count();
+    let suf = a
+        .iter()
+        .rev()
+        .zip(b.iter().rev())
+        .take(room)
+        .take_while(|(x, y)| x == y)
+        .count();
     let (am, bm) = (&a[pre..a.len() - suf], &b[pre..b.len() - suf]);
     let mut out = Vec::new();
     if am.is_empty() && bm.is_empty() {
@@ -32,7 +38,8 @@ pub fn changes(old: &str, new: &str) -> Vec<(usize, usize, String)> {
     }
     let (la, lb) = (lines(am), lines(bm));
     let eq = |i: usize, j: usize| am[la[i].0..la[i].1] == bm[lb[j].0..lb[j].1];
-    let runs = myers(la.len(), lb.len(), eq, MAX_LINE_EDITS).unwrap_or_else(|| vec![(0, la.len(), 0, lb.len())]);
+    let runs = myers(la.len(), lb.len(), eq, MAX_LINE_EDITS)
+        .unwrap_or_else(|| vec![(0, la.len(), 0, lb.len())]);
     // Where line `i` starts (the end of the text past the last line).
     let start = |ls: &[(usize, usize)], i: usize, total: usize| ls.get(i).map_or(total, |l| l.0);
     for (a0, a1, b0, b1) in runs {
@@ -85,7 +92,13 @@ fn myers(n: usize, m: usize, eq: impl Fn(usize, usize) -> bool, max_d: usize) ->
     let (ni, mi) = (n as isize, m as isize);
     // v[k + m]: the furthest x reached on diagonal k (where y = x - k), k in [-m, n].
     let mut v = vec![NONE; n + m + 1];
-    let at = |v: &[isize], k: isize| if k < -mi || k > ni { NONE } else { v[(k + mi) as usize] };
+    let at = |v: &[isize], k: isize| {
+        if k < -mi || k > ni {
+            NONE
+        } else {
+            v[(k + mi) as usize]
+        }
+    };
     // trace[d][k + d]: v on diagonals [-d, d] before step d.
     let mut trace: Vec<Vec<isize>> = Vec::new();
     for d in 0..=(max_d.min(n + m) as isize) {
@@ -95,7 +108,11 @@ fn myers(n: usize, m: usize, eq: impl Fn(usize, usize) -> bool, max_d: usize) ->
         // Step d reaches the diagonals of d's parity.
         let mut k = if (lo + d) % 2 == 0 { lo } else { lo + 1 };
         while k <= hi {
-            let start = if d == 0 { Some(0) } else { step(&row, d, k, ni, mi).map(|(x, _)| x) };
+            let start = if d == 0 {
+                Some(0)
+            } else {
+                step(&row, d, k, ni, mi).map(|(x, _)| x)
+            };
             if let Some(mut x) = start {
                 let mut y = x - k;
                 while x < ni && y < mi && eq(x as usize, y as usize) {
@@ -119,7 +136,13 @@ fn myers(n: usize, m: usize, eq: impl Fn(usize, usize) -> bool, max_d: usize) ->
 /// one move reaches, and the diagonal the move came from. A move down (an insertion) needs
 /// room below, a move right (a deletion) room to the right; the furthest one wins.
 fn step(row: &[isize], d: isize, k: isize, n: isize, m: isize) -> Option<(isize, isize)> {
-    let get = |k: isize| if k < -d || k > d { NONE } else { row[(k + d) as usize] };
+    let get = |k: isize| {
+        if k < -d || k > d {
+            NONE
+        } else {
+            row[(k + d) as usize]
+        }
+    };
     let down = get(k + 1);
     let down = (down != NONE && down - k <= m).then_some((down, k + 1));
     let right = get(k - 1);
@@ -136,7 +159,11 @@ fn backtrack(trace: &[Vec<isize>], d_end: isize, k_end: isize, n: isize, m: isiz
     let mut snakes: Vec<(isize, isize, isize)> = Vec::new();
     let (mut x, mut k) = (n, k_end);
     for d in (0..=d_end).rev() {
-        let (sx, from) = if d == 0 { (0, 0) } else { step(&trace[d as usize], d, k, n, m).expect("a step on the path") };
+        let (sx, from) = if d == 0 {
+            (0, 0)
+        } else {
+            step(&trace[d as usize], d, k, n, m).expect("a step on the path")
+        };
         if x > sx {
             snakes.push((sx, sx - k, x - sx));
         }
@@ -181,11 +208,17 @@ mod tests {
     #[test]
     fn finds_the_least_changes() {
         assert!(changes("same", "same").is_empty());
-        assert_eq!(changes("Hey there, \nnext\n", "Hey there, \n- line\nnext\n"), vec![(12, 12, "- line\n".into())]);
+        assert_eq!(
+            changes("Hey there, \nnext\n", "Hey there, \n- line\nnext\n"),
+            vec![(12, 12, "- line\n".into())]
+        );
         // Two changes far apart stay two changes: a caret between them is left alone.
         let old = "one\ntwo\nthree\nfour\nfive\n";
         let new = "ONE\ntwo\nthree\nfour\nfive!\n";
-        assert_eq!(changes(old, new), vec![(0, 3, "ONE".into()), (23, 23, "!".into())]);
+        assert_eq!(
+            changes(old, new),
+            vec![(0, 3, "ONE".into()), (23, 23, "!".into())]
+        );
         assert_eq!(changes("abc", ""), vec![(0, 3, String::new())]);
         assert_eq!(changes("", "abc"), vec![(0, 0, "abc".into())]);
     }
@@ -202,8 +235,12 @@ mod tests {
         let pieces = ["a", "b", "\n", "日", "xy", " "];
         for _ in 0..3000 {
             let (l1, l2) = (next(30), next(30));
-            let old: String = (0..l1).map(|_| pieces[next(pieces.len() as u64) as usize]).collect();
-            let new: String = (0..l2).map(|_| pieces[next(pieces.len() as u64) as usize]).collect();
+            let old: String = (0..l1)
+                .map(|_| pieces[next(pieces.len() as u64) as usize])
+                .collect();
+            let new: String = (0..l2)
+                .map(|_| pieces[next(pieces.len() as u64) as usize])
+                .collect();
             let ch = changes(&old, &new);
             assert_eq!(apply(&old, &ch), new, "{old:?} -> {new:?}: {ch:?}");
             for w in ch.windows(2) {

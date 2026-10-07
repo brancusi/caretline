@@ -53,8 +53,13 @@ impl Parser {
                 return None;
             }
             if self.paste {
-                let end = self.buf.windows(PASTE_END.len()).position(|w| w == PASTE_END)?;
-                let text = String::from_utf8_lossy(&self.buf[..end]).replace("\r\n", "\n").replace('\r', "\n");
+                let end = self
+                    .buf
+                    .windows(PASTE_END.len())
+                    .position(|w| w == PASTE_END)?;
+                let text = String::from_utf8_lossy(&self.buf[..end])
+                    .replace("\r\n", "\n")
+                    .replace('\r', "\n");
                 self.buf.drain(..end + PASTE_END.len());
                 self.paste = false;
                 return Some(Token::Event(Event::Paste(text)));
@@ -124,10 +129,17 @@ fn plain(b: &[u8]) -> Option<(Option<Event>, usize)> {
         0x7f | 0x08 => key(KeyCode::Backspace, none),
         0x00 => key(KeyCode::Char(' '), KeyModifiers::CONTROL),
         0x01..=0x1a => key(KeyCode::Char((b'a' + c - 1) as char), KeyModifiers::CONTROL),
-        0x1c..=0x1f => key(KeyCode::Char((b'4' + c - 0x1c) as char), KeyModifiers::CONTROL),
+        0x1c..=0x1f => key(
+            KeyCode::Char((b'4' + c - 0x1c) as char),
+            KeyModifiers::CONTROL,
+        ),
         _ if c < 0x80 => {
             let ch = c as char;
-            let mods = if ch.is_ascii_uppercase() { KeyModifiers::SHIFT } else { none };
+            let mods = if ch.is_ascii_uppercase() {
+                KeyModifiers::SHIFT
+            } else {
+                none
+            };
             key(KeyCode::Char(ch), mods)
         }
         _ => {
@@ -140,10 +152,15 @@ fn plain(b: &[u8]) -> Option<(Option<Event>, usize)> {
             if b.len() < len {
                 return None;
             }
-            return Some(match std::str::from_utf8(&b[..len]).ok().and_then(|s| s.chars().next()) {
-                Some(ch) => (Some(key(KeyCode::Char(ch), none)), len),
-                None => (None, 1),
-            });
+            return Some(
+                match std::str::from_utf8(&b[..len])
+                    .ok()
+                    .and_then(|s| s.chars().next())
+                {
+                    Some(ch) => (Some(key(KeyCode::Char(ch), none)), len),
+                    None => (None, 1),
+                },
+            );
         }
     };
     Some((Some(ev), 1))
@@ -213,7 +230,11 @@ fn escape(b: &[u8]) -> Esc {
 
 fn csi(b: &[u8]) -> Esc {
     let Some(end) = b[2..].iter().position(|c| (0x40..=0x7e).contains(c)) else {
-        return if b[2..].iter().all(|c| (0x20..=0x3f).contains(c)) { Esc::Wait } else { Esc::Skip(2) };
+        return if b[2..].iter().all(|c| (0x20..=0x3f).contains(c)) {
+            Esc::Wait
+        } else {
+            Esc::Skip(2)
+        };
     };
     let n = 2 + end + 1;
     let params = String::from_utf8_lossy(&b[2..2 + end]).into_owned();
@@ -224,7 +245,10 @@ fn csi(b: &[u8]) -> Esc {
     if params.starts_with(['?', '>', '=']) {
         return Esc::Skip(n);
     }
-    let nums: Vec<u32> = params.split(';').map(|s| s.split(':').next().unwrap_or("").parse().unwrap_or(0)).collect();
+    let nums: Vec<u32> = params
+        .split(';')
+        .map(|s| s.split(':').next().unwrap_or("").parse().unwrap_or(0))
+        .collect();
     let m = mods(nums.get(1).copied().unwrap_or(1));
     let code = match fin {
         b'A' => KeyCode::Up,
@@ -255,7 +279,10 @@ fn csi(b: &[u8]) -> Esc {
 
 /// An SGR mouse report (`CSI < b ; x ; y M|m`).
 fn mouse(params: &str, fin: u8) -> Option<Event> {
-    let v: Vec<u32> = params.split(';').map(|s| s.parse().ok()).collect::<Option<_>>()?;
+    let v: Vec<u32> = params
+        .split(';')
+        .map(|s| s.parse().ok())
+        .collect::<Option<_>>()?;
     let [cb, x, y] = v[..] else { return None };
     let mut modifiers = KeyModifiers::NONE;
     if cb & 4 != 0 {
@@ -280,7 +307,11 @@ fn mouse(params: &str, fin: u8) -> Option<Event> {
             _ => MouseEventKind::ScrollRight,
         }
     } else if cb & 32 != 0 {
-        if cb & 3 == 3 { MouseEventKind::Moved } else { MouseEventKind::Drag(button) }
+        if cb & 3 == 3 {
+            MouseEventKind::Moved
+        } else {
+            MouseEventKind::Drag(button)
+        }
     } else if fin == b'm' {
         MouseEventKind::Up(button)
     } else {
@@ -296,7 +327,11 @@ fn mouse(params: &str, fin: u8) -> Option<Event> {
 
 /// Reads stdin's bytes (raw mode is on), waiting at most `timeout`. Returns whether any came.
 pub fn fill(parser: &mut Parser, timeout: Duration) -> bool {
-    let mut fds = libc::pollfd { fd: 0, events: libc::POLLIN, revents: 0 };
+    let mut fds = libc::pollfd {
+        fd: 0,
+        events: libc::POLLIN,
+        revents: 0,
+    };
     let ms = timeout.as_millis().min(i32::MAX as u128) as i32;
     // SAFETY: one valid pollfd for stdin.
     if unsafe { libc::poll(&mut fds, 1, ms) } <= 0 {
@@ -315,7 +350,11 @@ pub fn fill(parser: &mut Parser, timeout: Duration) -> bool {
 /// returned, in order (the probe's, and any other); keys typed meanwhile stay in the parser
 /// for the event loop.
 pub fn probe(parser: &mut Parser, out: &mut dyn std::io::Write, timeout: Duration) -> Vec<Reply> {
-    if out.write_all(&probe::request()).and_then(|_| out.flush()).is_err() {
+    if out
+        .write_all(&probe::request())
+        .and_then(|_| out.flush())
+        .is_err()
+    {
         return Vec::new();
     }
     let end = Instant::now() + timeout;
@@ -361,7 +400,11 @@ pub fn spawn(mut parser: Parser, tx: Sender<Input>) {
         }
         let mut size = crossterm::terminal::size().ok();
         loop {
-            let wait = if parser.pending() { Duration::from_millis(30) } else { Duration::from_millis(100) };
+            let wait = if parser.pending() {
+                Duration::from_millis(30)
+            } else {
+                Duration::from_millis(100)
+            };
             let got = fill(&mut parser, wait);
             while let Some(t) = parser.next(!got) {
                 let input = match t {
@@ -405,15 +448,22 @@ mod tests {
 
     #[test]
     fn replies_mid_session_are_replies_not_keys() {
-        let got = all(b"a\x1b_Gi=31;OK\x1b\\b\x1b[6;34;16t\x1bP>|ghostty 1.3.1\x1b\\\x1b[?62;22c\x1b[A");
+        let got =
+            all(b"a\x1b_Gi=31;OK\x1b\\b\x1b[6;34;16t\x1bP>|ghostty 1.3.1\x1b\\\x1b[?62;22c\x1b[A");
         let none = KeyModifiers::NONE;
         assert_eq!(
             got,
             vec![
                 k(KeyCode::Char('a'), none),
-                Token::Reply(Reply::Graphics { id: Some(31), ok: true, message: "OK".into() }),
+                Token::Reply(Reply::Graphics {
+                    id: Some(31),
+                    ok: true,
+                    message: "OK".into()
+                }),
                 k(KeyCode::Char('b'), none),
-                Token::Reply(Reply::CellSize(caretline_layers::kitty::CellPx::new(16, 34))),
+                Token::Reply(Reply::CellSize(caretline_layers::kitty::CellPx::new(
+                    16, 34
+                ))),
                 Token::Reply(Reply::Version("ghostty 1.3.1".into())),
                 Token::Reply(Reply::Da1(vec![62, 22])),
                 k(KeyCode::Up, none),
@@ -425,21 +475,40 @@ mod tests {
     fn keys_mouse_and_paste() {
         let none = KeyModifiers::NONE;
         assert_eq!(all(b"\x1b[1;3D"), vec![k(KeyCode::Left, KeyModifiers::ALT)]);
-        assert_eq!(all(b"\x1b[6~\x1bOP\x1b[Z"), vec![
-            k(KeyCode::PageDown, none),
-            k(KeyCode::F(1), none),
-            k(KeyCode::BackTab, KeyModifiers::SHIFT),
-        ]);
-        assert_eq!(all(b"\x03\x1bx\x1b"), vec![
-            k(KeyCode::Char('c'), KeyModifiers::CONTROL),
-            k(KeyCode::Char('x'), KeyModifiers::ALT),
-            k(KeyCode::Esc, none),
-        ]);
-        assert_eq!(all("é⌥".as_bytes()), vec![k(KeyCode::Char('é'), none), k(KeyCode::Char('⌥'), none)]);
-        assert_eq!(all(b"\x1b[200~hi\r\nyou\x1b[201~"), vec![Token::Event(Event::Paste("hi\nyou".into()))]);
-        let Token::Event(Event::Mouse(m)) = &all(b"\x1b[<65;10;5M")[0] else { panic!() };
-        assert_eq!((m.kind, m.column, m.row), (MouseEventKind::ScrollDown, 9, 4));
-        let Token::Event(Event::Mouse(m)) = &all(b"\x1b[<0;3;4M")[0] else { panic!() };
+        assert_eq!(
+            all(b"\x1b[6~\x1bOP\x1b[Z"),
+            vec![
+                k(KeyCode::PageDown, none),
+                k(KeyCode::F(1), none),
+                k(KeyCode::BackTab, KeyModifiers::SHIFT),
+            ]
+        );
+        assert_eq!(
+            all(b"\x03\x1bx\x1b"),
+            vec![
+                k(KeyCode::Char('c'), KeyModifiers::CONTROL),
+                k(KeyCode::Char('x'), KeyModifiers::ALT),
+                k(KeyCode::Esc, none),
+            ]
+        );
+        assert_eq!(
+            all("é⌥".as_bytes()),
+            vec![k(KeyCode::Char('é'), none), k(KeyCode::Char('⌥'), none)]
+        );
+        assert_eq!(
+            all(b"\x1b[200~hi\r\nyou\x1b[201~"),
+            vec![Token::Event(Event::Paste("hi\nyou".into()))]
+        );
+        let Token::Event(Event::Mouse(m)) = &all(b"\x1b[<65;10;5M")[0] else {
+            panic!()
+        };
+        assert_eq!(
+            (m.kind, m.column, m.row),
+            (MouseEventKind::ScrollDown, 9, 4)
+        );
+        let Token::Event(Event::Mouse(m)) = &all(b"\x1b[<0;3;4M")[0] else {
+            panic!()
+        };
         assert_eq!(m.kind, MouseEventKind::Down(MouseButton::Left));
     }
 
@@ -449,7 +518,10 @@ mod tests {
         p.push(b"\x1b_Gi=31;O");
         assert_eq!(p.next(false), None);
         p.push(b"K\x1b\\");
-        assert!(matches!(p.next(false), Some(Token::Reply(Reply::Graphics { ok: true, .. }))));
+        assert!(matches!(
+            p.next(false),
+            Some(Token::Reply(Reply::Graphics { ok: true, .. }))
+        ));
         p.push(b"\x1b[");
         assert_eq!(p.next(false), None);
         p.push(b"B");

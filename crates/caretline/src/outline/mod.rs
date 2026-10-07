@@ -32,7 +32,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::helix::{RopeSlice};
+use crate::helix::RopeSlice;
 use crate::marks::{MarkAttrs, MarkId, Marks};
 use crate::state::{Document, State};
 
@@ -179,7 +179,10 @@ pub struct Outline {
 impl Outline {
     /// The index of the block holding line `line`.
     pub fn index_of_line(&self, line: usize) -> usize {
-        self.line_block.get(line).or(self.line_block.last()).map_or(0, |&b| b as usize)
+        self.line_block
+            .get(line)
+            .or(self.line_block.last())
+            .map_or(0, |&b| b as usize)
     }
 
     pub fn block_of_line(&self, line: usize) -> &BlockInfo {
@@ -210,7 +213,12 @@ impl Outline {
     }
 
     /// The blocks a range `[from, to]` touches, as indices.
-    pub fn indices_between(&self, text: RopeSlice, from: usize, to: usize) -> std::ops::RangeInclusive<usize> {
+    pub fn indices_between(
+        &self,
+        text: RopeSlice,
+        from: usize,
+        to: usize,
+    ) -> std::ops::RangeInclusive<usize> {
         self.index_at(text, from)..=self.index_at(text, to)
     }
 
@@ -241,7 +249,15 @@ pub(crate) struct Prefix {
 
 impl Prefix {
     fn fence_content() -> Prefix {
-        Prefix { indent: 0, kind: Kind::Para, tag: None, hang: Hang::None, len: 0, marker: false, fence: true }
+        Prefix {
+            indent: 0,
+            kind: Kind::Para,
+            tag: None,
+            hang: Hang::None,
+            len: 0,
+            marker: false,
+            fence: true,
+        }
     }
 }
 
@@ -273,33 +289,77 @@ pub(crate) fn parse_str(line: &str, cfg: &OutlineConfig) -> Prefix {
 }
 
 fn parse_head(indent: usize, h: &[char], cfg: &OutlineConfig) -> Prefix {
-    let para = Prefix { indent, kind: Kind::Para, tag: None, hang: Hang::None, len: indent, marker: false, fence: false };
+    let para = Prefix {
+        indent,
+        kind: Kind::Para,
+        tag: None,
+        hang: Hang::None,
+        len: indent,
+        marker: false,
+        fence: false,
+    };
     let at = |i: usize| h.get(i).copied();
     match (at(0), at(1)) {
         (Some('-' | '*' | '+'), Some(' ')) => {
             if at(2) == Some('[') && at(4) == Some(']') && at(5) == Some(' ') {
                 if let Some(c) = at(3).filter(|&c| cfg.is_tag(c)) {
-                    return Prefix { kind: Kind::Bullet, tag: Some(c), hang: Hang::Bullet, len: indent + 6, marker: true, ..para };
+                    return Prefix {
+                        kind: Kind::Bullet,
+                        tag: Some(c),
+                        hang: Hang::Bullet,
+                        len: indent + 6,
+                        marker: true,
+                        ..para
+                    };
                 }
             }
-            return Prefix { kind: Kind::Bullet, hang: Hang::Bullet, len: indent + 2, marker: true, ..para };
+            return Prefix {
+                kind: Kind::Bullet,
+                hang: Hang::Bullet,
+                len: indent + 2,
+                marker: true,
+                ..para
+            };
         }
         (Some('#'), _) => {
             let n = h.iter().take_while(|&&c| c == '#').count();
             if (1..=3).contains(&n) && at(n) == Some(' ') {
-                return Prefix { hang: Hang::Heading(n as u8), len: indent + n + 1, marker: true, ..para };
+                return Prefix {
+                    hang: Hang::Heading(n as u8),
+                    len: indent + n + 1,
+                    marker: true,
+                    ..para
+                };
             }
         }
-        (Some('>'), Some(' ')) => return Prefix { hang: Hang::Quote, len: indent + 2, marker: true, ..para },
+        (Some('>'), Some(' ')) => {
+            return Prefix {
+                hang: Hang::Quote,
+                len: indent + 2,
+                marker: true,
+                ..para
+            }
+        }
         (Some('`'), Some('`')) if at(2) == Some('`') => {
-            return Prefix { hang: Hang::Fence, marker: true, fence: true, ..para };
+            return Prefix {
+                hang: Hang::Fence,
+                marker: true,
+                fence: true,
+                ..para
+            };
         }
         (Some(c), _) if c.is_ascii_digit() && cfg.numbered => {
             let n = h.iter().take_while(|c| c.is_ascii_digit()).count();
             if n <= 9 && matches!(at(n), Some('.' | ')')) && at(n + 1) == Some(' ') {
                 let num: String = h[..n].iter().collect();
                 let num = num.parse().unwrap_or(0);
-                return Prefix { kind: Kind::Bullet, hang: Hang::Number(num), len: indent + n + 2, marker: true, ..para };
+                return Prefix {
+                    kind: Kind::Bullet,
+                    hang: Hang::Number(num),
+                    len: indent + n + 2,
+                    marker: true,
+                    ..para
+                };
             }
         }
         _ => {}
@@ -343,8 +403,16 @@ pub fn derive(text: RopeSlice, marks: &Marks, cfg: &OutlineConfig) -> Outline {
         while next_mark.peek().is_some_and(|m| m.pos < line_start) {
             next_mark.next();
         }
-        let mark = next_mark.peek().filter(|m| m.pos == line_start).copied().cloned();
-        let prefix = if in_fence { None } else { Some(parse_prefix(line, cfg)) };
+        let mark = next_mark
+            .peek()
+            .filter(|m| m.pos == line_start)
+            .copied()
+            .cloned();
+        let prefix = if in_fence {
+            None
+        } else {
+            Some(parse_prefix(line, cfg))
+        };
         let starts = i == 0 || mark.is_some() || prefix.is_some_and(|p| p.marker);
         let mut opened = false;
         if starts {
@@ -432,7 +500,9 @@ struct Memo {
 
 impl Clone for OutlineCache {
     fn clone(&self) -> Self {
-        OutlineCache(Mutex::new(self.0.lock().map(|g| g.clone()).unwrap_or_default()))
+        OutlineCache(Mutex::new(
+            self.0.lock().map(|g| g.clone()).unwrap_or_default(),
+        ))
     }
 }
 
@@ -487,7 +557,11 @@ impl OutlineCache {
 
     fn put(&self, o: Arc<Outline>, len: usize) {
         if let Ok(mut g) = self.0.lock() {
-            *g = Memo { now: Some(o), before: None, len };
+            *g = Memo {
+                now: Some(o),
+                before: None,
+                len,
+            };
         }
     }
 }
@@ -507,9 +581,14 @@ impl Document {
         let o = match self.derived.before() {
             Some((prev, len, range)) => {
                 let range = range.unwrap_or((0, 0));
-                let o = derive_from(&prev, len, range, text, &self.marks, cfg).unwrap_or_else(|| derive(text, &self.marks, cfg));
+                let o = derive_from(&prev, len, range, text, &self.marks, cfg)
+                    .unwrap_or_else(|| derive(text, &self.marks, cfg));
                 #[cfg(debug_assertions)]
-                assert_eq!(o, derive(text, &self.marks, cfg), "the outline derived around a change is the whole derivation");
+                assert_eq!(
+                    o,
+                    derive(text, &self.marks, cfg),
+                    "the outline derived around a change is the whole derivation"
+                );
                 o
             }
             None => derive(text, &self.marks, cfg),
@@ -526,7 +605,14 @@ impl Document {
 ///
 /// A block's identity and attributes are read from `marks` for every block (marks change
 /// without the text: a blank row set, a mark given to a new block).
-pub fn derive_from(prev: &Outline, prev_len: usize, (from, to): (usize, usize), text: RopeSlice, marks: &Marks, cfg: &OutlineConfig) -> Option<Outline> {
+pub fn derive_from(
+    prev: &Outline,
+    prev_len: usize,
+    (from, to): (usize, usize),
+    text: RopeSlice,
+    marks: &Marks,
+    cfg: &OutlineConfig,
+) -> Option<Outline> {
     if prev.blocks.is_empty() || prev.line_block.is_empty() {
         return None;
     }
@@ -553,7 +639,11 @@ pub fn derive_from(prev: &Outline, prev_len: usize, (from, to): (usize, usize), 
     while let Some(line) = lines.next() {
         let len_l = line.len_chars();
         let content_end = line_start + len_l - line_ending_len(line);
-        let prefix = if in_fence { None } else { Some(parse_prefix(line, cfg)) };
+        let prefix = if in_fence {
+            None
+        } else {
+            Some(parse_prefix(line, cfg))
+        };
         let mark_here = marks.at(line_start).is_some();
         let starts = i == 0 || mark_here || prefix.is_some_and(|p| p.marker);
         // Past the change, at a block start outside a fence that the old outline also has
@@ -563,7 +653,10 @@ pub fn derive_from(prev: &Outline, prev_len: usize, (from, to): (usize, usize), 
             if old_line >= 0 && (old_line as usize) < prev_lines {
                 let k = prev.index_of_line(old_line as usize);
                 let b = &prev.blocks[k];
-                if b.first_line == old_line as usize && b.start as isize == line_start as isize - delta && !b.fence {
+                if b.first_line == old_line as usize
+                    && b.start as isize == line_start as isize - delta
+                    && !b.fence
+                {
                     tail = Some((k, old_line as usize));
                     break;
                 }
@@ -615,7 +708,11 @@ pub fn derive_from(prev: &Outline, prev_len: usize, (from, to): (usize, usize), 
         };
         let base = blocks.len() as isize - k as isize;
         blocks.extend(prev.blocks[k..].iter().map(shift));
-        line_block.extend(prev.line_block[old_line..].iter().map(|&x| (x as isize + base) as u32));
+        line_block.extend(
+            prev.line_block[old_line..]
+                .iter()
+                .map(|&x| (x as isize + base) as u32),
+        );
     } else if line_block.len() != text.len_lines() {
         return None;
     }
@@ -656,7 +753,11 @@ pub fn derive_from(prev: &Outline, prev_len: usize, (from, to): (usize, usize), 
         };
         let b = &mut blocks[i];
         b.gap = gap;
-        if (derived_from..derived_to).contains(&i) && cfg.atomic_images && b.line_count == 1 && !b.fence {
+        if (derived_from..derived_to).contains(&i)
+            && cfg.atomic_images
+            && b.line_count == 1
+            && !b.fence
+        {
             b.atomic = is_image(text.slice(b.content_start()..b.end));
         }
     }
@@ -675,7 +776,13 @@ impl State {
         self.doc.outline = Some(cfg);
         self.doc.derived.clear();
         mint_missing(&mut self.doc);
-        rules::normalize(self, &self.view.selection.clone(), &crate::Msg::Tick { now_ms: self.doc.now_ms });
+        rules::normalize(
+            self,
+            &self.view.selection.clone(),
+            &crate::Msg::Tick {
+                now_ms: self.doc.now_ms,
+            },
+        );
     }
 
     /// Call after changing `text` or `marks` directly (not through `update`).
@@ -684,7 +791,13 @@ impl State {
         self.doc.touch_all();
         if self.doc.outline.is_some() {
             mint_missing(&mut self.doc);
-            rules::normalize(self, &self.view.selection.clone(), &crate::Msg::Tick { now_ms: self.doc.now_ms });
+            rules::normalize(
+                self,
+                &self.view.selection.clone(),
+                &crate::Msg::Tick {
+                    now_ms: self.doc.now_ms,
+                },
+            );
         }
     }
 }
@@ -692,7 +805,12 @@ impl State {
 /// Gives every block start without a mark a new one. Returns whether it added any.
 pub(crate) fn mint_missing(doc: &mut Document) -> bool {
     let Some(o) = doc.blocks() else { return false };
-    let missing: Vec<usize> = o.blocks.iter().filter(|b| b.id == MarkId(u64::MAX)).map(|b| b.start).collect();
+    let missing: Vec<usize> = o
+        .blocks
+        .iter()
+        .filter(|b| b.id == MarkId(u64::MAX))
+        .map(|b| b.start)
+        .collect();
     if missing.is_empty() {
         return false;
     }
@@ -707,7 +825,12 @@ pub(crate) fn mint_missing(doc: &mut Document) -> bool {
 pub fn content(doc: &Document, id: MarkId) -> Option<String> {
     let o = doc.blocks()?;
     let b = o.get(id)?;
-    Some(doc.text.slice(b.content_start()..b.end).to_string().replace("\r\n", "\n"))
+    Some(
+        doc.text
+            .slice(b.content_start()..b.end)
+            .to_string()
+            .replace("\r\n", "\n"),
+    )
 }
 
 /// A new block for [`crate::Msg::InsertBlocks`] and Markdown paste: its shape and content.
@@ -731,7 +854,14 @@ pub struct NewBlock {
 
 impl NewBlock {
     pub fn para(text: &str) -> NewBlock {
-        NewBlock { depth: 0, kind: Kind::Para, tag: None, text: text.into(), gap: None, mark: None }
+        NewBlock {
+            depth: 0,
+            kind: Kind::Para,
+            tag: None,
+            text: text.into(),
+            gap: None,
+            mark: None,
+        }
     }
 
     /// The block's lines as buffer text (prefix on the first line, `\n` between lines).
@@ -762,7 +892,10 @@ mod tests {
     fn kinds(text: &str) -> Vec<(usize, Kind, u16, usize)> {
         let rope = Rope::from(text);
         let o = derive(rope.slice(..), &Marks::new(), &OutlineConfig::default());
-        o.blocks.iter().map(|b| (b.first_line, b.kind, b.depth, b.line_count)).collect()
+        o.blocks
+            .iter()
+            .map(|b| (b.first_line, b.kind, b.depth, b.line_count))
+            .collect()
     }
 
     #[test]
@@ -781,7 +914,10 @@ mod tests {
 
     #[test]
     fn nothing_starts_a_block_inside_a_fence() {
-        assert_eq!(kinds("```\n- a\n```\n- b"), [(0, Kind::Para, 0, 3), (3, Kind::Bullet, 0, 1)]);
+        assert_eq!(
+            kinds("```\n- a\n```\n- b"),
+            [(0, Kind::Para, 0, 3), (3, Kind::Bullet, 0, 1)]
+        );
     }
 
     #[test]

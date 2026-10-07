@@ -200,7 +200,10 @@ pub struct ProtoError {
 }
 
 fn err(kind: &'static str, message: impl Into<String>) -> ProtoError {
-    ProtoError { kind, message: message.into() }
+    ProtoError {
+        kind,
+        message: message.into(),
+    }
 }
 
 fn to_line<T: Serialize>(id: Option<&Value>, result: T) -> String {
@@ -211,7 +214,10 @@ fn to_line<T: Serialize>(id: Option<&Value>, result: T) -> String {
 pub fn error_line(id: Option<&Value>, e: &ProtoError) -> String {
     serde_json::to_string(&ErrorReply {
         id,
-        error: ErrorBody { kind: e.kind, message: e.message.clone() },
+        error: ErrorBody {
+            kind: e.kind,
+            message: e.message.clone(),
+        },
     })
     .expect("error serializes")
 }
@@ -291,7 +297,15 @@ fn cell_rows(frame: &Frame) -> Vec<CellRow> {
                     _ => spans.push((x, 1, name.to_string())),
                 }
             }
-            CellRow { text, spans, info: frame.rows.get(y as usize).cloned().unwrap_or(crate::view::RowInfo::Past) }
+            CellRow {
+                text,
+                spans,
+                info: frame
+                    .rows
+                    .get(y as usize)
+                    .cloned()
+                    .unwrap_or(crate::view::RowInfo::Past),
+            }
         })
         .collect()
 }
@@ -306,7 +320,13 @@ fn render_view(session: &Session, id: u32, spec: FrameSpec) -> Result<RenderedFr
     if w == 0 || h == 0 {
         return Err(err("bad_request", "w and h must be at least 1"));
     }
-    let frame = if id == 0 { session.render(w, h) } else { session.render_view(id, Some((w, h))).ok_or_else(|| no_view(id))? };
+    let frame = if id == 0 {
+        session.render(w, h)
+    } else {
+        session
+            .render_view(id, Some((w, h)))
+            .ok_or_else(|| no_view(id))?
+    };
     Ok(RenderedFrame::new(&frame, spec.format))
 }
 
@@ -334,7 +354,12 @@ struct Event<'a> {
 
 /// The `{event:"state"}` line a subscriber receives for `change`. `source` says where the
 /// change came from (`"client"`, `"terminal"`, …).
-pub fn event_line(session: &Session, change: &Change, sub: &Subscription, source: Option<&str>) -> String {
+pub fn event_line(
+    session: &Session,
+    change: &Change,
+    sub: &Subscription,
+    source: Option<&str>,
+) -> String {
     let frame = sub.frame.and_then(|spec| render(session, spec).ok());
     serde_json::to_string(&Event {
         event: "state",
@@ -360,7 +385,12 @@ impl Session {
     /// without its own `now_ms`, a `tick` to `clock_ms` is applied (when it is later than the
     /// state's clock), so typing runs and undo steps follow real time. The tick is an
     /// ordinary message: it is in the response, the events and the trace.
-    pub fn handle_at(&mut self, line: &str, exec: Option<Executor<'_>>, clock_ms: Option<u64>) -> Handled {
+    pub fn handle_at(
+        &mut self,
+        line: &str,
+        exec: Option<Executor<'_>>,
+        clock_ms: Option<u64>,
+    ) -> Handled {
         self.handle_client(line, exec, clock_ms, None)
     }
 
@@ -383,7 +413,11 @@ impl Session {
         let id = req.id.clone();
         match self.handle_request(req, exec, clock_ms, own) {
             Ok(h) => h,
-            Err(e) => Handled { response: error_line(id.as_ref(), &e), change: None, control: None },
+            Err(e) => Handled {
+                response: error_line(id.as_ref(), &e),
+                change: None,
+                control: None,
+            },
         }
     }
 
@@ -395,7 +429,11 @@ impl Session {
         own: Option<&mut Option<u32>>,
     ) -> Result<Handled, ProtoError> {
         let id = req.id.as_ref();
-        let reply = |response: String| Handled { response, change: None, control: None };
+        let reply = |response: String| Handled {
+            response,
+            change: None,
+            control: None,
+        };
         let check_rev = |rev: u64| match req.if_rev {
             Some(want) if want != rev => Err(err(
                 "stale",
@@ -422,8 +460,20 @@ impl Session {
                 }
                 let full = req.history.unwrap_or(true);
                 let line = |state: &State| match full {
-                    true => to_line(id, R { rev: self.rev(), state }),
-                    false => to_line(id, R { rev: self.rev(), state: state.without_history() }),
+                    true => to_line(
+                        id,
+                        R {
+                            rev: self.rev(),
+                            state,
+                        },
+                    ),
+                    false => to_line(
+                        id,
+                        R {
+                            rev: self.rev(),
+                            state: state.without_history(),
+                        },
+                    ),
                 };
                 match req.view.unwrap_or(0) {
                     0 => Ok(reply(line(self.state()))),
@@ -437,55 +487,112 @@ impl Session {
                     #[serde(flatten)]
                     part: crate::state::HistoryPart<'a>,
                 }
-                Ok(reply(to_line(id, R { rev: self.rev(), part: self.state().history_part() })))
+                Ok(reply(to_line(
+                    id,
+                    R {
+                        rev: self.rev(),
+                        part: self.state().history_part(),
+                    },
+                )))
             }
             "state.set" => {
                 check_rev(self.rev())?;
-                let state = req.state.ok_or_else(|| err("bad_request", "state.set needs a state"))?;
+                let state = req
+                    .state
+                    .ok_or_else(|| err("bad_request", "state.set needs a state"))?;
                 let rev = self.set_state(state);
                 Ok(Handled {
                     response: to_line(id, Rev { rev }),
-                    change: Some(Change { rev, msgs: Vec::new(), state_set: true, view: None }),
+                    change: Some(Change {
+                        rev,
+                        msgs: Vec::new(),
+                        state_set: true,
+                        view: None,
+                    }),
                     control: None,
                 })
             }
             "frame" => {
                 check_rev(self.rev())?;
-                let text = req.text.ok_or_else(|| err("bad_request", "frame needs a text"))?;
+                let text = req
+                    .text
+                    .ok_or_else(|| err("bad_request", "frame needs a text"))?;
                 let rev = self.push_frame(&text, &req.highlights, req.caret, req.status);
                 Ok(Handled {
                     response: to_line(id, Rev { rev }),
-                    change: Some(Change { rev, msgs: Vec::new(), state_set: true, view: None }),
+                    change: Some(Change {
+                        rev,
+                        msgs: Vec::new(),
+                        state_set: true,
+                        view: None,
+                    }),
                     control: None,
                 })
             }
             "text.set" => {
                 check_rev(self.rev())?;
-                let text = req.text.as_deref().ok_or_else(|| err("bad_request", "text.set needs a text"))?;
+                let text = req
+                    .text
+                    .as_deref()
+                    .ok_or_else(|| err("bad_request", "text.set needs a text"))?;
                 let on = self.acting_view(req.view, own)?;
                 let applied: Vec<Msg> = self.set_text_on(on, text).into_iter().collect();
                 let rev = self.rev();
-                let response = to_line(id, TextSet { rev, changed: !applied.is_empty(), view: on, msgs: &applied });
-                let change = (!applied.is_empty()).then_some(Change { rev, msgs: applied, state_set: false, view: (on != 0).then_some(on) });
-                Ok(Handled { response, change, control: None })
+                let response = to_line(
+                    id,
+                    TextSet {
+                        rev,
+                        changed: !applied.is_empty(),
+                        view: on,
+                        msgs: &applied,
+                    },
+                );
+                let change = (!applied.is_empty()).then_some(Change {
+                    rev,
+                    msgs: applied,
+                    state_set: false,
+                    view: (on != 0).then_some(on),
+                });
+                Ok(Handled {
+                    response,
+                    change,
+                    control: None,
+                })
             }
             "msgs" | "keys" => {
                 check_rev(self.rev())?;
                 let on = self.acting_view(req.view, own)?;
                 if req.apply_effects && exec.is_none() {
-                    return Err(err("unsupported", "this server returns effects; it doesn't perform them"));
+                    return Err(err(
+                        "unsupported",
+                        "this server returns effects; it doesn't perform them",
+                    ));
                 }
                 // The clock: the request's own `now_ms`, else the runtime's (only forward).
                 let now = self.state().doc.now_ms;
-                let tick = req.now_ms.filter(|&t| t != now).or(clock_ms.filter(|&t| t > now));
+                let tick = req
+                    .now_ms
+                    .filter(|&t| t != now)
+                    .or(clock_ms.filter(|&t| t > now));
                 let base = tick.unwrap_or(now);
-                let mut msgs: Vec<Msg> = tick.map(|now_ms| Msg::Tick { now_ms }).into_iter().collect();
+                let mut msgs: Vec<Msg> = tick
+                    .map(|now_ms| Msg::Tick { now_ms })
+                    .into_iter()
+                    .collect();
                 if req.op == "keys" {
-                    let script = req.keys.ok_or_else(|| err("bad_request", "keys needs a keys script"))?;
+                    let script = req
+                        .keys
+                        .ok_or_else(|| err("bad_request", "keys needs a keys script"))?;
                     let outline = self.state().doc.outline.is_some();
-                    msgs.extend(crate::keymap::script_to_msgs_for(&script, base, outline).map_err(|e| err("bad_keys", e))?);
+                    msgs.extend(
+                        crate::keymap::script_to_msgs_for(&script, base, outline)
+                            .map_err(|e| err("bad_keys", e))?,
+                    );
                 } else {
-                    msgs.extend(req.msgs.ok_or_else(|| err("bad_request", "msgs needs a msgs array"))?);
+                    msgs.extend(
+                        req.msgs
+                            .ok_or_else(|| err("bad_request", "msgs needs a msgs array"))?,
+                    );
                 }
                 let mut effects = Vec::new();
                 let mut applied = Vec::new();
@@ -525,11 +632,24 @@ impl Session {
                         view: on,
                     },
                 );
-                let change = (!applied.is_empty()).then_some(Change { rev, msgs: applied, state_set: false, view: (on != 0).then_some(on) });
-                Ok(Handled { response, change, control: None })
+                let change = (!applied.is_empty()).then_some(Change {
+                    rev,
+                    msgs: applied,
+                    state_set: false,
+                    view: (on != 0).then_some(on),
+                });
+                Ok(Handled {
+                    response,
+                    change,
+                    control: None,
+                })
             }
             "render" => {
-                let spec = FrameSpec { w: req.w, h: req.h, format: req.format.unwrap_or_default() };
+                let spec = FrameSpec {
+                    w: req.w,
+                    h: req.h,
+                    format: req.format.unwrap_or_default(),
+                };
                 #[derive(Serialize)]
                 struct R {
                     rev: u64,
@@ -537,18 +657,40 @@ impl Session {
                     frame: RenderedFrame,
                 }
                 let frame = render_view(self, req.view.unwrap_or(0), spec)?;
-                Ok(reply(to_line(id, R { rev: self.rev(), frame })))
+                Ok(reply(to_line(
+                    id,
+                    R {
+                        rev: self.rev(),
+                        frame,
+                    },
+                )))
             }
             "subscribe" => {
-                let sub = Subscription { msgs: req.with_msgs.unwrap_or(true), frame: req.frame, state: req.with_state };
+                let sub = Subscription {
+                    msgs: req.with_msgs.unwrap_or(true),
+                    frame: req.frame,
+                    state: req.with_state,
+                };
                 Ok(Handled {
-                    response: to_line(id, Subscribed { rev: self.rev(), subscribed: true }),
+                    response: to_line(
+                        id,
+                        Subscribed {
+                            rev: self.rev(),
+                            subscribed: true,
+                        },
+                    ),
                     change: None,
                     control: Some(Control::Subscribe(sub)),
                 })
             }
             "unsubscribe" => Ok(Handled {
-                response: to_line(id, Subscribed { rev: self.rev(), subscribed: false }),
+                response: to_line(
+                    id,
+                    Subscribed {
+                        rev: self.rev(),
+                        subscribed: false,
+                    },
+                ),
                 change: None,
                 control: Some(Control::Unsubscribe),
             }),
@@ -562,7 +704,10 @@ impl Session {
                 }
                 let (from_rev, trace) = match (req.since_rev, req.all) {
                     (Some(_), true) => {
-                        return Err(err("bad_request", "trace.get takes since_rev or all, not both"))
+                        return Err(err(
+                            "bad_request",
+                            "trace.get takes since_rev or all, not both",
+                        ))
                     }
                     (Some(since), false) => {
                         let lines = self.trace_since(since).ok_or_else(|| {
@@ -580,26 +725,46 @@ impl Session {
                     (None, true) => (self.trace_start_rev(), self.trace()),
                     (None, false) => (self.segment_rev(), self.segment_trace()),
                 };
-                Ok(reply(to_line(id, R { rev: self.rev(), from_rev, trace })))
+                Ok(reply(to_line(
+                    id,
+                    R {
+                        rev: self.rev(),
+                        from_rev,
+                        trace,
+                    },
+                )))
             }
             "view.open" => {
                 check_rev(self.rev())?;
                 let mut view = req.open.unwrap_or_else(|| self.state().view.clone());
                 if let (Some(w), Some(h)) = (req.w, req.h) {
-                    view.viewport = crate::state::Viewport { width: w.max(1), height: h.max(1) };
+                    view.viewport = crate::state::Viewport {
+                        width: w.max(1),
+                        height: h.max(1),
+                    };
                 }
                 let v = self.open_view(view);
                 let rev = self.rev();
                 Ok(Handled {
                     response: to_line(id, ViewOpened { rev, view: v }),
-                    change: Some(Change { rev, msgs: Vec::new(), state_set: false, view: Some(v) }),
+                    change: Some(Change {
+                        rev,
+                        msgs: Vec::new(),
+                        state_set: false,
+                        view: Some(v),
+                    }),
                     control: None,
                 })
             }
             "view.close" => {
-                let v = req.view.ok_or_else(|| err("bad_request", "view.close needs a view"))?;
+                let v = req
+                    .view
+                    .ok_or_else(|| err("bad_request", "view.close needs a view"))?;
                 if v == 0 {
-                    return Err(err("bad_request", "view 0 is the state's own and stays open"));
+                    return Err(err(
+                        "bad_request",
+                        "view 0 is the state's own and stays open",
+                    ));
                 }
                 if !self.close_view(v) {
                     return Err(no_view(v));
@@ -607,7 +772,12 @@ impl Session {
                 let rev = self.rev();
                 Ok(Handled {
                     response: to_line(id, ViewClosed { rev, closed: v }),
-                    change: Some(Change { rev, msgs: Vec::new(), state_set: false, view: Some(v) }),
+                    change: Some(Change {
+                        rev,
+                        msgs: Vec::new(),
+                        state_set: false,
+                        view: Some(v),
+                    }),
                     control: None,
                 })
             }
@@ -620,12 +790,24 @@ impl Session {
             ))),
             "keymap.get" => {
                 let outline = req.outline.unwrap_or(self.state().doc.outline.is_some());
-                Ok(reply(to_line(id, KeymapReply { outline, bindings: crate::commands::default_keymap(outline) })))
+                Ok(reply(to_line(
+                    id,
+                    KeymapReply {
+                        outline,
+                        bindings: crate::commands::default_keymap(outline),
+                    },
+                )))
             }
             "view.list" => {
                 let mut list = vec![view_summary(0, &self.state().view)];
                 list.extend(self.views().iter().map(|(k, v)| view_summary(*k, v)));
-                Ok(reply(to_line(id, ViewList { rev: self.rev(), views: list })))
+                Ok(reply(to_line(
+                    id,
+                    ViewList {
+                        rev: self.rev(),
+                        views: list,
+                    },
+                )))
             }
             "trace.checkpoint" => {
                 let rev = self.checkpoint();
@@ -642,7 +824,11 @@ impl Session {
 impl Session {
     /// The view a writing request goes through: the one it names, else the client's own
     /// (opened now when it has none), else view 0.
-    fn acting_view(&mut self, named: Option<u32>, own: Option<&mut Option<u32>>) -> Result<u32, ProtoError> {
+    fn acting_view(
+        &mut self,
+        named: Option<u32>,
+        own: Option<&mut Option<u32>>,
+    ) -> Result<u32, ProtoError> {
         let on = match (named, own) {
             (Some(v), _) => v,
             (None, Some(own)) => match *own {
@@ -665,7 +851,13 @@ impl Session {
 }
 
 fn view_summary(id: u32, v: &View) -> ViewSummary {
-    ViewSummary { view: id, w: v.viewport.width, h: v.viewport.height, caret: v.caret(), read_only: v.read_only }
+    ViewSummary {
+        view: id,
+        w: v.viewport.width,
+        h: v.viewport.height,
+        caret: v.caret(),
+        read_only: v.read_only,
+    }
 }
 
 // Response bodies. Structs, not `json!` maps: a struct's keys come out in declaration order
@@ -753,5 +945,9 @@ fn bad_line(line: &str, e: serde_json::Error) -> Handled {
         Ok(_) => error_line(None, &err("bad_request", "a request is a JSON object")),
         Err(e) => error_line(None, &err("parse", format!("not JSON: {e}"))),
     };
-    Handled { response, change: None, control: None }
+    Handled {
+        response,
+        change: None,
+        control: None,
+    }
 }

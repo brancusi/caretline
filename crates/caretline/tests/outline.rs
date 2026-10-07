@@ -14,7 +14,10 @@ mod common;
 
 use caretline::helix::Selection;
 use caretline::outline::markdown;
-use caretline::{script_to_msgs_for, update, view, MarkAttrs, Effect, Kind, MarkId, Msg, NewBlock, OutlineConfig, State, Viewport};
+use caretline::{
+    script_to_msgs_for, update, view, Effect, Kind, MarkAttrs, MarkId, Msg, NewBlock,
+    OutlineConfig, State, Viewport,
+};
 
 // ---------------------------------------------------------------------------------------
 // The notation
@@ -74,11 +77,17 @@ fn doc_wh(notation: &str, width: u16, height: u16) -> State {
     for &p in &starts {
         s.doc.marks.mint(p);
     }
-    s.enable_outline(OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
+    s.enable_outline(
+        OutlineConfig::default()
+            .with_tags("abc".into())
+            .with_new_tag(Some('a')),
+    );
     // Blank rows as written: explicit only where the default differs.
     let o = s.blocks().unwrap();
     for (k, (_, want)) in blocks.iter().enumerate().skip(1) {
-        let b = o.get(MarkId(k as u64)).unwrap_or_else(|| panic!("no block for segment {k} of {notation:?}"));
+        let b = o
+            .get(MarkId(k as u64))
+            .unwrap_or_else(|| panic!("no block for segment {k} of {notation:?}"));
         if b.gap != *want {
             s.doc.marks.set_attrs(b.id, MarkAttrs::gap(Some(*want)));
         }
@@ -172,7 +181,13 @@ fn clip(fx: &[Effect]) -> Option<String> {
 
 #[test]
 fn the_notation_round_trips() {
-    for n in ["A ‖ B▮", "- a ¦ - b ‖ Para⏎more▮", "▮", "# Head ‖ Text ‖ - [a] t ¦   - [b] u▮", "x ¦ y▮"] {
+    for n in [
+        "A ‖ B▮",
+        "- a ¦ - b ‖ Para⏎more▮",
+        "▮",
+        "# Head ‖ Text ‖ - [a] t ¦   - [b] u▮",
+        "x ¦ y▮",
+    ] {
         assert_eq!(show(&doc(n)), n);
     }
 }
@@ -182,12 +197,20 @@ fn the_notation_round_trips() {
 
 #[test]
 fn e07_collapsing_never_jumps_to_another_block() {
-    golden("First note ‖ Sec⟦ond no▮⟧te", "<left>", "First note ‖ Sec▮ond note");
+    golden(
+        "First note ‖ Sec⟦ond no▮⟧te",
+        "<left>",
+        "First note ‖ Sec▮ond note",
+    );
 }
 
 #[test]
 fn e08_e09_up_and_down_step_over_the_blank_row() {
-    golden("Line one ‖ Line ⟦two and▮⟧ more", "<up>", "Line ▮one ‖ Line two and more");
+    golden(
+        "Line one ‖ Line ⟦two and▮⟧ more",
+        "<up>",
+        "Line ▮one ‖ Line two and more",
+    );
     golden("Line ⟦one▮⟧ ‖ Line two", "<down>", "Line one ‖ Line two▮");
 }
 
@@ -258,7 +281,11 @@ fn e22_nothing_to_nest_under() {
 #[test]
 fn a_paragraph_moves_with_its_children() {
     golden("A ‖ B▮ ‖   b1 ‖   - b2", "<a-up>", "B▮ ‖   b1 ‖   - b2 ‖ A");
-    golden("B▮ ‖   b1 ‖   - b2 ‖ A", "<a-down>", "A ‖ B▮ ‖   b1 ‖   - b2");
+    golden(
+        "B▮ ‖   b1 ‖   - b2 ‖ A",
+        "<a-down>",
+        "A ‖ B▮ ‖   b1 ‖   - b2",
+    );
 }
 
 #[test]
@@ -280,20 +307,42 @@ fn word_and_row_deletes_stop_at_the_marker() {
 #[test]
 fn e34_e35_copy_across_blocks_writes_markdown() {
     let mut s = doc("- [a] Buy ⟦milk ¦ - [a] Call ▮⟧Sam");
-    assert_eq!(clip(&keys(&mut s, "<c-c>")).as_deref(), Some("milk\n- [a] Call "));
-    assert_eq!(show(&s), "- [a] Buy ⟦milk ¦ - [a] Call ▮⟧Sam", "copy changes nothing");
+    assert_eq!(
+        clip(&keys(&mut s, "<c-c>")).as_deref(),
+        Some("milk\n- [a] Call ")
+    );
+    assert_eq!(
+        show(&s),
+        "- [a] Buy ⟦milk ¦ - [a] Call ▮⟧Sam",
+        "copy changes nothing"
+    );
     let mut s = doc("⟦One ‖ - [b] Two▮⟧");
-    assert_eq!(clip(&keys(&mut s, "<c-c>")).as_deref(), Some("One\n\n- [b] Two"));
+    assert_eq!(
+        clip(&keys(&mut s, "<c-c>")).as_deref(),
+        Some("One\n\n- [b] Two")
+    );
     let mut s = doc("Plan the trip⟦ ‖ - [a] Book the flat▮⟧");
-    assert_eq!(clip(&keys(&mut s, "<c-c>")).as_deref(), Some("\n\n- [a] Book the flat"));
+    assert_eq!(
+        clip(&keys(&mut s, "<c-c>")).as_deref(),
+        Some("\n\n- [a] Book the flat")
+    );
     let mut s = doc("Hello ⟦wor▮⟧ld");
-    assert_eq!(clip(&keys(&mut s, "<c-c>")).as_deref(), Some("wor"), "inside one block: plain text");
+    assert_eq!(
+        clip(&keys(&mut s, "<c-c>")).as_deref(),
+        Some("wor"),
+        "inside one block: plain text"
+    );
 }
 
 #[test]
 fn e39_pasting_a_list_into_an_empty_block_makes_items() {
     let mut s = doc("▮");
-    send(&mut s, [Msg::Paste { text: Some("- a\n- b".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("- a\n- b".into()),
+        }],
+    );
     assert_eq!(show(&s), "- a ¦ - b▮");
     keys(&mut s, "<c-z>");
     assert_eq!(show(&s), "▮", "one undo step");
@@ -302,17 +351,36 @@ fn e39_pasting_a_list_into_an_empty_block_makes_items() {
 #[test]
 fn pasted_markdown_joins_the_text_around_the_caret() {
     let mut s = doc("Start ▮end");
-    send(&mut s, [Msg::Paste { text: Some("one\n\n- two\n- [a] three".into()) }]);
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("one\n\n- two\n- [a] three".into()),
+        }],
+    );
     assert_eq!(show(&s), "Start one ‖ - two ¦ - [a] three▮end");
     let mut s = doc("- [a] ▮");
-    send(&mut s, [Msg::Paste { text: Some("a\n\nb".into()) }]);
-    assert_eq!(show(&s), "a ‖ b▮", "an empty item takes the first block's shape");
+    send(
+        &mut s,
+        [Msg::Paste {
+            text: Some("a\n\nb".into()),
+        }],
+    );
+    assert_eq!(
+        show(&s),
+        "a ‖ b▮",
+        "an empty item takes the first block's shape"
+    );
 }
 
 #[test]
 fn a_plain_paste_keeps_line_breaks_and_reads_no_lists() {
     let mut s = doc("▮");
-    send(&mut s, [Msg::PastePlain { text: Some("- a\nb\n\nc".into()) }]);
+    send(
+        &mut s,
+        [Msg::PastePlain {
+            text: Some("- a\nb\n\nc".into()),
+        }],
+    );
     assert_eq!(show(&s), "- a⏎b ‖ c▮");
     // A soft break inside the first block: "- a" read as text would be a marker, so the
     // pasted paragraph starts a list item. Plain text never makes a tagged item or nests.
@@ -355,12 +423,26 @@ fn select_blocks(s: &mut State, a: usize, b: usize) {
 
 #[test]
 fn whole_blocks_cut_and_pasted_into_an_empty_item_replace_it() {
-    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
+    let mut s = markdown::load(
+        WEEKEND,
+        None,
+        Viewport {
+            width: 60,
+            height: 12,
+        },
+        OutlineConfig::default()
+            .with_tags("abc".into())
+            .with_new_tag(Some('a')),
+    );
     let before = ids(&s);
     select_blocks(&mut s, 1, 5);
     let fx = keys(&mut s, "<c-x>");
     assert_eq!(clip(&fx).as_deref(), Some("- [a] Saturday\n  - [a] Fix the bike chain\n  - [b] Farmers market\n    - [a] Buy peaches"));
-    assert_eq!(s.doc.text.to_string(), "- [a] Friday\n- Notes", "the lines go whole: no empty item is left");
+    assert_eq!(
+        s.doc.text.to_string(),
+        "- [a] Friday\n- Notes",
+        "the lines go whole: no empty item is left"
+    );
     // At "Notes": End, Enter (a new empty bullet), paste.
     keys(&mut s, "<down><end><cr><c-v>");
     assert_eq!(
@@ -371,7 +453,11 @@ fn whole_blocks_cut_and_pasted_into_an_empty_item_replace_it() {
     let after = ids(&s);
     assert_eq!(&after[2..], &before[1..5], "a cut and paste keeps the ids");
     keys(&mut s, "<c-z>");
-    assert_eq!(s.doc.text.to_string(), "- [a] Friday\n- Notes\n- ", "one undo step");
+    assert_eq!(
+        s.doc.text.to_string(),
+        "- [a] Friday\n- Notes\n- ",
+        "one undo step"
+    );
 }
 
 /// Copying whole blocks, then pasting over the same selection, changes nothing: an empty block
@@ -379,20 +465,43 @@ fn whole_blocks_cut_and_pasted_into_an_empty_item_replace_it() {
 /// pasted back is still a block of its own.
 #[test]
 fn whole_blocks_pasted_over_their_own_selection_change_nothing() {
-    for before in ["- [a] two ‖ x. ‖   - ▮⟦ ¦   - [a] ⟧", "longer ‖ ⟦ ‖ ▮⟧a a", "two ‖ ⟦▮x. ‖ ⟧ab"] {
+    for before in [
+        "- [a] two ‖ x. ‖   - ▮⟦ ¦   - [a] ⟧",
+        "longer ‖ ⟦ ‖ ▮⟧a a",
+        "two ‖ ⟦▮x. ‖ ⟧ab",
+    ] {
         let mut s = doc(before);
         let text = s.doc.text.to_string();
         let n = ids(&s).len();
         let copied = clip(&send(&mut s, [Msg::Copy])).expect("a copy");
-        send(&mut s, [Msg::Paste { text: Some(copied.clone()) }]);
-        assert_eq!(s.doc.text.to_string(), text, "{before:?}: the text, after pasting {copied:?}");
+        send(
+            &mut s,
+            [Msg::Paste {
+                text: Some(copied.clone()),
+            }],
+        );
+        assert_eq!(
+            s.doc.text.to_string(),
+            text,
+            "{before:?}: the text, after pasting {copied:?}"
+        );
         assert_eq!(ids(&s).len(), n, "{before:?}: the blocks");
     }
 }
 
 #[test]
 fn whole_blocks_pasted_at_an_items_end_follow_it_as_siblings() {
-    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
+    let mut s = markdown::load(
+        WEEKEND,
+        None,
+        Viewport {
+            width: 60,
+            height: 12,
+        },
+        OutlineConfig::default()
+            .with_tags("abc".into())
+            .with_new_tag(Some('a')),
+    );
     // Copy "Farmers market" and its child (depth 1), paste at the end of "Friday" (depth 0).
     select_blocks(&mut s, 3, 5);
     keys(&mut s, "<c-c>");
@@ -404,7 +513,17 @@ fn whole_blocks_pasted_at_an_items_end_follow_it_as_siblings() {
         "- [a] Friday\n- [b] Farmers market\n  - [a] Buy peaches\n- [a] Saturday\n  - [a] Fix the bike chain\n  - [b] Farmers market\n    - [a] Buy peaches\n- Notes"
     );
     // At the end of an item with children, they follow its whole subtree, at its depth.
-    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
+    let mut s = markdown::load(
+        WEEKEND,
+        None,
+        Viewport {
+            width: 60,
+            height: 12,
+        },
+        OutlineConfig::default()
+            .with_tags("abc".into())
+            .with_new_tag(Some('a')),
+    );
     select_blocks(&mut s, 0, 1);
     keys(&mut s, "<c-c>");
     let o = s.blocks().unwrap();
@@ -424,12 +543,29 @@ fn whole_blocks_pasted_at_an_items_end_follow_it_as_siblings() {
 
 #[test]
 fn whole_blocks_pasted_inside_text_join_it_as_markdown_does() {
-    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
+    let mut s = markdown::load(
+        WEEKEND,
+        None,
+        Viewport {
+            width: 60,
+            height: 12,
+        },
+        OutlineConfig::default()
+            .with_tags("abc".into())
+            .with_new_tag(Some('a')),
+    );
     select_blocks(&mut s, 2, 3);
     keys(&mut s, "<c-c>");
     s.view.selection = Selection::point(s.blocks().unwrap().blocks[5].content_start() + 2); // "No|tes"
     keys(&mut s, "<c-v>");
-    assert!(s.doc.text.to_string().ends_with("- NoFix the bike chaintes"), "{:?}", s.doc.text.to_string());
+    assert!(
+        s.doc
+            .text
+            .to_string()
+            .ends_with("- NoFix the bike chaintes"),
+        "{:?}",
+        s.doc.text.to_string()
+    );
 }
 
 #[test]
@@ -452,13 +588,24 @@ fn e44_e45_e46_word_and_block_selection() {
     send(&mut s, [Msg::SelectWordAt { pos: 6 }]);
     assert_eq!(show(&s), "The ⟦quick▮⟧ fox ‖ Next");
     // A shift-click (a drag) on "fox" extends by whole words.
-    send(&mut s, [Msg::Click { col: 11, row: 0, extend: true }]);
+    send(
+        &mut s,
+        [Msg::Click {
+            col: 11,
+            row: 0,
+            extend: true,
+        }],
+    );
     assert_eq!(show(&s), "The ⟦quick fox▮⟧ ‖ Next");
     send(&mut s, [Msg::SelectBlock { id: MarkId(0) }]);
     assert_eq!(show(&s), "⟦The quick fox▮⟧ ‖ Next");
     let mut s = doc("- [a] Pay ▮rent");
     send(&mut s, [Msg::SelectBlock { id: MarkId(0) }]);
-    assert_eq!(show(&s), "- [a] ⟦Pay rent▮⟧", "a block's content, never its marker");
+    assert_eq!(
+        show(&s),
+        "- [a] ⟦Pay rent▮⟧",
+        "a block's content, never its marker"
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -478,27 +625,58 @@ fn golden_img(before: &str, script: &str, after: &str) -> State {
 #[test]
 fn e47_a_click_on_an_image_selects_it() {
     let mut s = doc(&img("Above ‖ [img] ‖ Below▮"));
-    send(&mut s, [Msg::Click { col: 4, row: 2, extend: false }]);
+    send(
+        &mut s,
+        [Msg::Click {
+            col: 4,
+            row: 2,
+            extend: false,
+        }],
+    );
     assert_eq!(show(&s), img("Above ‖ ⟦[img]▮⟧ ‖ Below"));
 }
 
 #[test]
 fn e49_e52_e53_e54_one_press_onto_an_image_and_one_off() {
-    golden_img("Above▮ ‖ [img] ‖ Below", "<right>", "Above ‖ ⟦[img]▮⟧ ‖ Below");
-    golden_img("Above ‖ ⟦[img]▮⟧ ‖ Below", "<right>", "Above ‖ [img] ‖ ▮Below");
-    golden_img("Above ‖ [img] ‖ ▮Below", "<left>", "Above ‖ ⟦[img]▮⟧ ‖ Below");
-    golden_img("Above ‖ ⟦[img]▮⟧ ‖ Below", "<left>", "Above▮ ‖ [img] ‖ Below");
+    golden_img(
+        "Above▮ ‖ [img] ‖ Below",
+        "<right>",
+        "Above ‖ ⟦[img]▮⟧ ‖ Below",
+    );
+    golden_img(
+        "Above ‖ ⟦[img]▮⟧ ‖ Below",
+        "<right>",
+        "Above ‖ [img] ‖ ▮Below",
+    );
+    golden_img(
+        "Above ‖ [img] ‖ ▮Below",
+        "<left>",
+        "Above ‖ ⟦[img]▮⟧ ‖ Below",
+    );
+    golden_img(
+        "Above ‖ ⟦[img]▮⟧ ‖ Below",
+        "<left>",
+        "Above▮ ‖ [img] ‖ Below",
+    );
 }
 
 #[test]
 fn e50_typing_on_an_image_starts_a_block_after_it() {
-    let s = golden_img("Above ‖ ⟦[img]▮⟧ ‖ Below", "x", "Above ‖ [img] ‖ x▮ ‖ Below");
+    let s = golden_img(
+        "Above ‖ ⟦[img]▮⟧ ‖ Below",
+        "x",
+        "Above ‖ [img] ‖ x▮ ‖ Below",
+    );
     assert_eq!(ids(&s), [0, 1, 3, 2]);
 }
 
 #[test]
 fn e55_down_onto_an_image_and_off_keeps_the_goal_column() {
-    let mut s = golden_img("Ab▮ove ‖ [img] ‖ Below", "<down>", "Above ‖ ⟦[img]▮⟧ ‖ Below");
+    let mut s = golden_img(
+        "Ab▮ove ‖ [img] ‖ Below",
+        "<down>",
+        "Above ‖ ⟦[img]▮⟧ ‖ Below",
+    );
     keys(&mut s, "<down>");
     assert_eq!(show(&s), img("Above ‖ [img] ‖ Be▮low"));
 }
@@ -508,9 +686,17 @@ fn e56_e57_e58_backspace_and_delete_select_an_image_before_removing_it() {
     let mut s = golden_img("Above ‖ ⟦[img]▮⟧ ‖ Below", "<bs>", "Above▮ ‖ Below");
     assert_eq!(s.view.status.as_deref(), Some("removed k3m9q-shot.png"));
     keys(&mut s, "<c-z>");
-    assert_eq!(show(&s), img("Above ‖ ⟦[img]▮⟧ ‖ Below"), "undo brings it back, selected");
+    assert_eq!(
+        show(&s),
+        img("Above ‖ ⟦[img]▮⟧ ‖ Below"),
+        "undo brings it back, selected"
+    );
     golden_img("Above ‖ [img] ‖ ▮Below", "<bs>", "Above ‖ ⟦[img]▮⟧ ‖ Below");
-    golden_img("Above▮ ‖ [img] ‖ Below", "<del>", "Above ‖ ⟦[img]▮⟧ ‖ Below");
+    golden_img(
+        "Above▮ ‖ [img] ‖ Below",
+        "<del>",
+        "Above ‖ ⟦[img]▮⟧ ‖ Below",
+    );
 }
 
 #[test]
@@ -522,14 +708,22 @@ fn e59_a_selection_across_an_image_deletes_it_with_the_rest() {
 
 #[test]
 fn e60_shift_arrow_takes_the_whole_image() {
-    golden_img("Above▮ ‖ [img] ‖ Below", "<s-right>", "Above⟦ ‖ [img]▮⟧ ‖ Below");
+    golden_img(
+        "Above▮ ‖ [img] ‖ Below",
+        "<s-right>",
+        "Above⟦ ‖ [img]▮⟧ ‖ Below",
+    );
 }
 
 #[test]
 fn e61_e62_copy_an_image_and_enter_after_it() {
     let mut s = doc(&img("Above ‖ ⟦[img]▮⟧ ‖ Below"));
     assert_eq!(clip(&keys(&mut s, "<c-c>")).as_deref(), Some(IMG));
-    golden_img("Above ‖ ⟦[img]▮⟧ ‖ Below", "<cr>", "Above ‖ [img] ‖ ▮ ‖ Below");
+    golden_img(
+        "Above ‖ ⟦[img]▮⟧ ‖ Below",
+        "<cr>",
+        "Above ‖ [img] ‖ ▮ ‖ Below",
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -659,7 +853,11 @@ fn tab_nests_one_level_below_the_block_above_at_most() {
     golden("- a ¦ - ▮b", "<tab>", "- a ¦   - ▮b");
     golden("- a ¦ - ▮b", "<tab><tab>", "- a ¦   - ▮b");
     golden("- ▮a", "<tab>", "- ▮a");
-    golden("- a ¦   - b ¦     - ▮c", "<s-tab><s-tab>", "- a ¦   - b ¦ - ▮c");
+    golden(
+        "- a ¦   - b ¦     - ▮c",
+        "<s-tab><s-tab>",
+        "- a ¦   - b ¦ - ▮c",
+    );
 }
 
 #[test]
@@ -674,9 +872,17 @@ fn shift_tab_at_the_top_level_says_so() {
 
 #[test]
 fn alt_arrows_move_an_item_with_its_children() {
-    let s = golden("- a ¦ - b▮ ¦   - b1 ¦ - c", "<a-up>", "- b▮ ¦   - b1 ¦ - a ¦ - c");
+    let s = golden(
+        "- a ¦ - b▮ ¦   - b1 ¦ - c",
+        "<a-up>",
+        "- b▮ ¦   - b1 ¦ - a ¦ - c",
+    );
     assert_eq!(ids(&s), [1, 2, 0, 3]);
-    let s = golden("- a ¦ - b▮ ¦   - b1 ¦ - c", "<a-down>", "- a ¦ - c ¦ - b▮ ¦   - b1");
+    let s = golden(
+        "- a ¦ - b▮ ¦   - b1 ¦ - c",
+        "<a-down>",
+        "- a ¦ - c ¦ - b▮ ¦   - b1",
+    );
     assert_eq!(ids(&s), [0, 3, 1, 2]);
 }
 
@@ -685,10 +891,16 @@ fn moving_past_the_end_of_a_list_is_refused() {
     let mut s = doc("- ▮a ¦ - b");
     keys(&mut s, "<a-up>");
     assert_eq!(show(&s), "- ▮a ¦ - b");
-    assert_eq!(s.view.status.as_deref(), Some("first in its list · Shift-Tab to move out"));
+    assert_eq!(
+        s.view.status.as_deref(),
+        Some("first in its list · Shift-Tab to move out")
+    );
     let mut s = doc("- a ¦   - ▮b");
     keys(&mut s, "<a-down>");
-    assert_eq!(s.view.status.as_deref(), Some("last in its list · Shift-Tab to move out"));
+    assert_eq!(
+        s.view.status.as_deref(),
+        Some("last in its list · Shift-Tab to move out")
+    );
 }
 
 #[test]
@@ -714,11 +926,29 @@ fn the_caret_skips_markers() {
 #[test]
 fn a_click_on_a_marker_or_a_blank_row_lands_at_the_content_start() {
     let mut s = doc("Top▮ ‖ - [a] item");
-    send(&mut s, [Msg::Click { col: 2, row: 2, extend: false }]);
+    send(
+        &mut s,
+        [Msg::Click {
+            col: 2,
+            row: 2,
+            extend: false,
+        }],
+    );
     assert_eq!(show(&s), "Top ‖ - [a] ▮item");
     let mut s = doc("Top▮ ‖ - [a] item");
-    send(&mut s, [Msg::Click { col: 5, row: 1, extend: false }]);
-    assert_eq!(show(&s), "Top ‖ - [a] ▮item", "the blank row belongs to the block below");
+    send(
+        &mut s,
+        [Msg::Click {
+            col: 5,
+            row: 1,
+            extend: false,
+        }],
+    );
+    assert_eq!(
+        show(&s),
+        "Top ‖ - [a] ▮item",
+        "the blank row belongs to the block below"
+    );
 }
 
 #[test]
@@ -733,8 +963,15 @@ fn ctrl_arrows_step_by_block() {
 
 #[test]
 fn a_blank_row_is_a_virtual_row() {
-    let mut s = doc_wh("# Trip ‖ Booked.⏎Faces the river. ‖ - [a] Pay▮ ¦   - ask Ana", 30, 8);
-    assert_eq!(s.doc.text.to_string(), "# Trip\nBooked.\nFaces the river.\n- [a] Pay\n  - ask Ana");
+    let mut s = doc_wh(
+        "# Trip ‖ Booked.⏎Faces the river. ‖ - [a] Pay▮ ¦   - ask Ana",
+        30,
+        8,
+    );
+    assert_eq!(
+        s.doc.text.to_string(),
+        "# Trip\nBooked.\nFaces the river.\n- [a] Pay\n  - ask Ana"
+    );
     s.view.config.status_bar = false;
     assert_eq!(
         view(&s).to_text(),
@@ -750,12 +987,29 @@ fn a_blank_row_is_a_virtual_row() {
 fn insert_blocks_adds_host_blocks_as_one_step() {
     let mut s = doc("- a▮ ¦ - b");
     let blocks = vec![
-        NewBlock { depth: 1, kind: Kind::Bullet, tag: None, text: "sub".into(), gap: None, mark: Some(MarkId(40)) },
+        NewBlock {
+            depth: 1,
+            kind: Kind::Bullet,
+            tag: None,
+            text: "sub".into(),
+            gap: None,
+            mark: Some(MarkId(40)),
+        },
         NewBlock::para(IMG),
     ];
-    send(&mut s, [Msg::InsertBlocks { after: Some(MarkId(0)), blocks }]);
+    send(
+        &mut s,
+        [Msg::InsertBlocks {
+            after: Some(MarkId(0)),
+            blocks,
+        }],
+    );
     assert_eq!(show(&s), format!("- a▮ ¦   - sub ‖ {IMG} ‖ - b"));
-    assert_eq!(ids(&s), [0, 40, 41, 1], "the given id where it's free, else a new one");
+    assert_eq!(
+        ids(&s),
+        [0, 40, 41, 1],
+        "the given id where it's free, else a new one"
+    );
     keys(&mut s, "<c-z>");
     assert_eq!(show(&s), "- a▮ ¦ - b");
 }
@@ -764,10 +1018,21 @@ fn insert_blocks_adds_host_blocks_as_one_step() {
 fn block_left_and_notices() {
     let mut s = doc("one▮ ‖ two");
     let fx = keys(&mut s, "<down>");
-    assert_eq!(fx, [Effect::BlockLeft { from: Some(MarkId(0)), to: Some(MarkId(1)) }]);
+    assert_eq!(
+        fx,
+        [Effect::BlockLeft {
+            from: Some(MarkId(0)),
+            to: Some(MarkId(1))
+        }]
+    );
     s.view.config.status_bar = false;
     let fx = keys(&mut s, "<s-tab>");
-    assert!(fx.contains(&Effect::Notice { text: "already at the top level".into() }), "{fx:?}");
+    assert!(
+        fx.contains(&Effect::Notice {
+            text: "already at the top level".into()
+        }),
+        "{fx:?}"
+    );
 }
 
 #[test]
@@ -780,12 +1045,25 @@ fn outline_messages_in_a_plain_document_only_say_so() {
 
 #[test]
 fn save_writes_markdown_and_load_reads_it_back() {
-    let md = "# Trip\n\n- [a] Pay the deposit\n  - ask Ana\n    on two lines\n- [b] Flights\n\nNotes.\n";
-    let mut s = markdown::load(md, Some("trip.md".into()), Viewport { width: 80, height: 24 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
+    let md =
+        "# Trip\n\n- [a] Pay the deposit\n  - ask Ana\n    on two lines\n- [b] Flights\n\nNotes.\n";
+    let mut s = markdown::load(
+        md,
+        Some("trip.md".into()),
+        Viewport {
+            width: 80,
+            height: 24,
+        },
+        OutlineConfig::default()
+            .with_tags("abc".into())
+            .with_new_tag(Some('a')),
+    );
     assert!(!s.doc.dirty);
     keys(&mut s, "<d-down>!");
     let fx = keys(&mut s, "<c-s>");
-    let Effect::WriteFile { text, .. } = &fx[0] else { panic!("{fx:?}") };
+    let Effect::WriteFile { text, .. } = &fx[0] else {
+        panic!("{fx:?}")
+    };
     assert_eq!(text, &md.replace("Notes.", "Notes.!"));
 }
 
@@ -805,21 +1083,45 @@ fn an_outline_state_round_trips_through_json() {
 fn a_paragraphs_children_copy_indented_and_paste_back_nested() {
     let mut s = doc("⟦Para line ‖   first subitem⏎more ‖   - [a] a tagged item▮⟧ ‖ After");
     let copied = clip(&keys(&mut s, "<c-c>"));
-    assert_eq!(copied.as_deref(), Some("Para line\n\n  first subitem\n  more\n\n  - [a] a tagged item"));
+    assert_eq!(
+        copied.as_deref(),
+        Some("Para line\n\n  first subitem\n  more\n\n  - [a] a tagged item")
+    );
     // Pasted as Markdown: the same nesting.
     let mut t = doc("▮");
     send(&mut t, [Msg::Paste { text: copied }]);
     // (Markdown joins a paragraph's lines.)
-    assert_eq!(show(&t), "Para line ‖   first subitem more ‖   - [a] a tagged item▮");
+    assert_eq!(
+        show(&t),
+        "Para line ‖   first subitem more ‖   - [a] a tagged item▮"
+    );
 }
 
 #[test]
 fn a_paragraphs_children_round_trip_through_a_file() {
     use caretline::outline::markdown::{load, to_file};
     let md = "Para line\n\n  first subitem\n  more\n\n  - [a] a tagged item\n\nAfter\n";
-    let s = load(md, None, Viewport { width: 80, height: 24 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
+    let s = load(
+        md,
+        None,
+        Viewport {
+            width: 80,
+            height: 24,
+        },
+        OutlineConfig::default()
+            .with_tags("abc".into())
+            .with_new_tag(Some('a')),
+    );
     let o = s.blocks().unwrap();
     let shape: Vec<(u16, Kind)> = o.blocks.iter().map(|b| (b.depth, b.kind)).collect();
-    assert_eq!(shape, [(0, Kind::Para), (1, Kind::Para), (1, Kind::Bullet), (0, Kind::Para)]);
+    assert_eq!(
+        shape,
+        [
+            (0, Kind::Para),
+            (1, Kind::Para),
+            (1, Kind::Bullet),
+            (0, Kind::Para)
+        ]
+    );
     assert_eq!(to_file(&s), md);
 }

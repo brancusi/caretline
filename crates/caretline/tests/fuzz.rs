@@ -66,7 +66,11 @@ fn run_seed(seed: u64) -> usize {
     let mut rng = StdRng::seed_from_u64(seed);
     let original = gen::text(&mut rng);
     let (width, height) = gen::size(&mut rng);
-    let mut state = State::new(&original, Some("fuzz.md".into()), Viewport { width, height });
+    let mut state = State::new(
+        &original,
+        Some("fuzz.md".into()),
+        Viewport { width, height },
+    );
     let mut steps = 0;
     for step in 0..STEPS {
         let ctx = format!("seed {seed} step {step}");
@@ -85,11 +89,16 @@ fn run_seed(seed: u64) -> usize {
         match &msg {
             // EI1: a motion without Shift leaves no selection.
             Msg::Move { extend: false, .. } => {
-                assert!(state.view.selection.iter().all(|r| r.is_empty()), "{ctx}: EI1");
+                assert!(
+                    state.view.selection.iter().all(|r| r.is_empty()),
+                    "{ctx}: EI1"
+                );
             }
             // EI2: a motion with Shift never moves the anchor.
             Msg::Move { extend: true, .. } => {
-                if let (Some((a0, ..)), Some((a1, h1, ..))) = (single_range(&before), single_range(&state)) {
+                if let (Some((a0, ..)), Some((a1, h1, ..))) =
+                    (single_range(&before), single_range(&state))
+                {
                     assert_eq!(a0, a1, "{ctx}: EI2 anchor moved");
                     let _ = h1;
                 }
@@ -97,7 +106,10 @@ fn run_seed(seed: u64) -> usize {
             // EI4: copy changes nothing but the clipboard.
             Msg::Copy => {
                 assert_eq!(state.doc.text, before.doc.text, "{ctx}: EI4 text");
-                assert_eq!(state.view.selection, before.view.selection, "{ctx}: EI4 selection");
+                assert_eq!(
+                    state.view.selection, before.view.selection,
+                    "{ctx}: EI4 selection"
+                );
                 assert_eq!(state.doc.history, before.doc.history, "{ctx}: EI4 history");
                 assert_eq!(state.doc.dirty, before.doc.dirty, "{ctx}: EI4 dirty");
             }
@@ -110,7 +122,11 @@ fn run_seed(seed: u64) -> usize {
                 match &msg {
                     // EI6: typing over a selection replaces exactly it.
                     Msg::InsertText { text } if !text.contains(['\r', '\n']) => {
-                        assert_eq!(state.doc.text.to_string(), splice(&text_before, from, to, text), "{ctx}: EI6");
+                        assert_eq!(
+                            state.doc.text.to_string(),
+                            splice(&text_before, from, to, text),
+                            "{ctx}: EI6"
+                        );
                     }
                     // EI7: every delete with a selection removes exactly the selection.
                     Msg::DeleteBackward
@@ -134,10 +150,17 @@ fn run_seed(seed: u64) -> usize {
             let mut undone = state.clone();
             update(&mut undone, Msg::Undo);
             assert_eq!(undone.doc.text, before.doc.text, "{ctx}: EI5 undo text");
-            assert_eq!(undone.view.selection, before.view.selection, "{ctx}: EI5 undo selection");
+            assert_eq!(
+                undone.view.selection, before.view.selection,
+                "{ctx}: EI5 undo selection"
+            );
             update(&mut undone, Msg::Redo);
             assert_eq!(undone.doc.text, state.doc.text, "{ctx}: EI5 redo text");
-            assert_eq!(undone.view.selection.ranges().len(), state.view.selection.ranges().len(), "{ctx}: EI5 redo");
+            assert_eq!(
+                undone.view.selection.ranges().len(),
+                state.view.selection.ranges().len(),
+                "{ctx}: EI5 redo"
+            );
         }
 
         // Effects are plain values and match the message.
@@ -147,14 +170,26 @@ fn run_seed(seed: u64) -> usize {
 
         // view never panics, at the state's size and at extreme sizes.
         let frame = view(&state);
-        assert_eq!(frame.cells.len(), state.view.viewport.width as usize * state.view.viewport.height as usize);
+        assert_eq!(
+            frame.cells.len(),
+            state.view.viewport.width as usize * state.view.viewport.height as usize
+        );
         if step % 10 == 0 {
             for (w, h) in [(1, 1), (2, 200), (200, 2), gen::size(&mut rng)] {
                 let mut sized = state.clone();
-                update(&mut sized, Msg::Resize { width: w, height: h });
+                update(
+                    &mut sized,
+                    Msg::Resize {
+                        width: w,
+                        height: h,
+                    },
+                );
                 let f = view(&sized);
                 if let Some((x, y)) = f.cursor {
-                    assert!(x < w && y < h.saturating_sub(1).max(1), "{ctx}: cursor off screen");
+                    assert!(
+                        x < w && y < h.saturating_sub(1).max(1),
+                        "{ctx}: cursor off screen"
+                    );
                 }
             }
         }
@@ -178,7 +213,11 @@ fn run_seed(seed: u64) -> usize {
         guard += 1;
         assert!(guard < 10_000, "seed {seed}: undo never reached the root");
     }
-    assert_eq!(state.doc.text.to_string(), original, "seed {seed}: full undo");
+    assert_eq!(
+        state.doc.text.to_string(),
+        original,
+        "seed {seed}: full undo"
+    );
     check_selection(&state, &format!("seed {seed} after full undo"));
     steps
 }
@@ -196,7 +235,14 @@ fn cut_paste_and_copy_paste_are_identities() {
     let mut rng = StdRng::seed_from_u64(7);
     for _ in 0..400 {
         let text = gen::text(&mut rng);
-        let mut s = State::new(&text, None, Viewport { width: 40, height: 10 });
+        let mut s = State::new(
+            &text,
+            None,
+            Viewport {
+                width: 40,
+                height: 10,
+            },
+        );
         let len = s.doc.text.len_chars();
         let t = s.doc.text.slice(..);
         let a = ensure_grapheme_boundary_prev(t, rng.random_range(0..=len));
@@ -224,12 +270,22 @@ fn select_all_delete_then_undo() {
     let mut rng = StdRng::seed_from_u64(12);
     for _ in 0..200 {
         let text = gen::text(&mut rng);
-        let mut s = State::new(&text, None, Viewport { width: 30, height: 8 });
+        let mut s = State::new(
+            &text,
+            None,
+            Viewport {
+                width: 30,
+                height: 8,
+            },
+        );
         update(&mut s, Msg::SelectAll);
         update(&mut s, Msg::DeleteBackward);
         assert_eq!(s.doc.text.len_chars(), 0);
         update(&mut s, Msg::Undo);
         assert_eq!(s.doc.text.to_string(), text);
-        assert_eq!(s.view.selection, caretline::helix::Selection::single(0, s.doc.text.len_chars()));
+        assert_eq!(
+            s.view.selection,
+            caretline::helix::Selection::single(0, s.doc.text.len_chars())
+        );
     }
 }

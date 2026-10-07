@@ -41,11 +41,21 @@ struct Args {
 async fn main() -> std::process::ExitCode {
     let args = Args::parse();
     if args.list_tools {
-        println!("{}", serde_json::to_string_pretty(&server::tools()).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&server::tools()).unwrap_or_default()
+        );
         return std::process::ExitCode::SUCCESS;
     }
-    let config = tools::Config { read_only: args.read_only, allow_unguarded: args.allow_unguarded, announce: !args.quiet, name: args.name };
-    let server = server::Server { tools: Arc::new(tools::Tools::new(config)) };
+    let config = tools::Config {
+        read_only: args.read_only,
+        allow_unguarded: args.allow_unguarded,
+        announce: !args.quiet,
+        name: args.name,
+    };
+    let server = server::Server {
+        tools: Arc::new(tools::Tools::new(config)),
+    };
     let running = match server.serve(rmcp::transport::stdio()).await {
         Ok(r) => r,
         Err(e) => {

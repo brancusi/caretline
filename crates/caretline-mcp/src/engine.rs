@@ -12,7 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use caretline::protocol::Subscription;
 use caretline::{Effect, Msg, Session};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// A protocol error: the engine's `kind` (`stale`, `bad_keys`, …) and its message.
 #[derive(Debug, Clone)]
@@ -23,7 +23,10 @@ pub struct ProtoError {
 
 impl ProtoError {
     pub fn new(kind: &str, message: impl Into<String>) -> ProtoError {
-        ProtoError { kind: kind.into(), message: message.into() }
+        ProtoError {
+            kind: kind.into(),
+            message: message.into(),
+        }
     }
 }
 
@@ -70,7 +73,11 @@ impl Events {
     }
 
     /// Waits until `done` says the log is complete enough, or until `deadline`.
-    pub fn wait_until(&self, deadline: Instant, mut done: impl FnMut(&EventLog) -> bool) -> std::sync::MutexGuard<'_, EventLog> {
+    pub fn wait_until(
+        &self,
+        deadline: Instant,
+        mut done: impl FnMut(&EventLog) -> bool,
+    ) -> std::sync::MutexGuard<'_, EventLog> {
         let mut log = self.inner.lock().unwrap();
         loop {
             if done(&log) || log.closed {
@@ -118,12 +125,15 @@ pub fn discovery_dir() -> PathBuf {
 
 /// Every advertised editor, newest first. `alive` is whether its socket answers.
 pub fn list_editors() -> Vec<Editor> {
-    let Ok(dir) = std::fs::read_dir(discovery_dir()) else { return Vec::new() };
+    let Ok(dir) = std::fs::read_dir(discovery_dir()) else {
+        return Vec::new();
+    };
     let mut out: Vec<Editor> = dir
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
         .filter_map(|e| {
-            let info: Value = serde_json::from_str(&std::fs::read_to_string(e.path()).ok()?).ok()?;
+            let info: Value =
+                serde_json::from_str(&std::fs::read_to_string(e.path()).ok()?).ok()?;
             let socket = PathBuf::from(info["socket"].as_str()?);
             let alive = owned_by_me(&socket).is_ok() && UnixStream::connect(&socket).is_ok();
             Some(Editor {
@@ -145,19 +155,33 @@ pub fn owned_by_me(socket: &Path) -> Result<(), String> {
     let meta = std::fs::metadata(socket).map_err(|e| format!("{}: {e}", socket.display()))?;
     let me = unsafe { libc::getuid() };
     if meta.uid() != me {
-        return Err(format!("{} belongs to another user (uid {}); refusing to connect", socket.display(), meta.uid()));
+        return Err(format!(
+            "{} belongs to another user (uid {}); refusing to connect",
+            socket.display(),
+            meta.uid()
+        ));
     }
     Ok(())
 }
 
 pub fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// What a session talks to.
 pub enum Conn {
-    Live { writer: UnixStream, reader: BufReader<UnixStream>, socket: PathBuf },
-    Headless { session: Box<Session>, path: Option<PathBuf> },
+    Live {
+        writer: UnixStream,
+        reader: BufReader<UnixStream>,
+        socket: PathBuf,
+    },
+    Headless {
+        session: Box<Session>,
+        path: Option<PathBuf>,
+    },
 }
 
 pub struct Engine {
@@ -171,17 +195,21 @@ impl Engine {
     /// every change, read on a thread into the event buffer.
     pub fn attach(socket: &Path) -> Result<Engine, String> {
         owned_by_me(socket)?;
-        let connect = || UnixStream::connect(socket).map_err(|e| format!("{}: {e}", socket.display()));
+        let connect =
+            || UnixStream::connect(socket).map_err(|e| format!("{}: {e}", socket.display()));
         let writer = connect()?;
         writer.set_read_timeout(Some(Duration::from_secs(30))).ok();
         let reader = BufReader::new(writer.try_clone().map_err(|e| e.to_string())?);
         let events = Arc::new(Events::default());
 
         let mut sub = connect()?;
-        sub.write_all(b"{\"id\":\"sub\",\"op\":\"subscribe\",\"with_msgs\":true}\n").map_err(|e| e.to_string())?;
+        sub.write_all(b"{\"id\":\"sub\",\"op\":\"subscribe\",\"with_msgs\":true}\n")
+            .map_err(|e| e.to_string())?;
         let mut sub_reader = BufReader::new(sub.try_clone().map_err(|e| e.to_string())?);
         let mut first = String::new();
-        sub_reader.read_line(&mut first).map_err(|e| format!("subscribe: {e}"))?;
+        sub_reader
+            .read_line(&mut first)
+            .map_err(|e| format!("subscribe: {e}"))?;
         let first: Value = serde_json::from_str(&first).map_err(|e| format!("subscribe: {e}"))?;
         if first.get("error").is_some() {
             return Err(format!("subscribe: {}", first["error"]));
@@ -192,18 +220,34 @@ impl Engine {
             for line in sub_reader.lines() {
                 let Ok(line) = line else { break };
                 if let Ok(v) = serde_json::from_str::<Value>(&line)
-                    && v.get("event").is_some() {
-                        ev.push(v);
-                    }
+                    && v.get("event").is_some()
+                {
+                    ev.push(v);
+                }
             }
             ev.close();
         });
-        Ok(Engine { conn: Conn::Live { writer, reader, socket: socket.to_path_buf() }, events, next_id: 1 })
+        Ok(Engine {
+            conn: Conn::Live {
+                writer,
+                reader,
+                socket: socket.to_path_buf(),
+            },
+            events,
+            next_id: 1,
+        })
     }
 
     /// A headless engine in process on `state`; `path` is where `save` writes.
     pub fn headless(state: caretline::State, path: Option<PathBuf>) -> Engine {
-        Engine { conn: Conn::Headless { session: Box::new(Session::new(state)), path }, events: Arc::new(Events::default()), next_id: 1 }
+        Engine {
+            conn: Conn::Headless {
+                session: Box::new(Session::new(state)),
+                path,
+            },
+            events: Arc::new(Events::default()),
+            next_id: 1,
+        }
     }
 
     pub fn is_live(&self) -> bool {
@@ -223,11 +267,17 @@ impl Engine {
                     .map_err(|e| ProtoError::new("closed", format!("the editor is gone: {e}")))?;
                 loop {
                     let mut buf = String::new();
-                    let n = reader.read_line(&mut buf).map_err(|e| ProtoError::new("closed", format!("the editor is gone: {e}")))?;
+                    let n = reader.read_line(&mut buf).map_err(|e| {
+                        ProtoError::new("closed", format!("the editor is gone: {e}"))
+                    })?;
                     if n == 0 {
-                        return Err(ProtoError::new("closed", "the editor is gone (it quit or closed the socket)"));
+                        return Err(ProtoError::new(
+                            "closed",
+                            "the editor is gone (it quit or closed the socket)",
+                        ));
                     }
-                    let v: Value = serde_json::from_str(&buf).map_err(|e| ProtoError::new("parse", e.to_string()))?;
+                    let v: Value = serde_json::from_str(&buf)
+                        .map_err(|e| ProtoError::new("parse", e.to_string()))?;
                     if v["id"] == json!(id) {
                         break v;
                     }
@@ -240,7 +290,9 @@ impl Engine {
                     match e {
                         Effect::WriteFile { text, .. } => {
                             let Some(p) = &target else {
-                                return Some(Msg::SaveFailed { err: "this session has no file".into() });
+                                return Some(Msg::SaveFailed {
+                                    err: "this session has no file".into(),
+                                });
                             };
                             Some(match std::fs::write(p, text) {
                                 Ok(()) => Msg::Saved,
@@ -250,19 +302,31 @@ impl Engine {
                         _ => None,
                     }
                 };
-                let handled = session.handle_at(&line, if apply { Some(&mut exec) } else { None }, Some(now_ms()));
+                let handled = session.handle_at(
+                    &line,
+                    if apply { Some(&mut exec) } else { None },
+                    Some(now_ms()),
+                );
                 if let Some(change) = &handled.change {
-                    let sub = Subscription { msgs: true, frame: None, state: false };
+                    let sub = Subscription {
+                        msgs: true,
+                        frame: None,
+                        state: false,
+                    };
                     let ev = caretline::protocol::event_line(session, change, &sub, Some("client"));
                     if let Ok(v) = serde_json::from_str(&ev) {
                         self.events.push(v);
                     }
                 }
-                serde_json::from_str(&handled.response).map_err(|e| ProtoError::new("parse", e.to_string()))?
+                serde_json::from_str(&handled.response)
+                    .map_err(|e| ProtoError::new("parse", e.to_string()))?
             }
         };
         if let Some(err) = resp.get("error") {
-            return Err(ProtoError::new(err["kind"].as_str().unwrap_or("error"), err["message"].as_str().unwrap_or("").to_string()));
+            return Err(ProtoError::new(
+                err["kind"].as_str().unwrap_or("error"),
+                err["message"].as_str().unwrap_or("").to_string(),
+            ));
         }
         Ok(resp["result"].clone())
     }

@@ -48,7 +48,15 @@ pub struct OutlineLayout {
 
 impl Default for OutlineLayout {
     fn default() -> Self {
-        OutlineLayout { gutter: 2, indent: 4, hang: 4, column: 72, min_column: 20, extra_rows: BTreeMap::new(), hang_glyphs: false }
+        OutlineLayout {
+            gutter: 2,
+            indent: 4,
+            hang: 4,
+            column: 72,
+            min_column: 20,
+            extra_rows: BTreeMap::new(),
+            hang_glyphs: false,
+        }
     }
 }
 
@@ -80,7 +88,12 @@ struct RowStart {
 type FmtKey = (u16, u16, u16, u16);
 
 fn fmt_key(fmt: &TextFormat) -> FmtKey {
-    (fmt.viewport_width, fmt.tab_width, fmt.max_wrap, fmt.max_indent_retain)
+    (
+        fmt.viewport_width,
+        fmt.tab_width,
+        fmt.max_wrap,
+        fmt.max_indent_retain,
+    )
 }
 
 /// The known row starts of one long line, in order. Row 0 is the line's start.
@@ -363,15 +376,32 @@ impl Layout {
 
     /// How line `line` is laid out.
     pub fn line_format(&self, line: usize) -> LineFormat {
-        let plain = LineFormat { skip: 0, x: 0, hidden: false, before: 0, after: 0, fmt: 0 };
+        let plain = LineFormat {
+            skip: 0,
+            x: 0,
+            hidden: false,
+            before: 0,
+            after: 0,
+            fmt: 0,
+        };
         let Some(o) = &self.outline else { return plain };
         let b = o.block_of_line(line);
         let first = b.first_line == line;
         let hidden = crate::views::hidden_range(&self.hidden, line).is_some();
         let before = (first && b.gap) as usize;
-        let Some(g) = &self.geometry else { return LineFormat { hidden, before, ..plain } };
+        let Some(g) = &self.geometry else {
+            return LineFormat {
+                hidden,
+                before,
+                ..plain
+            };
+        };
         let d = b.depth as usize;
-        let after = if line == b.last_line() { g.extra_rows.get(&b.id).copied().unwrap_or(0) as usize } else { 0 };
+        let after = if line == b.last_line() {
+            g.extra_rows.get(&b.id).copied().unwrap_or(0) as usize
+        } else {
+            0
+        };
         let level = d.min(self.depth_fmts.len() / 2 - 1);
         LineFormat {
             skip: if first { b.prefix_len } else { 0 },
@@ -479,7 +509,12 @@ impl Layout {
 
     /// Makes sure the cache knows what `need` asks of long line `line`, and returns the row
     /// to start formatting from with its start and the line's indent level.
-    fn known_row(&self, line: usize, lf: &LineFormat, need: Need) -> (usize, RowStart, Option<usize>) {
+    fn known_row(
+        &self,
+        line: usize,
+        lf: &LineFormat,
+        need: Need,
+    ) -> (usize, RowStart, Option<usize>) {
         let key = fmt_key(self.fmt_of(lf));
         let start = self.content_range(line, lf).0;
         let mut cache = self.cache.borrow_mut();
@@ -489,7 +524,10 @@ impl Layout {
         // A cheap consistency check: the line still starts (and, when known, ends) where the
         // entry says.
         let valid = |e: &LineRows| {
-            e.fmt == key && e.line == line && e.start() == start && (!e.complete || e.next_line == next_line)
+            e.fmt == key
+                && e.line == line
+                && e.start() == start
+                && (!e.complete || e.next_line == next_line)
         };
         let i = match entries.iter().position(valid) {
             Some(i) => i,
@@ -501,7 +539,10 @@ impl Layout {
                 entries.push(LineRows {
                     fmt: key,
                     line,
-                    rows: vec![RowStart { char_idx: start, col: 0 }],
+                    rows: vec![RowStart {
+                        char_idx: start,
+                        col: 0,
+                    }],
                     indent: None,
                     complete: false,
                     next_line: None,
@@ -531,7 +572,10 @@ impl Layout {
                 e.indent = formatter.indent_level();
             }
             if g.visual_pos.row == e.rows.len() {
-                e.rows.push(RowStart { char_idx: g.char_idx, col: g.visual_pos.col });
+                e.rows.push(RowStart {
+                    char_idx: g.char_idx,
+                    col: g.visual_pos.col,
+                });
                 if need.met(e) {
                     return;
                 }
@@ -541,12 +585,33 @@ impl Layout {
         e.next_line = None;
     }
 
-    fn formatter_from(&self, line: usize, lf: &LineFormat, row: usize, at: RowStart, indent: Option<usize>) -> DocumentFormatter<'_> {
+    fn formatter_from(
+        &self,
+        line: usize,
+        lf: &LineFormat,
+        row: usize,
+        at: RowStart,
+        indent: Option<usize>,
+    ) -> DocumentFormatter<'_> {
         let fmt = self.fmt_of(lf);
         if row == 0 && lf.skip == 0 {
-            DocumentFormatter::new_at_prev_checkpoint(self.text(), fmt, &self.annotations, at.char_idx)
+            DocumentFormatter::new_at_prev_checkpoint(
+                self.text(),
+                fmt,
+                &self.annotations,
+                at.char_idx,
+            )
         } else {
-            DocumentFormatter::resume_at_row(self.text(), fmt, &self.annotations, at.char_idx, line, row, at.col, indent)
+            DocumentFormatter::resume_at_row(
+                self.text(),
+                fmt,
+                &self.annotations,
+                at.char_idx,
+                line,
+                row,
+                at.col,
+                indent,
+            )
         }
     }
 
@@ -557,7 +622,16 @@ impl Layout {
             self.formatter_from(line, lf, row, at, indent)
         } else {
             let start = self.content_range(line, lf).0;
-            self.formatter_from(line, lf, 0, RowStart { char_idx: start, col: 0 }, None)
+            self.formatter_from(
+                line,
+                lf,
+                0,
+                RowStart {
+                    char_idx: start,
+                    col: 0,
+                },
+                None,
+            )
         }
     }
 
@@ -597,7 +671,10 @@ impl Layout {
     /// A cursor for counting the rows of neighbouring lines one after another (see
     /// [`LineWalk`]).
     fn walk(&self) -> LineWalk<'_> {
-        LineWalk { layout: self, lines: None }
+        LineWalk {
+            layout: self,
+            lines: None,
+        }
     }
 
     /// The rows line `line`'s text takes.
@@ -633,7 +710,16 @@ impl Layout {
 
     fn formatted_rows_with(&self, line: usize, lf: &LineFormat) -> usize {
         let start = self.content_range(line, lf).0;
-        let formatter = self.formatter_from(line, lf, 0, RowStart { char_idx: start, col: 0 }, None);
+        let formatter = self.formatter_from(
+            line,
+            lf,
+            0,
+            RowStart {
+                char_idx: start,
+                col: 0,
+            },
+            None,
+        );
         let mut rows = 1;
         for g in formatter {
             if g.line_idx != line {
@@ -655,7 +741,11 @@ impl Layout {
         let tab = fmt.tab_width as usize;
         // `Rope::line` skips the full-slice bookkeeping `RopeSlice::line` pays.
         let text = self.rope.line(line);
-        let rest = if lf.skip == 0 { text } else { text.slice(lf.skip.min(text.len_chars())..) };
+        let rest = if lf.skip == 0 {
+            text
+        } else {
+            text.slice(lf.skip.min(text.len_chars())..)
+        };
         if surely_fits(rest, width, tab) {
             return true;
         }
@@ -697,7 +787,13 @@ impl Layout {
                 break;
             }
         }
-        (RowPos { line, row: last.row + lf.before }, last.col + lf.x)
+        (
+            RowPos {
+                line,
+                row: last.row + lf.before,
+            },
+            last.col + lf.x,
+        )
     }
 
     /// The char position on visual row `at` closest to screen column `col` (Helix's rule: the
@@ -713,10 +809,18 @@ impl Layout {
         if lf.after > 0 && row >= self.text_rows_with(at.line, &lf) {
             return end;
         }
-        let col = col.saturating_sub(lf.x).saturating_add(self.line_offset(at.line));
+        let col = col
+            .saturating_sub(lf.x)
+            .saturating_add(self.line_offset(at.line));
         // Search within the one line so a row past its end can't spill into the next line.
-        let next = if at.line < self.last_line() { self.text().line_to_char(at.line + 1) } else { self.text().len_chars() };
-        self.char_at_row_col(at.line, &lf, row, col).min(next).max(start)
+        let next = if at.line < self.last_line() {
+            self.text().line_to_char(at.line + 1)
+        } else {
+            self.text().len_chars()
+        };
+        self.char_at_row_col(at.line, &lf, row, col)
+            .min(next)
+            .max(start)
     }
 
     /// Helix's `char_idx_at_visual_block_offset` from the nearest known row: the grapheme
@@ -766,7 +870,10 @@ impl Layout {
                     pos.row += left;
                     moved += left as isize;
                     left = 0;
-                } else if let Some(next) = (pos.line < self.last_line()).then(|| self.visible_at_or_after(pos.line + 1)).flatten() {
+                } else if let Some(next) = (pos.line < self.last_line())
+                    .then(|| self.visible_at_or_after(pos.line + 1))
+                    .flatten()
+                {
                     let step = rows - pos.row;
                     left -= step;
                     moved += step as isize;
@@ -785,7 +892,11 @@ impl Layout {
                     pos.row -= left;
                     moved -= left as isize;
                     left = 0;
-                } else if let Some(prev) = pos.line.checked_sub(1).and_then(|l| self.visible_at_or_before(l)) {
+                } else if let Some(prev) = pos
+                    .line
+                    .checked_sub(1)
+                    .and_then(|l| self.visible_at_or_before(l))
+                {
                     let step = pos.row + 1;
                     left -= step;
                     moved -= step as isize;
@@ -828,7 +939,10 @@ impl Layout {
     /// The top of the view as a row position, clamped to the document and off hidden lines.
     pub fn top(&self, scroll: &Scroll) -> RowPos {
         let line = scroll.line.min(self.last_line());
-        let line = self.visible_at_or_after(line).or_else(|| self.visible_at_or_before(line)).unwrap_or(0);
+        let line = self
+            .visible_at_or_after(line)
+            .or_else(|| self.visible_at_or_before(line))
+            .unwrap_or(0);
         let row = scroll.row.min(self.line_rows(line).max(1) - 1);
         RowPos { line, row }
     }
@@ -836,7 +950,10 @@ impl Layout {
     /// The document's last row.
     pub fn end(&self) -> RowPos {
         let line = self.visible_at_or_before(self.last_line()).unwrap_or(0);
-        RowPos { line, row: self.line_rows(line).max(1) - 1 }
+        RowPos {
+            line,
+            row: self.line_rows(line).max(1) - 1,
+        }
     }
 
     /// The char position under screen cell (`col`, `row`) of the text area.
@@ -883,7 +1000,9 @@ pub(crate) fn block_x(g: &OutlineLayout, d: usize, width: u16) -> usize {
 /// The wrap width of a block's content at depth `d`: its depth's column, at least the
 /// narrowest, and never past the view's right edge.
 fn depth_width(g: &OutlineLayout, d: usize, width: u16) -> u16 {
-    let column = (g.column as usize).saturating_sub(d * g.indent as usize).max(g.min_column as usize);
+    let column = (g.column as usize)
+        .saturating_sub(d * g.indent as usize)
+        .max(g.min_column as usize);
     let room = (width as usize).saturating_sub(block_x(g, d, width));
     column.min(room).max(1) as u16
 }
@@ -892,8 +1011,16 @@ fn depth_width(g: &OutlineLayout, d: usize, width: u16) -> u16 {
 pub fn clamp_scroll(state: &mut State) {
     let layout = Layout::new(state);
     let top = layout.top(&state.view.scroll);
-    let col = if layout.wraps() { 0 } else { state.view.scroll.col };
-    state.view.scroll = Scroll { line: top.line, row: top.row, col };
+    let col = if layout.wraps() {
+        0
+    } else {
+        state.view.scroll.col
+    };
+    state.view.scroll = Scroll {
+        line: top.line,
+        row: top.row,
+        col,
+    };
     layout.store(state);
 }
 
@@ -1015,7 +1142,19 @@ mod tests {
     /// The short-line shortcut never claims one row for a line the formatter wraps.
     #[test]
     fn fits_one_row_agrees_with_the_formatter() {
-        let pieces = ["a", "word ", "\t", "界", "🙂", "👨‍👩‍👧", "🇫🇷", "e\u{301}", "\u{1}", "  ", "long-unbroken-token"];
+        let pieces = [
+            "a",
+            "word ",
+            "\t",
+            "界",
+            "🙂",
+            "👨‍👩‍👧",
+            "🇫🇷",
+            "e\u{301}",
+            "\u{1}",
+            "  ",
+            "long-unbroken-token",
+        ];
         let mut seed = 0x2545_f491_u32;
         let mut next = move || {
             seed ^= seed << 13;
@@ -1042,7 +1181,17 @@ mod tests {
     /// same rows as asking each line on its own, stepping down, up and measuring.
     #[test]
     fn the_line_walk_counts_what_line_rows_counts() {
-        let pieces = ["a", "word ", "\t", "界", "🙂", "e\u{301}", "  ", "long-unbroken-token", "\n"];
+        let pieces = [
+            "a",
+            "word ",
+            "\t",
+            "界",
+            "🙂",
+            "e\u{301}",
+            "  ",
+            "long-unbroken-token",
+            "\n",
+        ];
         let mut next = xorshift(0x9e37_79b9);
         for _ in 0..200 {
             let mut text = String::new();
@@ -1060,9 +1209,21 @@ mod tests {
             let want: usize = rows[a..b].iter().sum();
             let from = RowPos { line: a, row: 0 };
             let to = RowPos { line: b, row: 0 };
-            assert_eq!(layout.rows_between(from, to, usize::MAX / 2), want as isize, "{text:?} at {width}");
-            assert_eq!(layout.step_rows(from, want as isize), (to, want as isize), "{text:?} at {width}");
-            assert_eq!(layout.step_rows(to, -(want as isize)), (from, -(want as isize)), "{text:?} at {width}");
+            assert_eq!(
+                layout.rows_between(from, to, usize::MAX / 2),
+                want as isize,
+                "{text:?} at {width}"
+            );
+            assert_eq!(
+                layout.step_rows(from, want as isize),
+                (to, want as isize),
+                "{text:?} at {width}"
+            );
+            assert_eq!(
+                layout.step_rows(to, -(want as isize)),
+                (from, -(want as isize)),
+                "{text:?} at {width}"
+            );
         }
     }
 
@@ -1079,7 +1240,8 @@ mod tests {
     fn reference_coords(layout: &Layout, pos: usize) -> (RowPos, usize) {
         use crate::helix::visual_offset_from_block;
         let line = layout.text().char_to_line(pos);
-        let (p, _) = visual_offset_from_block(layout.text(), pos, pos, &layout.fmt, &layout.annotations);
+        let (p, _) =
+            visual_offset_from_block(layout.text(), pos, pos, &layout.fmt, &layout.annotations);
         (RowPos { line, row: p.row }, p.col)
     }
 
@@ -1091,14 +1253,23 @@ mod tests {
         } else {
             layout.text().len_chars()
         };
-        let (pos, _) =
-            char_idx_at_visual_block_offset(layout.text(), start, at.row, col, &layout.fmt, &layout.annotations);
+        let (pos, _) = char_idx_at_visual_block_offset(
+            layout.text(),
+            start,
+            at.row,
+            col,
+            &layout.fmt,
+            &layout.annotations,
+        );
         pos.min(end)
     }
 
     /// `CARETLINE_WRAP_SEEDS` runs more seeds than the default.
     fn seeds() -> u32 {
-        std::env::var("CARETLINE_WRAP_SEEDS").ok().and_then(|s| s.parse().ok()).unwrap_or(6)
+        std::env::var("CARETLINE_WRAP_SEEDS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(6)
     }
 
     /// Long lines laid out through the wrap cache, kept across random edits, agree with
@@ -1109,8 +1280,19 @@ mod tests {
         use crate::update::update;
         use crate::view::view;
         let pieces = [
-            "a", "word ", "words and more ", "\t", "界", "🙂", "e\u{301}", "  ", "long-unbroken-token-that-goes-on",
-            "x", "x", "x", " ",
+            "a",
+            "word ",
+            "words and more ",
+            "\t",
+            "界",
+            "🙂",
+            "e\u{301}",
+            "  ",
+            "long-unbroken-token-that-goes-on",
+            "x",
+            "x",
+            "x",
+            " ",
         ];
         for seed in 1..=seeds() {
             let mut next = xorshift(0x9e37_79b9 ^ seed.wrapping_mul(0x85eb_ca6b));
@@ -1119,7 +1301,11 @@ mod tests {
                 if next().is_multiple_of(2) {
                     text.push_str(["", "  ", "\t", "        "][next() as usize % 4]);
                 }
-                let n = if l == 0 || next().is_multiple_of(2) { 300 + next() % 600 } else { next() % 20 };
+                let n = if l == 0 || next().is_multiple_of(2) {
+                    300 + next() % 600
+                } else {
+                    next() % 20
+                };
                 for _ in 0..n {
                     text.push_str(pieces[next() as usize % pieces.len()]);
                 }
@@ -1129,21 +1315,47 @@ mod tests {
             let mut warm = State::new(&text, None, Viewport { width, height: 12 });
             for step in 0..300u32 {
                 let msg = match next() % 16 {
-                    0..=4 => Msg::InsertText { text: pieces[next() as usize % pieces.len()].to_string() },
+                    0..=4 => Msg::InsertText {
+                        text: pieces[next() as usize % pieces.len()].to_string(),
+                    },
                     5 => Msg::InsertNewline,
                     6 | 7 => Msg::DeleteBackward,
                     8 => Msg::DeleteForward,
                     9 => Msg::Undo,
                     10 => Msg::Redo,
                     11 => Msg::Move {
-                        dir: if next().is_multiple_of(2) { Dir::Forward } else { Dir::Backward },
-                        by: [By::VisualLine, By::Page, By::LineEnd, By::LineStart, By::Word, By::DocEnd][next() as usize % 6],
+                        dir: if next().is_multiple_of(2) {
+                            Dir::Forward
+                        } else {
+                            Dir::Backward
+                        },
+                        by: [
+                            By::VisualLine,
+                            By::Page,
+                            By::LineEnd,
+                            By::LineStart,
+                            By::Word,
+                            By::DocEnd,
+                        ][next() as usize % 6],
                         extend: next().is_multiple_of(4),
                     },
-                    12 => Msg::Click { col: (next() % 90) as u16, row: (next() % 12) as u16, extend: false },
-                    13 => Msg::Scroll { rows: (next() % 21) as i32 - 10 },
-                    14 => Msg::Resize { width: [11, 17, 40, 80, 8][next() as usize % 5], height: 12 },
-                    _ => Msg::Move { dir: Dir::Backward, by: By::Grapheme, extend: false },
+                    12 => Msg::Click {
+                        col: (next() % 90) as u16,
+                        row: (next() % 12) as u16,
+                        extend: false,
+                    },
+                    13 => Msg::Scroll {
+                        rows: (next() % 21) as i32 - 10,
+                    },
+                    14 => Msg::Resize {
+                        width: [11, 17, 40, 80, 8][next() as usize % 5],
+                        height: 12,
+                    },
+                    _ => Msg::Move {
+                        dir: Dir::Backward,
+                        by: By::Grapheme,
+                        extend: false,
+                    },
                 };
                 let mut cold = warm.clone();
                 cold.view.wrap.clear();
@@ -1158,14 +1370,25 @@ mod tests {
                     let len = layout.text().len_chars();
                     for _ in 0..6 {
                         let pos = next() as usize % (len + 1);
-                        let pos = crate::helix::graphemes::ensure_grapheme_boundary_prev(layout.text(), pos);
+                        let pos = crate::helix::graphemes::ensure_grapheme_boundary_prev(
+                            layout.text(),
+                            pos,
+                        );
                         let at = layout.pos_coords(pos);
                         assert_eq!(at, reference_coords(&layout, pos), "{ctx}: coords of {pos}");
                         let col = next() as usize % 90;
-                        assert_eq!(layout.pos_at(at.0, col), reference_pos_at(&layout, at.0, col), "{ctx}: pos_at");
+                        assert_eq!(
+                            layout.pos_at(at.0, col),
+                            reference_pos_at(&layout, at.0, col),
+                            "{ctx}: pos_at"
+                        );
                     }
                     for line in 0..=layout.last_line() {
-                        let rows = if !layout.fmt.soft_wrap { 1 } else { layout.formatted_rows(line) };
+                        let rows = if !layout.fmt.soft_wrap {
+                            1
+                        } else {
+                            layout.formatted_rows(line)
+                        };
                         assert_eq!(layout.line_rows(line), rows, "{ctx}: rows of line {line}");
                     }
                 }

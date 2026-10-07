@@ -9,11 +9,11 @@
 
 use std::collections::VecDeque;
 
+use crate::helix::ChangeSet;
 use crate::keymap::script_to_msgs_for;
 use crate::msg::{Effect, Msg};
 use crate::state::State;
 use crate::state::View;
-use crate::helix::ChangeSet;
 use crate::trace::{apply_with_views_changes, OnView, TraceLine, ViewOpen};
 use crate::update::update;
 use crate::view::{view, Frame};
@@ -154,7 +154,10 @@ impl Session {
     pub fn state_lines(&self) -> Vec<TraceLine> {
         let mut lines = vec![TraceLine::State(Box::new(self.state.clone()))];
         for (id, v) in &self.views {
-            lines.push(TraceLine::ViewOpen(ViewOpen { id: *id, view: Box::new(v.clone()) }));
+            lines.push(TraceLine::ViewOpen(ViewOpen {
+                id: *id,
+                view: Box::new(v.clone()),
+            }));
         }
         lines
     }
@@ -218,7 +221,14 @@ impl Session {
             return (Vec::new(), None);
         }
         self.rev += 1;
-        let line = if id == 0 { TraceLine::Msg(msg.clone()) } else { TraceLine::On(OnView { view: id, msg: msg.clone() }) };
+        let line = if id == 0 {
+            TraceLine::Msg(msg.clone())
+        } else {
+            TraceLine::On(OnView {
+                view: id,
+                msg: msg.clone(),
+            })
+        };
         self.push_line(line);
         let out = apply_with_views_changes(&mut self.state, &mut self.views, id, msg);
         self.trim();
@@ -232,7 +242,10 @@ impl Session {
         let id = self.next_view;
         self.next_view += 1;
         self.rev += 1;
-        self.push_line(TraceLine::ViewOpen(ViewOpen { id, view: Box::new(view.clone()) }));
+        self.push_line(TraceLine::ViewOpen(ViewOpen {
+            id,
+            view: Box::new(view.clone()),
+        }));
         self.views.push((id, view));
         self.trim();
         id
@@ -240,7 +253,9 @@ impl Session {
 
     /// Closes view `id`. Returns whether it was open.
     pub fn close_view(&mut self, id: u32) -> bool {
-        let Some(i) = self.views.iter().position(|(k, _)| *k == id) else { return false };
+        let Some(i) = self.views.iter().position(|(k, _)| *k == id) else {
+            return false;
+        };
         self.views.remove(i);
         self.rev += 1;
         self.push_line(TraceLine::ViewClose(id));
@@ -263,7 +278,8 @@ impl Session {
 
     /// The document seen through view `id`, as a single-view state.
     pub fn state_of(&self, id: u32) -> Option<State> {
-        self.view(id).map(|v| State::from_parts(self.state.doc.clone(), v.clone()))
+        self.view(id)
+            .map(|v| State::from_parts(self.state.doc.clone(), v.clone()))
     }
 
     /// Applies messages in order and returns all their effects, unperformed.
@@ -316,7 +332,11 @@ impl Session {
 
     /// [`Session::keys`] through view `id`.
     pub fn keys_on(&mut self, id: u32, script: &str) -> Result<(Vec<Msg>, Vec<Effect>), String> {
-        let msgs = script_to_msgs_for(script, self.state.doc.now_ms, self.state.doc.outline.is_some())?;
+        let msgs = script_to_msgs_for(
+            script,
+            self.state.doc.now_ms,
+            self.state.doc.outline.is_some(),
+        )?;
         let mut effects = Vec::new();
         for msg in msgs.iter().cloned() {
             effects.extend(self.apply_on(id, msg));
@@ -349,13 +369,21 @@ impl Session {
         use crate::external::ExtChange;
         let doc = &self.state.doc;
         let text = crate::update::normalize_line_endings(text, doc.config.line_ending.as_str());
-        let text = if doc.single_line() { crate::single_line::flatten(&text) } else { text };
+        let text = if doc.single_line() {
+            crate::single_line::flatten(&text)
+        } else {
+            text
+        };
         let changes = crate::diff::changes(&doc.text.to_string(), &text);
         if changes.is_empty() {
             return None;
         }
         // From the end back, so each change's positions are still those of the current text.
-        let changes = changes.into_iter().rev().map(|(from, to, text)| ExtChange::Replace { from, to, text }).collect();
+        let changes = changes
+            .into_iter()
+            .rev()
+            .map(|(from, to, text)| ExtChange::Replace { from, to, text })
+            .collect();
         Some(Msg::External { changes })
     }
 
@@ -385,11 +413,20 @@ impl Session {
     /// path and config, and the history starts fresh and clean. The primary caret is at
     /// `caret` when given, else at the end of the first highlight (a caret at 0 without
     /// highlights). Recorded like a replacement: a new trace segment. Returns the new rev.
-    pub fn push_frame(&mut self, text: &str, highlights: &[(usize, usize)], caret: Option<usize>, status: Option<String>) -> u64 {
+    pub fn push_frame(
+        &mut self,
+        text: &str,
+        highlights: &[(usize, usize)],
+        caret: Option<usize>,
+        status: Option<String>,
+    ) -> u64 {
         use crate::helix::{Range, Selection};
         let old = &self.state;
         let mut doc = crate::state::Document::new(text, old.doc.path.clone());
-        doc.config = crate::state::Config { line_ending: doc.config.line_ending, ..old.doc.config.clone() };
+        doc.config = crate::state::Config {
+            line_ending: doc.config.line_ending,
+            ..old.doc.config.clone()
+        };
         doc.now_ms = old.doc.now_ms;
         doc.host = old.doc.host.clone();
         doc.flatten_text();
@@ -426,7 +463,13 @@ impl Session {
         let mut s = self.state_of(id)?;
         if let Some((w, h)) = size {
             if (s.view.viewport.width, s.view.viewport.height) != (w, h) {
-                update(&mut s, Msg::Resize { width: w, height: h });
+                update(
+                    &mut s,
+                    Msg::Resize {
+                        width: w,
+                        height: h,
+                    },
+                );
             }
         }
         Some(view(&s))

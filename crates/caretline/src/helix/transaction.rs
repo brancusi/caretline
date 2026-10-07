@@ -338,7 +338,10 @@ impl ChangeSet {
     /// caretline addition: not in upstream Helix.
     pub fn map_ordered(&self, other: &Self, before: bool) -> Self {
         use Operation::*;
-        assert!(self.len == other.len, "map: change sets of different documents");
+        assert!(
+            self.len == other.len,
+            "map: change sets of different documents"
+        );
         // An empty change set retains everything.
         let whole = |cs: &ChangeSet| -> Vec<Operation> {
             if cs.changes.is_empty() && cs.len > 0 {

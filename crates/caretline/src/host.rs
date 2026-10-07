@@ -52,20 +52,35 @@ impl Host {
     }
 
     /// Registers command `name` (a later registration of the same name replaces it).
-    pub fn command(mut self, name: &str, f: impl Fn(&Ctx, &Value) -> Result<Edit, String> + Send + Sync + 'static) -> Host {
-        Arc::make_mut(&mut self.inner).commands.insert(name.to_string(), Arc::new(f));
+    pub fn command(
+        mut self,
+        name: &str,
+        f: impl Fn(&Ctx, &Value) -> Result<Edit, String> + Send + Sync + 'static,
+    ) -> Host {
+        Arc::make_mut(&mut self.inner)
+            .commands
+            .insert(name.to_string(), Arc::new(f));
         self
     }
 
     /// Adds an input rule. Rules run in the order they were added; the first to return an
     /// edit takes the message.
-    pub fn input_rule(mut self, name: &str, f: impl Fn(&Ctx, &Msg) -> Option<Edit> + Send + Sync + 'static) -> Host {
-        Arc::make_mut(&mut self.inner).input_rules.push((name.to_string(), Arc::new(f)));
+    pub fn input_rule(
+        mut self,
+        name: &str,
+        f: impl Fn(&Ctx, &Msg) -> Option<Edit> + Send + Sync + 'static,
+    ) -> Host {
+        Arc::make_mut(&mut self.inner)
+            .input_rules
+            .push((name.to_string(), Arc::new(f)));
         self
     }
 
     /// Sets the decorator (replacing any before it).
-    pub fn decorator(mut self, f: impl Fn(&Ctx, &BlockInfo) -> Decoration + Send + Sync + 'static) -> Host {
+    pub fn decorator(
+        mut self,
+        f: impl Fn(&Ctx, &BlockInfo) -> Decoration + Send + Sync + 'static,
+    ) -> Host {
         Arc::make_mut(&mut self.inner).decorator = Some(Arc::new(f));
         self
     }
@@ -77,7 +92,11 @@ impl Host {
 
     /// The input rules' names, in order.
     pub fn input_rule_names(&self) -> Vec<&str> {
-        self.inner.input_rules.iter().map(|(n, _)| n.as_str()).collect()
+        self.inner
+            .input_rules
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .collect()
     }
 
     pub fn has_decorator(&self) -> bool {
@@ -85,7 +104,9 @@ impl Host {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.inner.commands.is_empty() && self.inner.input_rules.is_empty() && self.inner.decorator.is_none()
+        self.inner.commands.is_empty()
+            && self.inner.input_rules.is_empty()
+            && self.inner.decorator.is_none()
     }
 
     /// The decoration of `block`, from the decorator (none without one).
@@ -148,7 +169,12 @@ impl<'a> Ctx<'a> {
     /// The current selection mapped through `changes` (sorted, in current positions):
     /// positions at an insertion move past it.
     pub fn mapped_selection(&self, changes: &[(usize, usize, String)]) -> Selection {
-        let txn = Transaction::change(&self.doc.text, changes.iter().map(|(a, b, t)| (*a, *b, (!t.is_empty()).then(|| Tendril::from(t.as_str())))));
+        let txn = Transaction::change(
+            &self.doc.text,
+            changes
+                .iter()
+                .map(|(a, b, t)| (*a, *b, (!t.is_empty()).then(|| Tendril::from(t.as_str())))),
+        );
         let cs = txn.changes();
         self.view.selection.clone().transform(|r| Range {
             anchor: cs.map_pos(r.anchor, Assoc::After),
@@ -169,7 +195,9 @@ pub enum MarkOp {
         #[serde(default)]
         attrs: MarkAttrs,
     },
-    Remove { id: MarkId },
+    Remove {
+        id: MarkId,
+    },
     /// A mark's blank row before its block.
     SetGap {
         id: MarkId,
@@ -210,7 +238,10 @@ pub struct Edit {
 impl Edit {
     /// An edit that only says something.
     pub fn status(text: impl Into<String>) -> Edit {
-        Edit { status: Some(text.into()), ..Edit::default() }
+        Edit {
+            status: Some(text.into()),
+            ..Edit::default()
+        }
     }
 
     /// Whether it changes neither text nor marks.
@@ -265,13 +296,26 @@ pub(crate) fn input_rules(state: &mut State, msg: &Msg) -> Option<Vec<Effect>> {
         return None;
     }
     let host = state.doc.host.clone();
-    let edit = host.inner.input_rules.iter().find_map(|(_, f)| f(&Ctx::new(&state.doc, &state.view), msg))?;
+    let edit = host
+        .inner
+        .input_rules
+        .iter()
+        .find_map(|(_, f)| f(&Ctx::new(&state.doc, &state.view), msg))?;
     Some(apply(state, edit))
 }
 
 /// The messages input rules see: those that edit through the keyboard or the clipboard.
 fn takes_input(msg: &Msg) -> bool {
-    msg.edits() && !matches!(msg, Msg::Undo | Msg::Redo | Msg::Command { .. } | Msg::Edit { .. } | Msg::External { .. } | Msg::InsertBlocks { .. })
+    msg.edits()
+        && !matches!(
+            msg,
+            Msg::Undo
+                | Msg::Redo
+                | Msg::Command { .. }
+                | Msg::Edit { .. }
+                | Msg::External { .. }
+                | Msg::InsertBlocks { .. }
+        )
 }
 
 /// Applies an edit as one undo step. A malformed edit (ranges out of order or past the end)
@@ -286,7 +330,11 @@ pub(crate) fn apply(state: &mut State, edit: Edit) -> Vec<Effect> {
         }
         at = to;
     }
-    let pins = if edit.keep_gaps { crate::outline::rules::pins_all(state) } else { None };
+    let pins = if edit.keep_gaps {
+        crate::outline::rules::pins_all(state)
+    } else {
+        None
+    };
     if !edit.is_noop() || edit.selection.is_some() {
         let selection = match edit.selection {
             Some(s) => s,
@@ -294,7 +342,9 @@ pub(crate) fn apply(state: &mut State, edit: Edit) -> Vec<Effect> {
         };
         let txn = Transaction::change(
             &state.doc.text,
-            edit.changes.iter().map(|(a, b, t)| (*a, *b, (!t.is_empty()).then(|| Tendril::from(t.as_str())))),
+            edit.changes
+                .iter()
+                .map(|(a, b, t)| (*a, *b, (!t.is_empty()).then(|| Tendril::from(t.as_str())))),
         )
         .with_selection(selection);
         let ops = edit.marks;
@@ -324,5 +374,8 @@ pub(crate) fn apply(state: &mut State, edit: Edit) -> Vec<Effect> {
     if let Some(text) = edit.status {
         state.view.status = Some(text);
     }
-    edit.effects.into_iter().map(|(name, data)| Effect::Host { name, data }).collect()
+    edit.effects
+        .into_iter()
+        .map(|(name, data)| Effect::Host { name, data })
+        .collect()
 }

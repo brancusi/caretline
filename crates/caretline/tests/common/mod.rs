@@ -121,18 +121,44 @@ pub mod gen {
     use rand::Rng;
 
     const PIECES: &[&str] = &[
-        "a", "b", "word", "Hello", "the", " ", "  ", "\t", "\n", "\n", "\r\n", ".", ",", "-",
-        "_", "e\u{301}", "👍🏽", "👨‍👩‍👧", "漢字", "カナ", "🇫🇷", "❤️", "x\u{200b}y", "\u{7}",
+        "a",
+        "b",
+        "word",
+        "Hello",
+        "the",
+        " ",
+        "  ",
+        "\t",
+        "\n",
+        "\n",
+        "\r\n",
+        ".",
+        ",",
+        "-",
+        "_",
+        "e\u{301}",
+        "👍🏽",
+        "👨‍👩‍👧",
+        "漢字",
+        "カナ",
+        "🇫🇷",
+        "❤️",
+        "x\u{200b}y",
+        "\u{7}",
     ];
 
     pub fn text(rng: &mut StdRng) -> String {
         let n = rng.random_range(0..120);
-        (0..n).map(|_| PIECES[rng.random_range(0..PIECES.len())]).collect()
+        (0..n)
+            .map(|_| PIECES[rng.random_range(0..PIECES.len())])
+            .collect()
     }
 
     fn snippet(rng: &mut StdRng) -> String {
         let n = rng.random_range(0..6);
-        (0..n).map(|_| PIECES[rng.random_range(0..PIECES.len())]).collect()
+        (0..n)
+            .map(|_| PIECES[rng.random_range(0..PIECES.len())])
+            .collect()
     }
 
     fn dir(rng: &mut StdRng) -> Dir {
@@ -167,7 +193,9 @@ pub mod gen {
 
     pub fn msg(rng: &mut StdRng, state: &State) -> Msg {
         match rng.random_range(0..100) {
-            0..=19 => Msg::InsertText { text: PIECES[rng.random_range(0..PIECES.len())].to_string() },
+            0..=19 => Msg::InsertText {
+                text: PIECES[rng.random_range(0..PIECES.len())].to_string(),
+            },
             20..=24 => Msg::InsertNewline,
             25..=31 => Msg::DeleteBackward,
             32..=35 => Msg::DeleteForward,
@@ -186,23 +214,35 @@ pub mod gen {
                 row: rng.random_range(0..state.view.viewport.height.saturating_add(3)),
                 extend: rng.random_bool(0.3),
             },
-            70 => Msg::Scroll { rows: rng.random_range(-30..30) },
+            70 => Msg::Scroll {
+                rows: rng.random_range(-30..30),
+            },
             71 => Msg::SelectAll,
             72 => Msg::Collapse,
             73..=74 => Msg::Copy,
             75..=76 => Msg::Cut,
-            77..=78 => Msg::Paste { text: if rng.random_bool(0.5) { None } else { Some(snippet(rng)) } },
+            77..=78 => Msg::Paste {
+                text: if rng.random_bool(0.5) {
+                    None
+                } else {
+                    Some(snippet(rng))
+                },
+            },
             79..=83 => Msg::Undo,
             84..=86 => Msg::Redo,
             87 => Msg::Save,
             88 => Msg::Saved,
-            89 => Msg::SaveFailed { err: "disk full".into() },
+            89 => Msg::SaveFailed {
+                err: "disk full".into(),
+            },
             90 => Msg::Quit,
             91..=93 => {
                 let (width, height) = size(rng);
                 Msg::Resize { width, height }
             }
-            _ => Msg::Tick { now_ms: state.doc.now_ms + rng.random_range(0..3000) },
+            _ => Msg::Tick {
+                now_ms: state.doc.now_ms + rng.random_range(0..3000),
+            },
         }
     }
 
@@ -230,7 +270,9 @@ pub mod gen {
 /// Outline documents with tags `a` and `b` (Enter after a tagged item makes an `a`).
 #[allow(dead_code)]
 pub fn tagged_cfg() -> caretline::OutlineConfig {
-    caretline::OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a'))
+    caretline::OutlineConfig::default()
+        .with_tags("abc".into())
+        .with_new_tag(Some('a'))
 }
 
 /// A made-up host for fuzzing commands: `test.retag` steps every selected block through
@@ -259,24 +301,39 @@ pub fn retag_host() -> caretline::Host {
                     (_, None) => changes.push((at, b.content_start(), "- [a] ".to_string())),
                 }
             }
-            Ok(Edit { selection: Some(ctx.mapped_selection(&changes)), changes, keep_gaps: true, ..Edit::default() })
+            Ok(Edit {
+                selection: Some(ctx.mapped_selection(&changes)),
+                changes,
+                keep_gaps: true,
+                ..Edit::default()
+            })
         })
         .command("test.set_tag", |ctx, args| {
             let o = ctx.blocks().ok_or("only in outline documents")?;
             let id = caretline::MarkId(args["id"].as_u64().ok_or("no id")?);
-            let tag = args["tag"].as_str().and_then(|t| t.chars().next()).ok_or("no tag")?;
+            let tag = args["tag"]
+                .as_str()
+                .and_then(|t| t.chars().next())
+                .ok_or("no tag")?;
             let b = o.get(id).ok_or("no such block")?;
             if b.tag.is_none() || b.tag == Some(tag) {
                 return Ok(Edit::default());
             }
             let at = b.start + b.indent + 3;
             let changes = vec![(at, at + 1, tag.to_string())];
-            Ok(Edit { selection: Some(ctx.mapped_selection(&changes)), changes, ..Edit::default() })
+            Ok(Edit {
+                selection: Some(ctx.mapped_selection(&changes)),
+                changes,
+                ..Edit::default()
+            })
         })
 }
 
 /// The message `test.retag` sends.
 #[allow(dead_code)]
 pub fn retag() -> caretline::Msg {
-    caretline::Msg::Command { name: "test.retag".into(), args: serde_json::Value::Null }
+    caretline::Msg::Command {
+        name: "test.retag".into(),
+        args: serde_json::Value::Null,
+    }
 }

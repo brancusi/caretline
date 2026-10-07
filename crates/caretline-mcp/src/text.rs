@@ -3,7 +3,7 @@
 //! The engine counts in chars (Unicode scalar values). Agents count in lines and columns, both
 //! 1-based, columns in chars: `{line: 1, col: 1}` is the first char of the document.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// A line and column, both 1-based; the column counts chars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +39,10 @@ pub fn line_count(text: &str) -> usize {
 /// The chars of line `i` (0-based) without its line break.
 fn line_len(text_chars: &[char], starts: &[usize], i: usize) -> usize {
     let start = starts[i];
-    let mut end = starts.get(i + 1).map(|&s| s - 1).unwrap_or(text_chars.len());
+    let mut end = starts
+        .get(i + 1)
+        .map(|&s| s - 1)
+        .unwrap_or(text_chars.len());
     if end > start && text_chars[end - 1] == '\r' {
         end -= 1;
     }
@@ -53,11 +56,18 @@ pub fn to_char(text: &str, pos: Pos) -> Result<usize, String> {
     let chars: Vec<char> = text.chars().collect();
     let starts = line_starts(text);
     if pos.line == 0 || pos.col == 0 {
-        return Err(format!("line {}, col {}: lines and columns start at 1", pos.line, pos.col));
+        return Err(format!(
+            "line {}, col {}: lines and columns start at 1",
+            pos.line, pos.col
+        ));
     }
     let i = pos.line - 1;
     if i >= starts.len() {
-        return Err(format!("line {} is past the end: the document has {} lines", pos.line, line_count(text)));
+        return Err(format!(
+            "line {} is past the end: the document has {} lines",
+            pos.line,
+            line_count(text)
+        ));
     }
     let len = line_len(&chars, &starts, i);
     if pos.col - 1 > len {
@@ -79,7 +89,10 @@ pub fn to_pos(text: &str, at: usize) -> Pos {
         Ok(i) => i,
         Err(i) => i - 1,
     };
-    Pos { line: i + 1, col: at - starts[i] + 1 }
+    Pos {
+        line: i + 1,
+        col: at - starts[i] + 1,
+    }
 }
 
 /// Where `needle` occurs in `text`, as char ranges.
@@ -105,14 +118,23 @@ pub fn slice_lines(text: &str, from: usize, to: usize) -> (usize, usize, String)
     let count = line_count(text);
     let from = from.clamp(1, count);
     let to = to.clamp(from, count);
-    let body: String = lines.iter().skip(from - 1).take(to - from + 1).copied().collect();
+    let body: String = lines
+        .iter()
+        .skip(from - 1)
+        .take(to - from + 1)
+        .copied()
+        .collect();
     (from, to, body)
 }
 
 /// Lines with their numbers, `   12│ text`.
 pub fn numbered(text: &str, first: usize) -> String {
     let lines: Vec<&str> = text.split('\n').collect();
-    let n = if text.ends_with('\n') { lines.len() - 1 } else { lines.len() };
+    let n = if text.ends_with('\n') {
+        lines.len() - 1
+    } else {
+        lines.len()
+    };
     let width = (first + n).to_string().len();
     lines[..n]
         .iter()
@@ -131,7 +153,13 @@ pub fn diff(old: &str, new: &str, max: usize) -> Option<Value> {
     let b: Vec<&str> = new.split('\n').collect();
     let pre = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
     let rest = a.len().min(b.len()) - pre;
-    let suf = a.iter().rev().zip(b.iter().rev()).take(rest).take_while(|(x, y)| x == y).count();
+    let suf = a
+        .iter()
+        .rev()
+        .zip(b.iter().rev())
+        .take(rest)
+        .take_while(|(x, y)| x == y)
+        .count();
     let removed = &a[pre..a.len() - suf];
     let added = &b[pre..b.len() - suf];
     let show = |ls: &[&str]| -> Vec<String> {
@@ -188,7 +216,10 @@ mod tests {
         assert_eq!(d["old_lines"][0], "b");
         assert_eq!(d["new_lines"][0], "B");
         assert!(diff("x", "x", 5).is_none());
-        assert_eq!(diff("a\n", "a\nb\n", 5).unwrap()["summary"], "1 line(s) inserted at line 2");
+        assert_eq!(
+            diff("a\n", "a\nb\n", 5).unwrap()["summary"],
+            "1 line(s) inserted at line 2"
+        );
     }
 
     #[test]

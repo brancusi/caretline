@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use caretline::trace::parse_msgs;
 use clap::Parser;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::hub::discovery_dir;
 
@@ -56,7 +56,8 @@ fn resolve(args: &SendArgs) -> Result<PathBuf, String> {
     let dir = discovery_dir();
     if let Some(pid) = args.pid {
         let file = dir.join(format!("{pid}.json"));
-        return from_discovery(&file).ok_or_else(|| format!("no caretline with pid {pid} ({} not found)", file.display()));
+        return from_discovery(&file)
+            .ok_or_else(|| format!("no caretline with pid {pid} ({} not found)", file.display()));
     }
     let mut found: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&dir)
         .map_err(|_| format!("no running caretline found (nothing in {})", dir.display()))?
@@ -66,7 +67,9 @@ fn resolve(args: &SendArgs) -> Result<PathBuf, String> {
         .collect();
     found.sort_by_key(|f| std::cmp::Reverse(f.0));
     for (_, file) in found {
-        let Some(socket) = from_discovery(&file) else { continue };
+        let Some(socket) = from_discovery(&file) else {
+            continue;
+        };
         if UnixStream::connect(&socket).is_ok() {
             return Ok(socket);
         }
@@ -79,7 +82,9 @@ fn resolve(args: &SendArgs) -> Result<PathBuf, String> {
 fn read_arg(path: &str) -> Result<String, String> {
     if path == "-" {
         let mut s = String::new();
-        io::stdin().read_to_string(&mut s).map_err(|e| format!("stdin: {e}"))?;
+        io::stdin()
+            .read_to_string(&mut s)
+            .map_err(|e| format!("stdin: {e}"))?;
         Ok(s)
     } else {
         std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))
@@ -87,7 +92,9 @@ fn read_arg(path: &str) -> Result<String, String> {
 }
 
 fn size(s: &str) -> Result<(u16, u16), String> {
-    let (w, h) = s.split_once(['x', 'X']).ok_or_else(|| format!("bad size {s:?}: expected WxH"))?;
+    let (w, h) = s
+        .split_once(['x', 'X'])
+        .ok_or_else(|| format!("bad size {s:?}: expected WxH"))?;
     Ok((
         w.parse().map_err(|_| format!("bad width in {s:?}"))?,
         h.parse().map_err(|_| format!("bad height in {s:?}"))?,
@@ -97,7 +104,12 @@ fn size(s: &str) -> Result<(u16, u16), String> {
 /// Turns the request words into a JSON request.
 fn build(words: &[String], apply_effects: bool, view: Option<u32>) -> Result<Value, String> {
     let op = words[0].as_str();
-    let arg = |i: usize, what: &str| words.get(i).cloned().ok_or_else(|| format!("{op} needs {what}"));
+    let arg = |i: usize, what: &str| {
+        words
+            .get(i)
+            .cloned()
+            .ok_or_else(|| format!("{op} needs {what}"))
+    };
     let mut req = match op {
         s if s.trim_start().starts_with('{') => {
             serde_json::from_str(s).map_err(|e| format!("request: {e}"))?
@@ -112,7 +124,9 @@ fn build(words: &[String], apply_effects: bool, view: Option<u32>) -> Result<Val
             None => json!({ "op": op }),
             Some("all") => json!({ "op": op, "all": true }),
             Some("since") => {
-                let rev: u64 = arg(2, "a rev")?.parse().map_err(|_| "since needs a rev number".to_string())?;
+                let rev: u64 = arg(2, "a rev")?
+                    .parse()
+                    .map_err(|_| "since needs a rev number".to_string())?;
                 json!({ "op": op, "since_rev": rev })
             }
             Some(other) => return Err(format!("trace.get takes all or since REV, not {other:?}")),
@@ -132,17 +146,25 @@ fn build(words: &[String], apply_effects: bool, view: Option<u32>) -> Result<Val
         "keys" => json!({ "op": "keys", "keys": arg(1, "a key script")? }),
         "msgs" => {
             let src = arg(1, "a file, - or JSON")?;
-            let text = if src.trim_start().starts_with(['{', '[']) { src } else { read_arg(&src)? };
+            let text = if src.trim_start().starts_with(['{', '[']) {
+                src
+            } else {
+                read_arg(&src)?
+            };
             json!({ "op": "msgs", "msgs": parse_msgs(&text)? })
         }
-        "set-text" | "text.set" => json!({ "op": "text.set", "text": read_arg(&arg(1, "a text file or -")?)? }),
+        "set-text" | "text.set" => {
+            json!({ "op": "text.set", "text": read_arg(&arg(1, "a text file or -")?)? })
+        }
         "set-state" | "state.set" => {
             let text = read_arg(&arg(1, "a state file or -")?)?;
             let state: Value = serde_json::from_str(&text).map_err(|e| format!("state: {e}"))?;
             json!({ "op": "state.set", "state": state })
         }
         // The status bar the person sees: view 0's.
-        "status" => json!({ "op": "msgs", "view": 0, "msgs": [{ "msg": "show_status", "text": words[1..].join(" ") }] }),
+        "status" => {
+            json!({ "op": "msgs", "view": 0, "msgs": [{ "msg": "show_status", "text": words[1..].join(" ") }] })
+        }
         "subscribe" => {
             let mut r = json!({ "op": "subscribe" });
             let mut rest: Vec<&str> = words[1..].iter().map(String::as_str).collect();
@@ -152,19 +174,28 @@ fn build(words: &[String], apply_effects: bool, view: Option<u32>) -> Result<Val
             }
             if let Some(s) = rest.first() {
                 let (w, h) = size(s)?;
-                r["frame"] = json!({ "w": w, "h": h, "format": rest.get(1).copied().unwrap_or("text") });
+                r["frame"] =
+                    json!({ "w": w, "h": h, "format": rest.get(1).copied().unwrap_or("text") });
             }
             r
         }
-        other => return Err(format!("unknown request {other:?} (see caretline send --help)")),
+        other => {
+            return Err(format!(
+                "unknown request {other:?} (see caretline send --help)"
+            ));
+        }
     };
     if apply_effects && matches!(req["op"].as_str(), Some("msgs" | "keys")) {
         req["apply_effects"] = true.into();
     }
     if let Some(v) = view
-        && matches!(req["op"].as_str(), Some("msgs" | "keys" | "text.set" | "render" | "state.get")) {
-            req["view"] = v.into();
-        }
+        && matches!(
+            req["op"].as_str(),
+            Some("msgs" | "keys" | "text.set" | "render" | "state.get")
+        )
+    {
+        req["view"] = v.into();
+    }
     Ok(req)
 }
 
@@ -184,7 +215,9 @@ fn raw(resp: &Value) -> String {
 }
 
 pub fn main(argv: &[String]) -> Result<(), String> {
-    let args = SendArgs::parse_from(std::iter::once("caretline send".to_string()).chain(argv.iter().cloned()));
+    let args = SendArgs::parse_from(
+        std::iter::once("caretline send".to_string()).chain(argv.iter().cloned()),
+    );
     let socket = resolve(&args)?;
     let stream = UnixStream::connect(&socket).map_err(|e| format!("{}: {e}", socket.display()))?;
     let mut writer = stream.try_clone().map_err(|e| e.to_string())?;
@@ -213,7 +246,9 @@ pub fn main(argv: &[String]) -> Result<(), String> {
 
     let req = build(&args.request, args.apply_effects, args.view)?;
     let streaming = req["op"] == "subscribe";
-    writer.write_all(format!("{req}\n").as_bytes()).map_err(|e| e.to_string())?;
+    writer
+        .write_all(format!("{req}\n").as_bytes())
+        .map_err(|e| e.to_string())?;
     if !streaming {
         let _ = writer.shutdown(Shutdown::Write);
     }

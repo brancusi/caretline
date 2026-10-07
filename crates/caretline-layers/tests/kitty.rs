@@ -14,7 +14,9 @@ use serde_json::{Value, json};
 const CELL: CellPx = CellPx::new(4, 8);
 
 fn renderers() -> Renderers {
-    Renderers::new().register("card", |_: &Value, avail: Size| Size::new(10.min(avail.w), 4))
+    Renderers::new().register("card", |_: &Value, avail: Size| {
+        Size::new(10.min(avail.w), 4)
+    })
 }
 
 /// A one-layer plan: a card under a host anchor at row `y`.
@@ -23,9 +25,12 @@ fn plan_at(y: u16, with_layer: bool) -> Plan {
     m.put(AnchorKey::host("row", "a"), Rect::new(6, y, 5, 1));
     let mut layers = Layers::default();
     if with_layer {
-        let mut l = Layer::new(Anchor::Host { kind: "row".into(), key: "a".into() })
-            .with_content(Content::new("card", json!({"text": "hi"})))
-            .with_arrow();
+        let mut l = Layer::new(Anchor::Host {
+            kind: "row".into(),
+            key: "a".into(),
+        })
+        .with_content(Content::new("card", json!({"text": "hi"})))
+        .with_arrow();
         l.id = "tip".into();
         apply(&mut layers, LayerOp::Push(l), None, 0, &Limits::default()).unwrap();
     }
@@ -40,24 +45,53 @@ fn solid(w: u16, h: u16, rgba: [u8; 4]) -> Image {
 }
 
 fn pic(part: &str, key: u64, z: Z, at: Cells, image: Image) -> Picture {
-    Picture { layer: "tip".into(), part: part.into(), key, z, at, clip: None, image: Some(image) }
+    Picture {
+        layer: "tip".into(),
+        part: part.into(),
+        key,
+        z,
+        at,
+        clip: None,
+        image: Some(image),
+    }
 }
 
 /// The host's pictures for the plan: a panel under the box and a ring over the anchor.
 fn pictures(p: &Plan, panel_color: [u8; 4]) -> Vec<Picture> {
-    let Some(l) = p.layers.first() else { return Vec::new() };
+    let Some(l) = p.layers.first() else {
+        return Vec::new();
+    };
     let r = l.rect.unwrap();
     let a = l.anchor.as_ref().unwrap().rects[0];
-    let panel_key = shape_key(&[b"panel", &panel_color, &r.w.to_le_bytes(), &r.h.to_le_bytes()]);
+    let panel_key = shape_key(&[
+        b"panel",
+        &panel_color,
+        &r.w.to_le_bytes(),
+        &r.h.to_le_bytes(),
+    ]);
     vec![
-        pic("panel", panel_key, Z::Below, Cells::new(r.x as i32 - 1, r.y as i32, r.w + 2, r.h), solid(r.w + 2, r.h, panel_color)),
-        pic("ring", shape_key(&[b"ring", &a.w.to_le_bytes()]), Z::Above, Cells::new(a.x as i32 - 1, a.y as i32, a.w + 2, 1), solid(a.w + 2, 1, [255, 255, 255, 128])),
+        pic(
+            "panel",
+            panel_key,
+            Z::Below,
+            Cells::new(r.x as i32 - 1, r.y as i32, r.w + 2, r.h),
+            solid(r.w + 2, r.h, panel_color),
+        ),
+        pic(
+            "ring",
+            shape_key(&[b"ring", &a.w.to_le_bytes()]),
+            Z::Above,
+            Cells::new(a.x as i32 - 1, a.y as i32, a.w + 2, 1),
+            solid(a.w + 2, 1, [255, 255, 255, 128]),
+        ),
     ]
 }
 
 /// The bytes as text: escapes visible, one command per line.
 fn show(b: &[u8]) -> String {
-    String::from_utf8_lossy(b).replace("\x1b\\", "\x1b\\\n").replace('\x1b', "⎋")
+    String::from_utf8_lossy(b)
+        .replace("\x1b\\", "\x1b\\\n")
+        .replace('\x1b', "⎋")
 }
 
 const BLUE: [u8; 4] = [31, 36, 48, 250];
@@ -91,14 +125,24 @@ fn byte_goldens_first_scroll_change_remove() {
         golden(&format!("kitty.{n}.txt"), &show(&o.bytes));
     }
     // A first frame transmits both images and places them.
-    assert_eq!((outs[0].sent.len(), outs[0].placed, outs[0].deleted), (2, 2, 0));
+    assert_eq!(
+        (outs[0].sent.len(), outs[0].placed, outs[0].deleted),
+        (2, 2, 0)
+    );
     // A scroll re-places only: no pixels, nothing deleted.
     assert!(outs[1].sent.is_empty() && outs[1].deleted == 0 && outs[1].placed == 2);
     assert!(!show(&outs[1].bytes).contains("a=t"));
     // A changed panel: sent, placed, then the old image deleted, in that order.
     let s = show(&outs[2].bytes);
-    assert_eq!((outs[2].sent.len(), outs[2].placed, outs[2].deleted), (1, 1, 1));
-    let (t, p, d) = (s.find("a=t").unwrap(), s.find("a=p").unwrap(), s.find("a=d,d=I").unwrap());
+    assert_eq!(
+        (outs[2].sent.len(), outs[2].placed, outs[2].deleted),
+        (1, 1, 1)
+    );
+    let (t, p, d) = (
+        s.find("a=t").unwrap(),
+        s.find("a=p").unwrap(),
+        s.find("a=d,d=I").unwrap(),
+    );
     assert!(t < p && p < d, "{s}");
     // Removed: both images deleted by id, never d=A.
     assert_eq!(outs[3].deleted, 2);
@@ -107,13 +151,23 @@ fn byte_goldens_first_scroll_change_remove() {
     // An unchanged frame sends nothing at all.
     let p = plan_at(3, true);
     k.frame(&p, &pictures(&p, BLUE), CELL, None);
-    assert!(k.frame(&p, &pictures(&p, BLUE), CELL, None).bytes.is_empty());
+    assert!(
+        k.frame(&p, &pictures(&p, BLUE), CELL, None)
+            .bytes
+            .is_empty()
+    );
 }
 
 #[test]
 fn replay_gives_identical_bytes_and_a_reset_resends_once() {
-    let a: Vec<Vec<u8>> = sequence(&mut KittyState::default()).into_iter().map(|o| o.bytes).collect();
-    let b: Vec<Vec<u8>> = sequence(&mut KittyState::default()).into_iter().map(|o| o.bytes).collect();
+    let a: Vec<Vec<u8>> = sequence(&mut KittyState::default())
+        .into_iter()
+        .map(|o| o.bytes)
+        .collect();
+    let b: Vec<Vec<u8>> = sequence(&mut KittyState::default())
+        .into_iter()
+        .map(|o| o.bytes)
+        .collect();
     assert_eq!(a, b);
     // Dropping the cache midway costs one full re-send, then the same bytes as before.
     let mut k = KittyState::default();
@@ -144,15 +198,33 @@ fn a_picture_past_the_edge_is_cropped() {
     };
     let s = show(&k.frame(&p, std::slice::from_ref(&veil), CELL, None).bytes);
     assert!(s.contains("⎋[1;1H⎋_Ga=p,"), "{s}");
-    assert!(s.contains(",c=8,r=3,") && s.contains(",x=4,y=6,w=16,h=6⎋"), "{s}");
+    assert!(
+        s.contains(",c=8,r=3,") && s.contains(",x=4,y=6,w=16,h=6⎋"),
+        "{s}"
+    );
     // Moved down a row with the same pixels: a re-crop, no transmit.
-    let moved = Picture { at: Cells::new(-2, -2, 10, 6), image: None, ..veil.clone() };
+    let moved = Picture {
+        at: Cells::new(-2, -2, 10, 6),
+        image: None,
+        ..veil.clone()
+    };
     let s = show(&k.frame(&p, &[moved], CELL, None).bytes);
-    assert!(!s.contains("a=t") && s.contains(",c=8,r=4,") && s.contains(",x=4,y=4,w=16,h=8⎋"), "{s}");
+    assert!(
+        !s.contains("a=t") && s.contains(",c=8,r=4,") && s.contains(",x=4,y=4,w=16,h=8⎋"),
+        "{s}"
+    );
     // Entirely outside: not shown, and its image freed.
-    let out = Picture { at: Cells::new(0, 20, 4, 1), image: None, ..veil };
+    let out = Picture {
+        at: Cells::new(0, 20, 4, 1),
+        image: None,
+        ..veil
+    };
     let o = k.frame(&p, &[out], CELL, None);
-    assert!(o.placed == 0 && o.deleted == 1 && k.is_empty(), "{}", show(&o.bytes));
+    assert!(
+        o.placed == 0 && o.deleted == 1 && k.is_empty(),
+        "{}",
+        show(&o.bytes)
+    );
 }
 
 #[test]
@@ -176,7 +248,10 @@ fn pictures_without_pixels_the_terminal_lacks_are_reported() {
 #[test]
 fn ids_come_from_content_and_collisions_rehash() {
     let k = KittyState::default();
-    assert_eq!(k.image_id(42, CELL), KittyState::default().image_id(42, CELL));
+    assert_eq!(
+        k.image_id(42, CELL),
+        KittyState::default().image_id(42, CELL)
+    );
     assert_ne!(k.image_id(42, CELL), k.image_id(43, CELL));
     // Another cell size, another id: images rasterised for one size never stand in for
     // another.
@@ -195,16 +270,27 @@ impl TempFiles for Files {
 #[test]
 fn file_transport_uses_the_hosts_writer() {
     let p = plan_at(3, true);
-    let mut k = KittyState::new(Options { transport: Transport::File, ..Options::default() });
+    let mut k = KittyState::new(Options {
+        transport: Transport::File,
+        ..Options::default()
+    });
     let mut files = Files(Vec::new());
     let o = k.frame(&p, &pictures(&p, BLUE), CELL, Some(&mut files));
     assert_eq!(files.0.len(), 2);
-    assert!(files.0.iter().all(|(n, _)| n.contains("tty-graphics-protocol")));
+    assert!(
+        files
+            .0
+            .iter()
+            .all(|(n, _)| n.contains("tty-graphics-protocol"))
+    );
     let s = show(&o.bytes);
     assert_eq!(s.matches(",t=t,").count(), 2, "{s}");
     assert!(!s.contains("o=z"));
     // No writer: inline after all.
-    let mut k = KittyState::new(Options { transport: Transport::File, ..Options::default() });
+    let mut k = KittyState::new(Options {
+        transport: Transport::File,
+        ..Options::default()
+    });
     assert!(show(&k.frame(&p, &pictures(&p, BLUE), CELL, None).bytes).contains("o=z"));
 }
 
@@ -233,7 +319,11 @@ fn large_images_go_in_4096_byte_chunks() {
     };
     let b = k.frame(&p, &[pic], CELL, None).bytes;
     let s = String::from_utf8(b).unwrap();
-    let chunks: Vec<&str> = s.split("\x1b_G").skip(1).filter(|c| !c.starts_with("a=p")).collect();
+    let chunks: Vec<&str> = s
+        .split("\x1b_G")
+        .skip(1)
+        .filter(|c| !c.starts_with("a=p"))
+        .collect();
     assert!(chunks.len() > 2);
     for (i, c) in chunks.iter().enumerate() {
         let payload = c.split_once(';').unwrap().1.trim_end_matches("\x1b\\");
@@ -284,7 +374,11 @@ fn the_probe_parser_reads_every_reply() {
     assert_eq!(
         replies,
         vec![
-            Reply::Graphics { id: Some(31), ok: true, message: "OK".into() },
+            Reply::Graphics {
+                id: Some(31),
+                ok: true,
+                message: "OK".into()
+            },
             Reply::Version("ghostty 1.3.1".into()),
             Reply::CellSize(CellPx::new(16, 34)),
             Reply::Da1(vec![62, 22, 52]),
@@ -299,18 +393,44 @@ fn the_probe_parser_reads_every_reply() {
     assert_eq!(p.cell, Some(CellPx::new(16, 34)));
 
     // Partial input waits; keys are not replies.
-    for partial in [&b"\x1b"[..], b"\x1b_", b"\x1b_Gi=31;O", b"\x1bP>", b"\x1bP>|ghos", b"\x1b[6;34", b"\x1b[?62;2"] {
+    for partial in [
+        &b"\x1b"[..],
+        b"\x1b_",
+        b"\x1b_Gi=31;O",
+        b"\x1bP>",
+        b"\x1bP>|ghos",
+        b"\x1b[6;34",
+        b"\x1b[?62;2",
+    ] {
         assert_eq!(probe::scan(partial), Scan::Partial, "{partial:?}");
     }
-    for key in [&b"a"[..], b"\x1b[A", b"\x1b[1;5C", b"\x1b[6~", b"\x1b[<0;3;4M", b"\x1bx", b"\x1b[200~"] {
+    for key in [
+        &b"a"[..],
+        b"\x1b[A",
+        b"\x1b[1;5C",
+        b"\x1b[6~",
+        b"\x1b[<0;3;4M",
+        b"\x1bx",
+        b"\x1b[200~",
+    ] {
         assert_eq!(probe::scan(key), Scan::No, "{key:?}");
     }
     // An error answer, the window size, a terminal with no graphics.
     assert_eq!(
         probe::scan(b"\x1b_Gi=31;ENOTSUPPORTED:no\x1b\\"),
-        Scan::Reply(Reply::Graphics { id: Some(31), ok: false, message: "ENOTSUPPORTED:no".into() }, 26)
+        Scan::Reply(
+            Reply::Graphics {
+                id: Some(31),
+                ok: false,
+                message: "ENOTSUPPORTED:no".into()
+            },
+            26
+        )
     );
-    assert_eq!(probe::scan(b"\x1b[4;1258;2528t"), Scan::Reply(Reply::WindowSize { w: 2528, h: 1258 }, 14));
+    assert_eq!(
+        probe::scan(b"\x1b[4;1258;2528t"),
+        Scan::Reply(Reply::WindowSize { w: 2528, h: 1258 }, 14)
+    );
     let mut p = Probe::default();
     p.add(&Reply::Da1(vec![1, 2]));
     assert!(p.fenced && !p.graphics_ok());

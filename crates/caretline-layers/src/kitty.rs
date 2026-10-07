@@ -61,7 +61,11 @@ impl Image {
     /// `None` when the data isn't `w * h * 4` bytes or the image is empty.
     pub fn new(w: u32, h: u32, rgba: impl Into<Arc<[u8]>>) -> Option<Image> {
         let rgba = rgba.into();
-        (w > 0 && h > 0 && rgba.len() == w as usize * h as usize * 4).then_some(Image { w, h, rgba })
+        (w > 0 && h > 0 && rgba.len() == w as usize * h as usize * 4).then_some(Image {
+            w,
+            h,
+            rgba,
+        })
     }
 }
 
@@ -138,7 +142,11 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Options {
-        Options { transport: Transport::Direct, chunk: 4096, level: 6 }
+        Options {
+            transport: Transport::Direct,
+            chunk: 4096,
+            level: 6,
+        }
     }
 }
 
@@ -229,7 +237,10 @@ fn id32(h: u64) -> u32 {
 
 impl KittyState {
     pub fn new(opts: Options) -> KittyState {
-        KittyState { opts, ..KittyState::default() }
+        KittyState {
+            opts,
+            ..KittyState::default()
+        }
     }
 
     pub fn options(&self) -> Options {
@@ -251,7 +262,11 @@ impl KittyState {
     /// The image id a shape key gets at a cell size: a hash, rehashed with a fixed salt while
     /// it collides with a different key the terminal holds.
     pub fn image_id(&self, key: u64, cell: CellPx) -> u32 {
-        let mut h = fnv(&[&key.to_le_bytes(), &cell.w.to_le_bytes(), &cell.h.to_le_bytes()]);
+        let mut h = fnv(&[
+            &key.to_le_bytes(),
+            &cell.w.to_le_bytes(),
+            &cell.h.to_le_bytes(),
+        ]);
         loop {
             let id = id32(h);
             match self.images.get(&id) {
@@ -294,14 +309,20 @@ impl KittyState {
         cell: CellPx,
         mut files: Option<&mut dyn TempFiles>,
     ) -> Output {
-        let order: BTreeMap<&str, usize> =
-            plan.layers.iter().enumerate().map(|(i, l)| (l.id.as_str(), i)).collect();
+        let order: BTreeMap<&str, usize> = plan
+            .layers
+            .iter()
+            .enumerate()
+            .map(|(i, l)| (l.id.as_str(), i))
+            .collect();
         let screen = Rect::new(0, 0, plan.width, plan.height);
         // The pictures shown, in draw order; a repeated (layer, part) keeps the last.
         let mut shown: Vec<(usize, usize, &Picture)> = Vec::new();
         let mut seen: BTreeMap<(&str, &str), usize> = BTreeMap::new();
         for (i, p) in pictures.iter().enumerate() {
-            let Some(&rank) = order.get(p.layer.as_str()) else { continue };
+            let Some(&rank) = order.get(p.layer.as_str()) else {
+                continue;
+            };
             match seen.get(&(p.layer.as_str(), p.part.as_str())) {
                 Some(&k) => shown[k] = (rank, i, p),
                 None => {
@@ -329,11 +350,20 @@ impl KittyState {
                     continue;
                 };
                 self.transmit(&mut body, image, p.key, img, files.as_deref_mut());
-                self.images.insert(image, Held { key: p.key, w: img.w, h: img.h });
+                self.images.insert(
+                    image,
+                    Held {
+                        key: p.key,
+                        w: img.w,
+                        h: img.h,
+                    },
+                );
                 out.sent.push(image);
             }
             let held = self.images[&image];
-            let Some(at) = placement(p.at, &clip, (held.w, held.h)) else { continue };
+            let Some(at) = placement(p.at, &clip, (held.w, held.h)) else {
+                continue;
+            };
             let z = match p.z {
                 Z::Below => {
                     below += 1;
@@ -363,7 +393,12 @@ impl KittyState {
         // Deletes go last, after every new placement: a swapped part never shows a gap.
         let used: BTreeSet<u32> = next.values().map(|p| p.image).collect();
         let pairs: BTreeSet<(u32, u32)> = next.values().map(|p| (p.image, p.id)).collect();
-        let unused: Vec<u32> = self.images.keys().copied().filter(|i| !used.contains(i)).collect();
+        let unused: Vec<u32> = self
+            .images
+            .keys()
+            .copied()
+            .filter(|i| !used.contains(i))
+            .collect();
         for id in &unused {
             delete_image(&mut body, *id);
             self.images.remove(id);
@@ -371,7 +406,12 @@ impl KittyState {
         }
         for old in self.placed.values() {
             if used.contains(&old.image) && !pairs.contains(&(old.image, old.id)) {
-                let _ = write!(Text(&mut body), "\x1b_Ga=d,d=i,i={},p={},q=2\x1b\\", old.image, old.id);
+                let _ = write!(
+                    Text(&mut body),
+                    "\x1b_Ga=d,d=i,i={},p={},q=2\x1b\\",
+                    old.image,
+                    old.id
+                );
                 out.deleted += 1;
             }
         }
@@ -385,14 +425,25 @@ impl KittyState {
         out
     }
 
-    fn transmit(&self, out: &mut Vec<u8>, id: u32, key: u64, img: &Image, files: Option<&mut (dyn TempFiles + '_)>) {
+    fn transmit(
+        &self,
+        out: &mut Vec<u8>,
+        id: u32,
+        key: u64,
+        img: &Image,
+        files: Option<&mut (dyn TempFiles + '_)>,
+    ) {
         let (w, h) = (img.w, img.h);
         if self.opts.transport == Transport::File
             && let Some(files) = files
         {
             let name = format!("caretline-tty-graphics-protocol-{id:08x}-{key:016x}.rgba");
             if let Some(path) = files.write(&name, &img.rgba) {
-                let _ = write!(Text(out), "\x1b_Ga=t,f=32,s={w},v={h},i={id},t=t,q=2;{}\x1b\\", base64(path.as_bytes()));
+                let _ = write!(
+                    Text(out),
+                    "\x1b_Ga=t,f=32,s={w},v={h},i={id},t=t,q=2;{}\x1b\\",
+                    base64(path.as_bytes())
+                );
                 return;
             }
         }
@@ -403,7 +454,10 @@ impl KittyState {
         for (i, c) in chunks.iter().enumerate() {
             let m = (i + 1 < chunks.len()) as u8;
             if i == 0 {
-                let _ = write!(Text(out), "\x1b_Ga=t,f=32,s={w},v={h},i={id},o=z,q=2,m={m};");
+                let _ = write!(
+                    Text(out),
+                    "\x1b_Ga=t,f=32,s={w},v={h},i={id},o=z,q=2,m={m};"
+                );
             } else {
                 let _ = write!(Text(out), "\x1b_Gm={m};");
             }
@@ -436,9 +490,21 @@ fn placement(a: Cells, clip: &Rect, px: (u32, u32)) -> Option<Place> {
         let sx = |c: i64| (c - ax0) * iw / a.w as i64;
         let sy = |c: i64| (c - ay0) * ih / a.h as i64;
         let (px0, py0, px1, py1) = (sx(x0), sy(y0), sx(x1), sy(y1));
-        Some((px0 as u32, py0 as u32, (px1 - px0).max(1) as u32, (py1 - py0).max(1) as u32))
+        Some((
+            px0 as u32,
+            py0 as u32,
+            (px1 - px0).max(1) as u32,
+            (py1 - py0).max(1) as u32,
+        ))
     };
-    Some(Place { col: x0 as u16, row: y0 as u16, c: (x1 - x0) as u16, r: (y1 - y0) as u16, z: 0, crop })
+    Some(Place {
+        col: x0 as u16,
+        row: y0 as u16,
+        c: (x1 - x0) as u16,
+        r: (y1 - y0) as u16,
+        z: 0,
+        crop,
+    })
 }
 
 fn place(out: &mut Vec<u8>, p: &Placed) {

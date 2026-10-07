@@ -10,7 +10,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex, Once};
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub const ROWS: u16 = 12;
 pub const COLS: u16 = 60;
@@ -33,15 +33,30 @@ impl Drop for Pty {
 impl Pty {
     pub fn spawn(mut c: Command) -> Pty {
         let (mut m, mut s) = (0, 0);
-        let mut ws = libc::winsize { ws_row: ROWS, ws_col: COLS, ws_xpixel: 0, ws_ypixel: 0 };
+        let mut ws = libc::winsize {
+            ws_row: ROWS,
+            ws_col: COLS,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
         assert_eq!(
-            unsafe { libc::openpty(&mut m, &mut s, std::ptr::null_mut(), std::ptr::null_mut(), &mut ws) },
+            unsafe {
+                libc::openpty(
+                    &mut m,
+                    &mut s,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut ws,
+                )
+            },
             0
         );
         let slave = unsafe { OwnedFd::from_raw_fd(s) };
         c.env("TERM", "xterm-256color");
         let sfd = slave.as_raw_fd();
-        c.stdin(slave.try_clone().unwrap()).stdout(slave.try_clone().unwrap()).stderr(slave);
+        c.stdin(slave.try_clone().unwrap())
+            .stdout(slave.try_clone().unwrap())
+            .stderr(slave);
         unsafe {
             c.pre_exec(move || {
                 libc::setsid();
@@ -85,7 +100,10 @@ impl Pty {
             if ok(&s) {
                 return s;
             }
-            assert!(Instant::now() < deadline, "timed out waiting for {what}; screen:\n{s}");
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for {what}; screen:\n{s}"
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
     }
@@ -106,7 +124,10 @@ fn screen(out: &[u8], rows: usize, cols: usize) -> Vec<String> {
                         it.next();
                         if ('@'..='~').contains(&n) {
                             if n == 'H' {
-                                let mut p = params.trim_start_matches('?').split(';').map(|x| x.parse::<usize>().unwrap_or(1));
+                                let mut p = params
+                                    .trim_start_matches('?')
+                                    .split(';')
+                                    .map(|x| x.parse::<usize>().unwrap_or(1));
                                 r = p.next().unwrap_or(1).saturating_sub(1);
                                 c = p.next().unwrap_or(1).saturating_sub(1);
                             } else if n == 'J' && params == "2" {
@@ -140,7 +161,6 @@ fn screen(out: &[u8], rows: usize, cols: usize) -> Vec<String> {
     grid.into_iter().map(|l| l.into_iter().collect()).collect()
 }
 
-
 /// The `caretline` binary (another package's), built once per test run. `CARETLINE_BIN`
 /// overrides it.
 pub fn caretline() -> PathBuf {
@@ -153,8 +173,13 @@ pub fn caretline() -> PathBuf {
     BUILD.call_once(|| {
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
         let mut c = Command::new(cargo);
-        c.args(["build", "-q", "-p", "caretline-cli", "--bin", "caretline"]).current_dir(env!("CARGO_MANIFEST_DIR"));
-        if mcp.parent().and_then(|p| p.file_name()).is_some_and(|n| n == "release") {
+        c.args(["build", "-q", "-p", "caretline-cli", "--bin", "caretline"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"));
+        if mcp
+            .parent()
+            .and_then(|p| p.file_name())
+            .is_some_and(|n| n == "release")
+        {
             c.arg("--release");
         }
         let st = c.status().expect("cargo build caretline");
@@ -176,7 +201,12 @@ pub fn scratch(name: &str) -> PathBuf {
 /// A live editor on `file` in a pseudo-terminal, listening on `dir/ed.sock`.
 pub fn live_editor(dir: &Path, file: &Path) -> Pty {
     let mut c = Command::new(caretline());
-    c.arg(file).arg("--listen").arg(dir.join("ed.sock")).arg("--no-mouse").env("TMPDIR", dir).current_dir(dir);
+    c.arg(file)
+        .arg("--listen")
+        .arg(dir.join("ed.sock"))
+        .arg("--no-mouse")
+        .env("TMPDIR", dir)
+        .current_dir(dir);
     let pty = Pty::spawn(c);
     pty.wait("the editor", |s| s.contains("listening on"));
     pty
@@ -211,27 +241,48 @@ impl Mcp {
             .unwrap();
         let stdin = child.stdin.take().unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
-        let mut m = Mcp { child, stdin, stdout, next: 1 };
+        let mut m = Mcp {
+            child,
+            stdin,
+            stdout,
+            next: 1,
+        };
         let init = m.request(
             "initialize",
             json!({"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "test-agent", "version": "0"}}),
         );
-        assert_eq!(init["result"]["serverInfo"]["name"], "caretline-mcp", "{init}");
+        assert_eq!(
+            init["result"]["serverInfo"]["name"], "caretline-mcp",
+            "{init}"
+        );
         m.notify("notifications/initialized", json!({}));
         m
     }
 
     pub fn notify(&mut self, method: &str, params: Value) {
-        writeln!(self.stdin, "{}", json!({"jsonrpc": "2.0", "method": method, "params": params})).unwrap();
+        writeln!(
+            self.stdin,
+            "{}",
+            json!({"jsonrpc": "2.0", "method": method, "params": params})
+        )
+        .unwrap();
     }
 
     pub fn request(&mut self, method: &str, params: Value) -> Value {
         let id = self.next;
         self.next += 1;
-        writeln!(self.stdin, "{}", json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).unwrap();
+        writeln!(
+            self.stdin,
+            "{}",
+            json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+        )
+        .unwrap();
         loop {
             let mut line = String::new();
-            assert!(self.stdout.read_line(&mut line).unwrap() > 0, "the server closed stdout");
+            assert!(
+                self.stdout.read_line(&mut line).unwrap() > 0,
+                "the server closed stdout"
+            );
             let v: Value = serde_json::from_str(&line).unwrap_or_else(|e| panic!("{e}: {line}"));
             if v["id"] == json!(id) {
                 return v;
@@ -244,7 +295,10 @@ impl Mcp {
         let r = self.request("tools/call", json!({"name": name, "arguments": args}));
         assert!(r.get("error").is_none(), "{name}: protocol error {r}");
         let res = &r["result"];
-        (res["isError"] == json!(true), res["structuredContent"].clone())
+        (
+            res["isError"] == json!(true),
+            res["structuredContent"].clone(),
+        )
     }
 
     /// Calls a tool that must succeed.

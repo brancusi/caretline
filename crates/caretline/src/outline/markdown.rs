@@ -2,7 +2,10 @@
 //! Markdown for the clipboard, and a whole outline document read from and written to a
 //! Markdown file.
 
-use crate::outline::{default_gap, derive, numbered_marker, parse_str, BlockInfo, Hang, Kind, NewBlock, Outline, OutlineConfig};
+use crate::outline::{
+    default_gap, derive, numbered_marker, parse_str, BlockInfo, Hang, Kind, NewBlock, Outline,
+    OutlineConfig,
+};
 use crate::state::{State, Viewport};
 
 /// Markdown read as blocks: paragraphs (their lines joined), `-` `*` `+` bullets nested by
@@ -59,7 +62,9 @@ pub fn parse_markdown(input: &str, plain: bool, cfg: &OutlineConfig) -> (Vec<New
     let mut images = 0;
     for l in raw.iter_mut() {
         while let (Some(a), true) = (l.find("!["), l.contains("](")) {
-            let Some(close) = l[a..].find(')').map(|k| a + k) else { break };
+            let Some(close) = l[a..].find(')').map(|k| a + k) else {
+                break;
+            };
             l.replace_range(a..=close, "");
             images += 1;
         }
@@ -70,7 +75,11 @@ pub fn parse_markdown(input: &str, plain: bool, cfg: &OutlineConfig) -> (Vec<New
     let item = |l: &str| -> Option<(usize, String, String)> {
         let indent = l.len() - l.trim_start().len();
         let rest = l.trim_start();
-        if let Some(b) = rest.strip_prefix("- ").or_else(|| rest.strip_prefix("* ")).or_else(|| rest.strip_prefix("+ ")) {
+        if let Some(b) = rest
+            .strip_prefix("- ")
+            .or_else(|| rest.strip_prefix("* "))
+            .or_else(|| rest.strip_prefix("+ "))
+        {
             return Some((indent, "-".into(), b.to_string()));
         }
         if tag_at(rest, cfg).is_some() {
@@ -79,13 +88,21 @@ pub fn parse_markdown(input: &str, plain: bool, cfg: &OutlineConfig) -> (Vec<New
         let n = numbered_marker(rest)?;
         Some((indent, rest[..n - 1].to_string(), rest[n..].to_string()))
     };
-    let unit = raw.iter().filter_map(|l| item(l)).map(|(i, _, _)| i).find(|i| *i > 0).unwrap_or(2);
+    let unit = raw
+        .iter()
+        .filter_map(|l| item(l))
+        .map(|(i, _, _)| i)
+        .find(|i| *i > 0)
+        .unwrap_or(2);
     let mut para: Vec<String> = Vec::new();
     // The indentation of the paragraph being read: an indented paragraph is nested.
     let mut para_indent = 0usize;
     let flush = |para: &mut Vec<String>, out: &mut Vec<NewBlock>, indent: usize| {
         if !para.is_empty() {
-            out.push(NewBlock { depth: (indent / unit) as u16, ..NewBlock::para(&para.join(" ")) });
+            out.push(NewBlock {
+                depth: (indent / unit) as u16,
+                ..NewBlock::para(&para.join(" "))
+            });
             para.clear();
         }
     };
@@ -137,7 +154,14 @@ pub fn parse_markdown(input: &str, plain: bool, cfg: &OutlineConfig) -> (Vec<New
         }
         if let Some((indent, marker, body)) = item(&l) {
             flush(&mut para, &mut out, para_indent);
-            let mut nb = NewBlock { depth: (indent / unit) as u16, kind: Kind::Bullet, tag: None, text: body, gap: None, mark: None };
+            let mut nb = NewBlock {
+                depth: (indent / unit) as u16,
+                kind: Kind::Bullet,
+                tag: None,
+                text: body,
+                gap: None,
+                mark: None,
+            };
             if let Some(c) = tag_at(&nb.text, cfg) {
                 nb.tag = Some(c);
                 nb.text = nb.text.chars().skip(4).collect();
@@ -191,7 +215,13 @@ pub fn to_markdown(state: &State, o: &Outline, from: usize, to: usize) -> String
 
 /// [`to_markdown`] with a host's text after each block's first line (across blocks): what a
 /// host keeps per block outside the text, written back into the copy.
-pub fn to_markdown_with(state: &State, o: &Outline, from: usize, to: usize, suffix: &dyn Fn(crate::marks::MarkId) -> Option<String>) -> String {
+pub fn to_markdown_with(
+    state: &State,
+    o: &Outline,
+    from: usize,
+    to: usize,
+    suffix: &dyn Fn(crate::marks::MarkId) -> Option<String>,
+) -> String {
     let text = state.doc.text.slice(..);
     let piece = |a: usize, b: usize| text.slice(a..b.max(a)).to_string().replace("\r\n", "\n");
     let parts: Vec<(&BlockInfo, String)> = o
@@ -272,7 +302,9 @@ fn continuation_indent(b: &BlockInfo) -> usize {
 /// before it, continuation lines indented under their item, and a final line break. Empty
 /// paragraphs (a fresh line to type on) are left out.
 pub fn to_file(state: &State) -> String {
-    let Some(o) = state.blocks() else { return state.doc.text.to_string() };
+    let Some(o) = state.blocks() else {
+        return state.doc.text.to_string();
+    };
     let text = state.doc.text.slice(..);
     let mut lines: Vec<String> = Vec::new();
     for b in &o.blocks {
@@ -370,15 +402,22 @@ mod tests {
     use super::*;
 
     fn tagged() -> OutlineConfig {
-        OutlineConfig { tags: " x".into(), ..OutlineConfig::default() }
+        OutlineConfig {
+            tags: " x".into(),
+            ..OutlineConfig::default()
+        }
     }
 
     #[test]
     fn paste_reads_an_outline() {
-        let md = "Intro line\ncontinued\n\n- one\n  - [ ] two\n- [x] three\n1. first\n![x](y.png)\n";
+        let md =
+            "Intro line\ncontinued\n\n- one\n  - [ ] two\n- [x] three\n1. first\n![x](y.png)\n";
         let (blocks, images) = parse_markdown(md, false, &tagged());
         assert_eq!(images, 1);
-        let shape: Vec<(u16, Kind, Option<char>, &str)> = blocks.iter().map(|b| (b.depth, b.kind, b.tag, b.text.as_str())).collect();
+        let shape: Vec<(u16, Kind, Option<char>, &str)> = blocks
+            .iter()
+            .map(|b| (b.depth, b.kind, b.tag, b.text.as_str()))
+            .collect();
         assert_eq!(
             shape,
             [
@@ -398,12 +437,33 @@ mod tests {
     fn a_file_round_trips() {
         let md = "# Trip\n\nBooked the flat.\nIt faces the river.\n\n- [ ] Pay the deposit\n  - ask about the desk\n    on two lines\n- [x] Book flights\n\n```\n- not a list\n\n```\n";
         for cfg in [tagged(), OutlineConfig::default()] {
-            let s = load(md, None, Viewport { width: 80, height: 24 }, cfg.clone());
+            let s = load(
+                md,
+                None,
+                Viewport {
+                    width: 80,
+                    height: 24,
+                },
+                cfg.clone(),
+            );
             assert_eq!(to_file(&s), md);
             let o = s.blocks().unwrap();
             let kinds: Vec<Kind> = o.blocks.iter().map(|b| b.kind).collect();
-            assert_eq!(kinds, [Kind::Para, Kind::Para, Kind::Bullet, Kind::Bullet, Kind::Bullet, Kind::Para]);
-            assert_eq!(o.blocks[3].line_count, 2, "the continuation line belongs to its item");
+            assert_eq!(
+                kinds,
+                [
+                    Kind::Para,
+                    Kind::Para,
+                    Kind::Bullet,
+                    Kind::Bullet,
+                    Kind::Bullet,
+                    Kind::Para
+                ]
+            );
+            assert_eq!(
+                o.blocks[3].line_count, 2,
+                "the continuation line belongs to its item"
+            );
             assert_eq!(o.blocks[2].tag.is_some(), !cfg.tags.is_empty());
         }
     }

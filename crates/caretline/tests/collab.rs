@@ -19,7 +19,14 @@ const NOTE: &str = "\n- Agent note: safely.";
 
 /// A person with their caret at the end of the first line.
 fn person() -> Session {
-    let mut st = State::new(START, Some("notes.md".into()), Viewport { width: 60, height: 10 });
+    let mut st = State::new(
+        START,
+        Some("notes.md".into()),
+        Viewport {
+            width: 60,
+            height: 10,
+        },
+    );
     st.view.selection = Selection::point(11);
     Session::new(st)
 }
@@ -44,13 +51,25 @@ fn text_set_changes_only_what_differs_and_leaves_the_persons_caret() {
     let mut own = None;
     let new = format!("Hey there, {NOTE}\nnext\n");
     let rev = s.rev();
-    let r = client(&mut s, &mut own, json!({"op": "text.set", "text": new, "if_rev": rev}));
+    let r = client(
+        &mut s,
+        &mut own,
+        json!({"op": "text.set", "text": new, "if_rev": rev}),
+    );
     assert_eq!(r["result"]["changed"], true, "{r}");
-    assert_eq!(r["result"]["msgs"][0]["changes"], json!([{"change": "replace", "from": 12, "to": 12, "text": "- Agent note: safely.\n"}]), "only the inserted line");
+    assert_eq!(
+        r["result"]["msgs"][0]["changes"],
+        json!([{"change": "replace", "from": 12, "to": 12, "text": "- Agent note: safely.\n"}]),
+        "only the inserted line"
+    );
     let v = own.expect("the client's own view");
     assert_eq!(r["result"]["view"], v);
     assert_ne!(v, 0);
-    assert_eq!(caret(&s), 11, "the person's caret stays before the inserted text");
+    assert_eq!(
+        caret(&s),
+        11,
+        "the person's caret stays before the inserted text"
+    );
     s.apply(Msg::InsertText { text: "w".into() });
     assert_eq!(text(&s), format!("Hey there, w{NOTE}\nnext\n"));
 
@@ -58,9 +77,19 @@ fn text_set_changes_only_what_differs_and_leaves_the_persons_caret() {
     let rev = s.rev();
     let same = text(&s);
     let r = client(&mut s, &mut own, json!({"op": "text.set", "text": same}));
-    assert_eq!((r["result"]["changed"].as_bool(), r["result"]["rev"].as_u64()), (Some(false), Some(rev)));
+    assert_eq!(
+        (
+            r["result"]["changed"].as_bool(),
+            r["result"]["rev"].as_u64()
+        ),
+        (Some(false), Some(rev))
+    );
     // A stale if_rev writes nothing.
-    let r = client(&mut s, &mut own, json!({"op": "text.set", "text": "gone", "if_rev": rev - 1}));
+    let r = client(
+        &mut s,
+        &mut own,
+        json!({"op": "text.set", "text": "gone", "if_rev": rev - 1}),
+    );
     assert_eq!(r["error"]["kind"], "stale", "{r}");
     assert_eq!(own, Some(v), "one view per client");
 
@@ -73,21 +102,43 @@ fn text_set_changes_only_what_differs_and_leaves_the_persons_caret() {
 fn a_clients_messages_go_through_its_own_view() {
     let mut s = person();
     let mut own = None;
-    let r = client(&mut s, &mut own, json!({"op": "msgs", "msgs": [{"msg": "insert_text", "text": "AGENT"}]}));
+    let r = client(
+        &mut s,
+        &mut own,
+        json!({"op": "msgs", "msgs": [{"msg": "insert_text", "text": "AGENT"}]}),
+    );
     let v = own.unwrap();
     assert_eq!(r["result"]["view"], v, "{r}");
     assert_eq!(caret(&s), 11, "the person's caret didn't move");
-    assert_eq!(s.view(v).unwrap().caret(), 16, "the client's own caret moved past its text");
+    assert_eq!(
+        s.view(v).unwrap().caret(),
+        16,
+        "the client's own caret moved past its text"
+    );
     s.apply(Msg::InsertText { text: "w".into() });
     client(&mut s, &mut own, json!({"op": "keys", "keys": "!"}));
     assert_eq!(text(&s), "Hey there, wAGENT!\nnext\n");
     assert_eq!(caret(&s), 12);
     // "view": 0 acts as the person.
-    client(&mut s, &mut own, json!({"op": "msgs", "view": 0, "msgs": [{"msg": "insert_text", "text": "P"}]}));
-    assert_eq!((text(&s).as_str(), caret(&s)), ("Hey there, wPAGENT!\nnext\n", 13));
+    client(
+        &mut s,
+        &mut own,
+        json!({"op": "msgs", "view": 0, "msgs": [{"msg": "insert_text", "text": "P"}]}),
+    );
+    assert_eq!(
+        (text(&s).as_str(), caret(&s)),
+        ("Hey there, wPAGENT!\nnext\n", 13)
+    );
     // Without client views (a headless server), messages go through view 0 as before.
     let mut h = person();
-    let r: Value = serde_json::from_str(&h.handle(&json!({"op": "msgs", "msgs": [{"msg": "insert_text", "text": "x"}]}).to_string(), None).response).unwrap();
+    let r: Value = serde_json::from_str(
+        &h.handle(
+            &json!({"op": "msgs", "msgs": [{"msg": "insert_text", "text": "x"}]}).to_string(),
+            None,
+        )
+        .response,
+    )
+    .unwrap();
     assert_eq!(r["result"]["view"], 0);
     assert_eq!(caret(&h), 12);
     assert!(h.views().is_empty());
@@ -98,13 +149,22 @@ fn the_session_api_sets_text_the_same_way() {
     let mut s = person();
     let copy = s.state().view.clone();
     let v = s.open_view(copy);
-    let msg = s.set_text_on(v, &format!("Hey there, {NOTE}\nnext\n")).expect("a change");
+    let msg = s
+        .set_text_on(v, &format!("Hey there, {NOTE}\nnext\n"))
+        .expect("a change");
     assert!(matches!(msg, Msg::External { .. }));
     assert_eq!(caret(&s), 11);
     let same = text(&s);
     assert!(s.set_text(&same).is_none(), "nothing to change");
     // Line breaks become the document's.
-    let mut crlf = Session::new(State::new("a\r\nb\r\n", None, Viewport { width: 20, height: 4 }));
+    let mut crlf = Session::new(State::new(
+        "a\r\nb\r\n",
+        None,
+        Viewport {
+            width: 20,
+            height: 4,
+        },
+    ));
     crlf.set_text("a\nX\nb\n");
     assert_eq!(text(&crlf), "a\r\nX\r\nb\r\n");
 }
@@ -115,7 +175,10 @@ fn around(rng: &mut StdRng, t: &str, at: usize) -> usize {
     let chars: Vec<char> = t.chars().collect();
     match rng.random_range(0..4) {
         0 => at,
-        1 => chars[at..].iter().position(|&c| c == '\n').map_or(chars.len(), |i| at + i + 1),
+        1 => chars[at..]
+            .iter()
+            .position(|&c| c == '\n')
+            .map_or(chars.len(), |i| at + i + 1),
         2 => 0,
         _ => chars.len(),
     }
@@ -125,7 +188,10 @@ const PIECES: &[&str] = &["\n- 1 note", "\n", "## 2\n", "33", "\n- 4 more\n"];
 
 #[test]
 fn a_person_keeps_typing_through_a_stream_of_pushes() {
-    let seeds: u64 = std::env::var("CARETLINE_COLLAB_SEEDS").ok().and_then(|s| s.parse().ok()).unwrap_or(12);
+    let seeds: u64 = std::env::var("CARETLINE_COLLAB_SEEDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(12);
     for seed in 0..seeds {
         let mut rng = StdRng::seed_from_u64(0xc011_ab00 + seed);
         let mut s = person();
@@ -139,7 +205,9 @@ fn a_person_keeps_typing_through_a_stream_of_pushes() {
             if rng.random_bool(0.4) {
                 let c = (b'a' + (typed.len() % 26) as u8) as char;
                 s.apply(Msg::Tick { now_ms: now });
-                s.apply(Msg::InsertText { text: c.to_string() });
+                s.apply(Msg::InsertText {
+                    text: c.to_string(),
+                });
                 typed.push(c);
             } else {
                 // The client reads, then writes against what it read.
@@ -150,10 +218,18 @@ fn a_person_keeps_typing_through_a_stream_of_pushes() {
                 let r = if rng.random_bool(0.5) {
                     let mut new: Vec<char> = t.chars().collect();
                     new.splice(at..at, piece.chars());
-                    client(&mut s, &mut own, json!({"op": "text.set", "text": new.into_iter().collect::<String>(), "if_rev": rev}))
+                    client(
+                        &mut s,
+                        &mut own,
+                        json!({"op": "text.set", "text": new.into_iter().collect::<String>(), "if_rev": rev}),
+                    )
                 } else {
                     let change = json!({"change": "replace", "from": at, "to": at, "text": piece});
-                    client(&mut s, &mut own, json!({"op": "msgs", "msgs": [{"msg": "external", "changes": [change]}], "if_rev": rev}))
+                    client(
+                        &mut s,
+                        &mut own,
+                        json!({"op": "msgs", "msgs": [{"msg": "external", "changes": [change]}], "if_rev": rev}),
+                    )
                 };
                 assert!(r.get("result").is_some(), "{ctx}: {r}");
                 pushes += 1;
@@ -161,19 +237,33 @@ fn a_person_keeps_typing_through_a_stream_of_pushes() {
             // The person's typing is one run, and their caret is at its end.
             let t = text(&s);
             let mine = format!("Hey there, {typed}");
-            let start = t.find(&mine).unwrap_or_else(|| panic!("{ctx}: {mine:?} not contiguous in {t:?}"));
+            let start = t
+                .find(&mine)
+                .unwrap_or_else(|| panic!("{ctx}: {mine:?} not contiguous in {t:?}"));
             let end = t[..start + mine.len()].chars().count();
-            assert_eq!(caret(&s), end, "{ctx}: the caret left the person's text in {t:?}");
+            assert_eq!(
+                caret(&s),
+                end,
+                "{ctx}: the caret left the person's text in {t:?}"
+            );
             assert_eq!(s.state().view.selection.len(), 1, "{ctx}");
         }
         assert!(pushes > 100, "seed {seed}: {pushes} pushes");
 
         // The trace replays to the same document and views.
         let (state, views, _) = replay_trace_views(&s.trace_jsonl()).unwrap();
-        assert_eq!(serde_json::to_value(&state).unwrap(), serde_json::to_value(s.state()).unwrap(), "seed {seed}: replay");
+        assert_eq!(
+            serde_json::to_value(&state).unwrap(),
+            serde_json::to_value(s.state()).unwrap(),
+            "seed {seed}: replay"
+        );
         assert_eq!(views.len(), s.views().len());
         for ((a, va), (b, vb)) in views.iter().zip(s.views()) {
-            assert_eq!((a, &va.selection), (b, &vb.selection), "seed {seed}: replayed view");
+            assert_eq!(
+                (a, &va.selection),
+                (b, &vb.selection),
+                "seed {seed}: replayed view"
+            );
         }
 
         // The person's undo takes back their typing and nothing else.
@@ -184,6 +274,10 @@ fn a_person_keeps_typing_through_a_stream_of_pushes() {
             guard += 1;
             assert!(guard < 10_000);
         }
-        assert_eq!(text(&s), want, "seed {seed}: undo took back more than the person's typing");
+        assert_eq!(
+            text(&s),
+            want,
+            "seed {seed}: undo took back more than the person's typing"
+        );
     }
 }

@@ -16,15 +16,15 @@
 
 use std::f64::consts::PI;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use caretline::{Key, KeyCode, Session, State, Viewport};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::agent::Conn;
 use super::DemoArgs;
+use super::agent::Conn;
 use crate::hub::Hub;
 use crate::runtime::{self, Demo, KeyAction};
 
@@ -38,7 +38,12 @@ struct Grid {
 
 impl Grid {
     fn new(w: usize, h: usize) -> Grid {
-        Grid { w, h, cells: vec![' '; w * h], hot: vec![false; w * h] }
+        Grid {
+            w,
+            h,
+            cells: vec![' '; w * h],
+            hot: vec![false; w * h],
+        }
     }
 
     fn put(&mut self, x: i64, y: i64, c: char, hot: bool) {
@@ -53,7 +58,11 @@ impl Grid {
     /// char ranges (rows are `w` chars and a line break).
     fn body(&self) -> String {
         let (text, ranges) = self.parts();
-        format!(r#""text":{},"highlights":{}}}"#, Value::from(text), json!(ranges))
+        format!(
+            r#""text":{},"highlights":{}}}"#,
+            Value::from(text),
+            json!(ranges)
+        )
     }
 
     /// The frame's text and its highlights as char ranges.
@@ -127,7 +136,9 @@ impl Scene for Donut {
                 let tt = sp * hh * ca - st * sa;
                 let x = (wf / 2.0 + wf * 0.57 * d * (cp * hh * cb - tt * sb)) as i64;
                 let y = (hf / 2.0 + hf * 0.5 * d * (cp * hh * sb + tt * cb)) as i64;
-                let l = (8.0 * ((st * sa - sp * ct * ca) * cb - sp * ct * sa - st * ca - cp * ct * sb)) as i64;
+                let l = (8.0
+                    * ((st * sa - sp * ct * ca) * cb - sp * ct * sa - st * ca - cp * ct * sb))
+                    as i64;
                 if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h {
                     let k = y as usize * w + x as usize;
                     if d > zb[k] {
@@ -163,7 +174,11 @@ impl Scene for Cube {
             let (x, z) = (x * ay.cos() + z * ay.sin(), -x * ay.sin() + z * ay.cos());
             let (x, y) = (x * az.cos() - y * az.sin(), x * az.sin() + y * az.cos());
             let f = 3.2 / (z + 4.0);
-            [wf / 2.0 + x * f * wf * 0.28, hf / 2.0 + y * f * hf * 0.25, z]
+            [
+                wf / 2.0 + x * f * wf * 0.28,
+                hf / 2.0 + y * f * hf * 0.25,
+                z,
+            ]
         };
         let p: Vec<[f64; 3]> = v.iter().map(|&q| rot(q)).collect();
         for a in 0..8 {
@@ -176,8 +191,19 @@ impl Scene for Cube {
                 for k in 0..=n {
                     let u = k as f64 / n as f64;
                     let z = z0 + (z1 - z0) * u;
-                    let c = if z < -0.3 { '@' } else if z < 0.4 { '#' } else { '+' };
-                    g.put((x0 + (x1 - x0) * u) as i64, (y0 + (y1 - y0) * u) as i64, c, z < -0.3);
+                    let c = if z < -0.3 {
+                        '@'
+                    } else if z < 0.4 {
+                        '#'
+                    } else {
+                        '+'
+                    };
+                    g.put(
+                        (x0 + (x1 - x0) * u) as i64,
+                        (y0 + (y1 - y0) * u) as i64,
+                        c,
+                        z < -0.3,
+                    );
                 }
             }
         }
@@ -293,7 +319,15 @@ impl Scene for Warp {
             let z = (sz - t * 0.35).rem_euclid(1.0) + 0.02;
             let x = (wf / 2.0 + sx / z * wf * 0.25) as i64;
             let y = (hf / 2.0 + sy / z * hf * 0.25) as i64;
-            let c = if z < 0.15 { '@' } else if z < 0.35 { '*' } else if z < 0.6 { '+' } else { '.' };
+            let c = if z < 0.15 {
+                '@'
+            } else if z < 0.35 {
+                '*'
+            } else if z < 0.6 {
+                '+'
+            } else {
+                '.'
+            };
             g.put(x, y, c, z < 0.2);
         }
         let title = "C A R E T L I N E";
@@ -312,9 +346,20 @@ fn scene(name: &str) -> Option<Box<dyn Scene>> {
         "cube" => Box::new(Cube),
         "tunnel" => Box::new(Tunnel),
         "plasma" => Box::new(Plasma),
-        "fire" => Box::new(Fire { buf: Vec::new(), rng }),
+        "fire" => Box::new(Fire {
+            buf: Vec::new(),
+            rng,
+        }),
         "warp" => Box::new(Warp {
-            stars: (0..900).map(|_| [rng.range(-1.0, 1.0), rng.range(-1.0, 1.0), rng.range(0.05, 1.0)]).collect(),
+            stars: (0..900)
+                .map(|_| {
+                    [
+                        rng.range(-1.0, 1.0),
+                        rng.range(-1.0, 1.0),
+                        rng.range(0.05, 1.0),
+                    ]
+                })
+                .collect(),
         }),
         _ => return None,
     })
@@ -336,7 +381,11 @@ impl Run {
     /// Frames per second: frame intervals over their time when paced (the first frame
     /// starts the clock), frames over the run when unthrottled.
     fn fps(&self) -> f64 {
-        let n = if self.paced { self.frames.saturating_sub(1) } else { self.frames };
+        let n = if self.paced {
+            self.frames.saturating_sub(1)
+        } else {
+            self.frames
+        };
         n as f64 / self.secs
     }
     fn late_pct(&self, p: usize) -> Duration {
@@ -364,7 +413,14 @@ fn wait_until(deadline: Instant, spin: Duration) {
 }
 
 /// Plays `bodies` round and round for `seconds` at `fps` (0: unthrottled).
-fn play(c: &mut Conn, bodies: &[String], seconds: f64, fps: u32, spin: Duration, tag: &str) -> Result<Run, String> {
+fn play(
+    c: &mut Conn,
+    bodies: &[String],
+    seconds: f64,
+    fps: u32,
+    spin: Duration,
+    tag: &str,
+) -> Result<Run, String> {
     let start = Instant::now();
     let end = start + Duration::from_secs_f64(seconds);
     let period = (fps > 0).then(|| Duration::from_secs_f64(1.0 / fps as f64));
@@ -386,9 +442,16 @@ fn play(c: &mut Conn, bodies: &[String], seconds: f64, fps: u32, spin: Duration,
         }
         if k % 30 == 29 {
             let el = start.elapsed().as_secs_f64();
-            status = Value::from(format!("{tag} · {:.1} frames/s · frame {}", (k + 1) as f64 / el, k + 1));
+            status = Value::from(format!(
+                "{tag} · {:.1} frames/s · frame {}",
+                (k + 1) as f64 / el,
+                k + 1
+            ));
         }
-        let req = format!(r#"{{"op":"frame","status":{status},{}"#, bodies[k as usize % bodies.len()]);
+        let req = format!(
+            r#"{{"op":"frame","status":{status},{}"#,
+            bodies[k as usize % bodies.len()]
+        );
         last = Instant::now();
         first.get_or_insert(last);
         c.send(&req)?;
@@ -399,27 +462,44 @@ fn play(c: &mut Conn, bodies: &[String], seconds: f64, fps: u32, spin: Duration,
         Some(_) => (last - first.unwrap_or(last)).as_secs_f64(),
         None => start.elapsed().as_secs_f64(),
     };
-    Ok(Run { frames: k, secs: secs.max(1e-9), paced: period.is_some(), late })
+    Ok(Run {
+        frames: k,
+        secs: secs.max(1e-9),
+        paced: period.is_some(),
+        late,
+    })
 }
 
 fn ms(d: Duration) -> String {
     format!("{:.0} µs", d.as_secs_f64() * 1e6)
 }
 
-
 /// The scenes to play: `--scene`, or all of them, warp first.
 fn names(args: &DemoArgs) -> Result<Vec<&'static str>, String> {
-    let Some(list) = &args.scene else { return Ok(ALL.to_vec()) };
+    let Some(list) = &args.scene else {
+        return Ok(ALL.to_vec());
+    };
     let mut out = Vec::new();
-    for n in list.split(',').map(str::trim).filter(|n| !n.is_empty() && *n != "all") {
-        out.push(*ALL.iter().find(|a| **a == n).ok_or_else(|| format!("unknown scene {n:?}; scenes: {}", ALL.join(", ")))?);
+    for n in list
+        .split(',')
+        .map(str::trim)
+        .filter(|n| !n.is_empty() && *n != "all")
+    {
+        out.push(
+            *ALL.iter()
+                .find(|a| **a == n)
+                .ok_or_else(|| format!("unknown scene {n:?}; scenes: {}", ALL.join(", ")))?,
+        );
     }
     Ok(if out.is_empty() { ALL.to_vec() } else { out })
 }
 
 /// The status line under a scene.
 fn status(name: &str, i: usize, n: usize, fps: f64) -> String {
-    format!("{name} · {}/{n} · {fps:.0} fps · ←/→ scene · q quits", i + 1)
+    format!(
+        "{name} · {}/{n} · {fps:.0} fps · ←/→ scene · q quits",
+        i + 1
+    )
 }
 
 /// Which scene the person picked, shared with the player.
@@ -439,12 +519,17 @@ impl Demo for ScenesDemo {
         let m = key.mods;
         let step = |d: isize| {
             let i = self.control.index.load(Ordering::Relaxed) as isize;
-            self.control.index.store((i + d).rem_euclid(self.count as isize) as usize, Ordering::Relaxed);
+            self.control.index.store(
+                (i + d).rem_euclid(self.count as isize) as usize,
+                Ordering::Relaxed,
+            );
             self.control.picked.store(true, Ordering::Relaxed);
         };
         match key.code {
             KeyCode::Esc => return KeyAction::Quit,
-            KeyCode::Char(c) if m.ctrl && matches!(c.to_ascii_lowercase(), 'c' | 'q') => return KeyAction::Quit,
+            KeyCode::Char(c) if m.ctrl && matches!(c.to_ascii_lowercase(), 'c' | 'q') => {
+                return KeyAction::Quit;
+            }
             KeyCode::Char('q') if !m.ctrl && !m.alt && !m.cmd => return KeyAction::Quit,
             KeyCode::Right | KeyCode::Tab | KeyCode::Char(' ') | KeyCode::Char('n') => step(1),
             KeyCode::Left | KeyCode::BackTab | KeyCode::Char('p') => step(-1),
@@ -460,7 +545,10 @@ pub fn main(args: &DemoArgs) -> Result<(), String> {
     }
     let names = names(args)?;
     let fps: u32 = match &args.fps {
-        Some(f) => f.trim().parse().map_err(|_| format!("bad --fps {f:?}: one rate, like 60"))?,
+        Some(f) => f
+            .trim()
+            .parse()
+            .map_err(|_| format!("bad --fps {f:?}: one rate, like 60"))?,
         None => 60,
     };
     let fps = fps.clamp(1, 240);
@@ -468,11 +556,21 @@ pub fn main(args: &DemoArgs) -> Result<(), String> {
     if let Some(size) = &args.snapshot {
         let (w, h) = crate::parse_size(size)?;
         let frame = first_frame(names[0], names.len(), fps, w, h);
-        print!("{}", if args.format == "ansi" { frame.to_ansi() } else { frame.to_text() });
+        print!(
+            "{}",
+            if args.format == "ansi" {
+                frame.to_ansi()
+            } else {
+                frame.to_text()
+            }
+        );
         return Ok(());
     }
     let socket = crate::hub::default_socket_path()?;
-    let control = Arc::new(Control { index: AtomicUsize::new(0), picked: AtomicBool::new(false) });
+    let control = Arc::new(Control {
+        index: AtomicUsize::new(0),
+        picked: AtomicBool::new(false),
+    });
     {
         let (socket, control, names) = (socket.clone(), control.clone(), names.clone());
         std::thread::spawn(move || {
@@ -482,7 +580,10 @@ pub fn main(args: &DemoArgs) -> Result<(), String> {
     let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
     let mut state = State::new("", None, Viewport { width, height });
     state.view.status = Some("warming up…".into());
-    let demo = ScenesDemo { control, count: names.len() };
+    let demo = ScenesDemo {
+        control,
+        count: names.len(),
+    };
     runtime::run_interactive(
         state,
         runtime::Interactive {
@@ -502,25 +603,51 @@ pub fn main(args: &DemoArgs) -> Result<(), String> {
 
 /// The first scene a moment in, as the editor draws it at `w`x`h`.
 fn first_frame(name: &str, count: usize, fps: u32, w: u16, h: u16) -> caretline::Frame {
-    let mut session = Session::new(State::new("", None, Viewport { width: w, height: h }));
+    let mut session = Session::new(State::new(
+        "",
+        None,
+        Viewport {
+            width: w,
+            height: h,
+        },
+    ));
     let rows = (h as usize).saturating_sub(1).max(1);
     let mut sc = scene(name).expect("a known scene");
-    let (text, ranges) = sc.frame(2.0, (w as usize).saturating_sub(1).max(1), rows).parts();
+    let (text, ranges) = sc
+        .frame(2.0, (w as usize).saturating_sub(1).max(1), rows)
+        .parts();
     let ranges: Vec<(usize, usize)> = ranges.iter().map(|r| (r[0], r[1])).collect();
-    session.push_frame(&text, &ranges, None, Some(status(name, 0, count, fps as f64)));
+    session.push_frame(
+        &text,
+        &ranges,
+        None,
+        Some(status(name, 0, count, fps as f64)),
+    );
     session.frame()
 }
 
 /// Plays the scenes into the editor at `socket` until it goes away: each for `seconds`, or
 /// until the person picks another.
-fn play_live(socket: &std::path::Path, names: &[&str], fps: u32, seconds: f64, control: &Control) -> Result<(), String> {
+fn play_live(
+    socket: &std::path::Path,
+    names: &[&str],
+    fps: u32,
+    seconds: f64,
+    control: &Control,
+) -> Result<(), String> {
     let mut c = Conn::connect_within(socket, Duration::from_secs(5))?;
     let period = Duration::from_secs_f64(1.0 / fps as f64);
     let size = |c: &mut Conn| -> Result<(usize, usize), String> {
         let v = c.ask(json!({"op": "view.list"}))?;
         // One column short of the view: a row as wide as the view would soft-wrap.
-        let w = (v["views"][0]["w"].as_u64().unwrap_or(80) as usize).saturating_sub(1).max(1);
-        let h = v["views"][0]["h"].as_u64().unwrap_or(24).saturating_sub(1).max(1) as usize;
+        let w = (v["views"][0]["w"].as_u64().unwrap_or(80) as usize)
+            .saturating_sub(1)
+            .max(1);
+        let h = v["views"][0]["h"]
+            .as_u64()
+            .unwrap_or(24)
+            .saturating_sub(1)
+            .max(1) as usize;
         Ok((w, h))
     };
     let (mut w, mut h) = size(&mut c)?;
@@ -543,10 +670,14 @@ fn play_live(socket: &std::path::Path, names: &[&str], fps: u32, seconds: f64, c
         }
         let t = started.elapsed().as_secs_f64();
         if t > seconds {
-            control.index.store((i + 1) % names.len(), Ordering::Relaxed);
+            control
+                .index
+                .store((i + 1) % names.len(), Ordering::Relaxed);
             continue;
         }
-        let Some(s) = sc.as_mut() else { return Err("no scene".into()) };
+        let Some(s) = sc.as_mut() else {
+            return Err("no scene".into());
+        };
         let body = s.frame(t, w, h).body();
         let st = Value::from(status(names[i], i, names.len(), rate));
         let req = format!(r#"{{"op":"frame","status":{st},{body}"#);
@@ -579,8 +710,12 @@ fn discover() -> Result<PathBuf, String> {
         .collect();
     found.sort();
     for (_, f) in found.iter().rev() {
-        let Ok(text) = std::fs::read_to_string(f) else { continue };
-        let Ok(info) = serde_json::from_str::<Value>(&text) else { continue };
+        let Ok(text) = std::fs::read_to_string(f) else {
+            continue;
+        };
+        let Ok(info) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
         if let Some(sock) = info["socket"].as_str()
             && std::os::unix::net::UnixStream::connect(sock).is_ok()
         {
@@ -597,7 +732,10 @@ fn bench(args: &DemoArgs) -> Result<(), String> {
         None => discover()?,
     };
     let rates: Vec<u32> = match &args.fps {
-        Some(f) => f.split(',').map(|f| f.trim().parse().map_err(|_| format!("bad fps {f:?}"))).collect::<Result<_, _>>()?,
+        Some(f) => f
+            .split(',')
+            .map(|f| f.trim().parse().map_err(|_| format!("bad fps {f:?}")))
+            .collect::<Result<_, _>>()?,
         None => vec![60, 120, 0],
     };
     let seconds = args.seconds.unwrap_or(3.0);
@@ -610,32 +748,62 @@ fn bench(args: &DemoArgs) -> Result<(), String> {
             (w as usize, h as usize)
         }
         // The text area: the view, less the status bar.
-        None => (views["views"][0]["w"].as_u64().unwrap_or(80) as usize, views["views"][0]["h"].as_u64().unwrap_or(24).saturating_sub(1).max(1) as usize),
+        None => (
+            views["views"][0]["w"].as_u64().unwrap_or(80) as usize,
+            views["views"][0]["h"]
+                .as_u64()
+                .unwrap_or(24)
+                .saturating_sub(1)
+                .max(1) as usize,
+        ),
     };
     let names = names(args)?;
-    println!("caretline at {}: {w}x{h} text cells, {} frames per scene", path.display(), args.frames);
+    println!(
+        "caretline at {}: {w}x{h} text cells, {} frames per scene",
+        path.display(),
+        args.frames
+    );
 
     let mut rows = Vec::new();
     for name in &names {
         let mut sc = scene(name).ok_or_else(|| format!("unknown scene {name:?}"))?;
         c.ask(json!({"op": "frame", "text": format!("precomputing {name}…"), "status": format!("precomputing {name}")}))?;
         let t0 = Instant::now();
-        let bodies: Vec<String> = (0..args.frames.max(1)).map(|k| sc.frame(k as f64 / 60.0, w, h).body()).collect();
+        let bodies: Vec<String> = (0..args.frames.max(1))
+            .map(|k| sc.frame(k as f64 / 60.0, w, h).body())
+            .collect();
         let avg = bodies.iter().map(String::len).sum::<usize>() / bodies.len().max(1);
-        println!("{name}: {} frames in {:.2} s, {:.1} KB per request", bodies.len(), t0.elapsed().as_secs_f64(), avg as f64 / 1024.0);
+        println!(
+            "{name}: {} frames in {:.2} s, {:.1} KB per request",
+            bodies.len(),
+            t0.elapsed().as_secs_f64(),
+            avg as f64 / 1024.0
+        );
         for &fps in &rates {
-            let tag = if fps == 0 { format!("{name} · unthrottled") } else { format!("{name} · {fps} fps target") };
+            let tag = if fps == 0 {
+                format!("{name} · unthrottled")
+            } else {
+                format!("{name} · {fps} fps target")
+            };
             let r = play(&mut c, &bodies, seconds, fps, spin, &tag)?;
             let line = if fps == 0 {
                 format!("{name:<8} unthrottled   {:>8.1} frames/s", r.fps())
             } else {
-                format!("{name:<8} target {fps:>4}   {:>8.1} frames/s   late p50 {} p99 {}", r.fps(), ms(r.late_pct(50)), ms(r.late_pct(99)))
+                format!(
+                    "{name:<8} target {fps:>4}   {:>8.1} frames/s   late p50 {} p99 {}",
+                    r.fps(),
+                    ms(r.late_pct(50)),
+                    ms(r.late_pct(99))
+                )
             };
             println!("  {line}");
             rows.push(line);
         }
     }
-    let summary = format!("\n  caretline frame demo, {w}x{h}\n\n  {}\n", rows.join("\n  "));
+    let summary = format!(
+        "\n  caretline frame demo, {w}x{h}\n\n  {}\n",
+        rows.join("\n  ")
+    );
     c.ask(json!({"op": "frame", "text": summary, "status": "scenes: done"}))?;
     Ok(())
 }

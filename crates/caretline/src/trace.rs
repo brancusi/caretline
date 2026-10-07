@@ -4,11 +4,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::helix::ChangeSet;
 use crate::msg::Msg;
 use crate::state::{State, View};
-use crate::views::update_doc_with_changes;
-use crate::helix::ChangeSet;
 use crate::update_with_changes;
+use crate::views::update_doc_with_changes;
 
 /// One line of a trace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,7 +128,12 @@ pub fn replay_trace_with(input: &str, host: &crate::host::Host) -> Result<Replay
 
 /// Applies `msg` through view `id` (0: the state's own) of a state with other views open,
 /// rebasing the rest. Returns its effects, or nothing when there is no such view.
-pub fn apply_with_views(state: &mut State, views: &mut [(u32, View)], id: u32, msg: Msg) -> Vec<crate::msg::Effect> {
+pub fn apply_with_views(
+    state: &mut State,
+    views: &mut [(u32, View)],
+    id: u32,
+    msg: Msg,
+) -> Vec<crate::msg::Effect> {
     apply_with_views_changes(state, views, id, msg).0
 }
 

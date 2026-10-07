@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::marks::MarkId;
 use crate::external::ExtChange;
+use crate::marks::MarkId;
 use crate::outline::NewBlock;
 
 /// Which way a motion goes.
@@ -45,7 +45,9 @@ pub enum By {
 #[serde(tag = "msg", rename_all = "snake_case")]
 pub enum Msg {
     /// Type text at every caret, replacing any selection.
-    InsertText { text: String },
+    InsertText {
+        text: String,
+    },
     InsertNewline,
     DeleteBackward,
     DeleteForward,
@@ -75,7 +77,9 @@ pub enum Msg {
         extend: bool,
     },
     /// Scroll the view by rows (negative is up). The caret follows if it would leave the view.
-    Scroll { rows: i32 },
+    Scroll {
+        rows: i32,
+    },
     SelectAll,
     /// Collapse every selection to its caret.
     Collapse,
@@ -92,21 +96,34 @@ pub enum Msg {
     /// The runtime finished a save.
     Saved,
     /// The runtime could not save.
-    SaveFailed { err: String },
+    SaveFailed {
+        err: String,
+    },
     Quit,
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
     /// The current time. Typing runs (one undo step) are measured with it.
-    Tick { now_ms: u64 },
+    Tick {
+        now_ms: u64,
+    },
     /// A display frame at `now_ms`, sent by a runtime's frame clock while the view asks for
     /// one ([`crate::View::frame_clock`]). It advances the clock as `tick` does; animation
     /// state advances from it, so a dropped frame never stalls an animation. Passive.
-    Frame { now_ms: u64 },
+    Frame {
+        now_ms: u64,
+    },
     /// Ask the runtime for a frame clock of `fps` frames per second (0 turns it off). The
     /// request is view state, so a replay asks for the same frames. Passive.
-    FrameClock { fps: u16 },
+    FrameClock {
+        fps: u16,
+    },
     /// Show a one-line message in the status bar (until the next input). Passive: it
     /// doesn't end an edit run or disarm a pending quit.
-    ShowStatus { text: String },
+    ShowStatus {
+        text: String,
+    },
 
     // Outline documents (see docs/structure.md). Elsewhere these only set a status
     // message, except `soft_break` (a line break), `select_word_at` and `paste_plain`.
@@ -118,12 +135,18 @@ pub enum Msg {
     /// Un-nest them one level.
     Outdent,
     /// Swap the caret's block (with its children) with its previous or next sibling.
-    MoveBlock { dir: Dir },
+    MoveBlock {
+        dir: Dir,
+    },
     /// Select a block's whole content (a triple-click).
-    SelectBlock { id: MarkId },
+    SelectBlock {
+        id: MarkId,
+    },
     /// Select the word at a char position (a double-click). A `click` with `extend` right
     /// after it extends by whole words.
-    SelectWordAt { pos: usize },
+    SelectWordAt {
+        pos: usize,
+    },
     /// Insert blocks a host made (an attachment, recovered text) after a block, or at the
     /// start when `after` is absent. One undo step.
     InsertBlocks {
@@ -141,13 +164,21 @@ pub enum Msg {
     // Views (see docs/architecture.md#documents-and-views).
     /// Scroll the view by rows (negative is up) without moving the caret. The view stays
     /// where it is put (`free`) until the next caret motion or edit.
-    ScrollView { rows: i32 },
+    ScrollView {
+        rows: i32,
+    },
     /// Hide a block's children in this view (outline documents). A caret inside them moves
     /// to the block's content end.
-    Fold { id: MarkId },
+    Fold {
+        id: MarkId,
+    },
     /// Show a folded block's children again.
-    Unfold { id: MarkId },
-    ToggleFold { id: MarkId },
+    Unfold {
+        id: MarkId,
+    },
+    ToggleFold {
+        id: MarkId,
+    },
 
     /// A host's own edit of the text, as one undo step (`join`: folded into the last step,
     /// with the edit before it): `[from, to)` replaced by `text`, in chars of the current
@@ -161,7 +192,9 @@ pub enum Msg {
     /// document outside the undo history: every view is mapped through them, and undo never
     /// takes them back (see docs/messages.md#external-changes). Passive: it
     /// doesn't end an edit run or clear the status.
-    External { changes: Vec<ExtChange> },
+    External {
+        changes: Vec<ExtChange>,
+    },
 
     /// Run the host's command `name` (registered with [`crate::Host::command`]) with `args`:
     /// one transaction and one undo step. An unknown name changes nothing and says so.
@@ -230,12 +263,19 @@ impl Msg {
 #[serde(tag = "effect", rename_all = "snake_case")]
 pub enum Effect {
     /// Write the document. The runtime answers with `Saved` or `SaveFailed`.
-    WriteFile { path: String, text: String },
+    WriteFile {
+        path: String,
+        text: String,
+    },
     /// Put text on the system clipboard.
-    ClipboardSet { text: String },
+    ClipboardSet {
+        text: String,
+    },
     Quit,
     /// A message for the person, from an outline document whose status bar is off.
-    Notice { text: String },
+    Notice {
+        text: String,
+    },
     /// The primary caret moved from one block to another in an outline document (a commit
     /// point for a host).
     BlockLeft {

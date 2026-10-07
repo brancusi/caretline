@@ -102,7 +102,12 @@ pub struct ViewConfig {
 
 impl Default for ViewConfig {
     fn default() -> Self {
-        ViewConfig { status_bar: true, scrolloff: 2, follow: Follow::Margin, page_overlap: 0 }
+        ViewConfig {
+            status_bar: true,
+            scrolloff: 2,
+            follow: Follow::Margin,
+            page_overlap: 0,
+        }
     }
 }
 
@@ -312,7 +317,10 @@ pub struct View {
 
 impl Default for View {
     fn default() -> Self {
-        View::new(Viewport { width: 80, height: 24 })
+        View::new(Viewport {
+            width: 80,
+            height: 24,
+        })
     }
 }
 
@@ -322,7 +330,10 @@ impl View {
         View {
             selection: Selection::point(0),
             scroll: Scroll::default(),
-            viewport: Viewport { width: viewport.width.max(1), height: viewport.height.max(1) },
+            viewport: Viewport {
+                width: viewport.width.max(1),
+                height: viewport.height.max(1),
+            },
             config: ViewConfig::default(),
             status: None,
             quit_armed: false,
@@ -374,7 +385,11 @@ impl View {
             .selection
             .ranges()
             .iter()
-            .map(|r| Range { anchor: fix(r.anchor), head: fix(r.head), old_visual_position: r.old_visual_position })
+            .map(|r| Range {
+                anchor: fix(r.anchor),
+                head: fix(r.head),
+                old_visual_position: r.old_visual_position,
+            })
             .collect();
         if ranges.is_empty() {
             ranges.push(Range::point(0));
@@ -429,7 +444,10 @@ impl Document {
             saving: None,
             dirty: false,
             path,
-            config: Config { line_ending, ..Config::default() },
+            config: Config {
+                line_ending,
+                ..Config::default()
+            },
             clipboard: Clipboard::default(),
             now_ms: 0,
             run: None,
@@ -455,7 +473,8 @@ impl Document {
     /// Keeps the mark log exactly as long as the history (a state from an older version, or
     /// written by hand, may have none).
     pub(crate) fn fit_mark_log(&mut self) {
-        self.mark_log.resize(self.history.len(), MarkDelta::default());
+        self.mark_log
+            .resize(self.history.len(), MarkDelta::default());
     }
 
     /// Repairs what a hand-edited state could get wrong: a history whose current revision
@@ -513,10 +532,13 @@ impl Document {
             let changes = crate::diff::changes(&old.to_string(), &new);
             let txn = crate::helix::Transaction::change(
                 &old,
-                changes.into_iter().map(|(a, b, t)| (a, b, (!t.is_empty()).then(|| t.as_str().into()))),
+                changes
+                    .into_iter()
+                    .map(|(a, b, t)| (a, b, (!t.is_empty()).then(|| t.as_str().into()))),
             );
             txn.apply(&mut self.text);
-            self.marks.map(old.slice(..), self.text.slice(..), txn.changes());
+            self.marks
+                .map(old.slice(..), self.text.slice(..), txn.changes());
             cs = Some(txn.changes().clone());
         }
         self.history = History::default();
@@ -675,7 +697,10 @@ impl From<StateInput> for State {
         let config = Config {
             tab_width: c.tab_width.unwrap_or(d.tab_width),
             soft_wrap: c.soft_wrap.unwrap_or(d.soft_wrap),
-            line_ending: c.line_ending.or_else(|| auto_detect_line_ending(&text)).unwrap_or(d.line_ending),
+            line_ending: c
+                .line_ending
+                .or_else(|| auto_detect_line_ending(&text))
+                .unwrap_or(d.line_ending),
             external_undo: c.external_undo.unwrap_or_default(),
             single_line: c.single_line.unwrap_or(d.single_line),
         };
@@ -686,7 +711,9 @@ impl From<StateInput> for State {
             page_overlap: c.page_overlap.unwrap_or(vd.page_overlap),
         };
         let history = input.history.unwrap_or_default();
-        let saved_revision = input.saved_revision.unwrap_or(Some(history.current_revision()));
+        let saved_revision = input
+            .saved_revision
+            .unwrap_or(Some(history.current_revision()));
         let doc = Document {
             text,
             history,
@@ -712,7 +739,10 @@ impl From<StateInput> for State {
         let view = View {
             selection: input.selection.unwrap_or_else(|| Selection::point(0)),
             scroll: input.scroll,
-            viewport: input.viewport.unwrap_or(Viewport { width: 80, height: 24 }),
+            viewport: input.viewport.unwrap_or(Viewport {
+                width: 80,
+                height: 24,
+            }),
             config: view_config,
             status: input.status,
             quit_armed: input.quit_armed,
@@ -873,7 +903,11 @@ impl State {
             path: &d.path,
             history: history.then_some(&d.history),
             // A fresh history's only revision is 0: saved there when clean, never when dirty.
-            saved_revision: if history { d.saved_revision } else { (!d.dirty).then_some(0) },
+            saved_revision: if history {
+                d.saved_revision
+            } else {
+                (!d.dirty).then_some(0)
+            },
             saving: history.then_some(d.saving),
             dirty: d.dirty,
             config: ConfigOut {
@@ -910,7 +944,10 @@ impl State {
 impl State {
     /// A fresh state for `text`. A file that doesn't exist yet counts as saved (empty).
     pub fn new(text: &str, path: Option<String>, viewport: Viewport) -> State {
-        State { doc: Document::new(text, path), view: View::new(viewport) }
+        State {
+            doc: Document::new(text, path),
+            view: View::new(viewport),
+        }
     }
 
     /// One document and one view of it.
@@ -1005,7 +1042,10 @@ impl PartialEq for Touched {
 
 impl Touched {
     pub(crate) fn all() -> Touched {
-        Touched { range: None, all: true }
+        Touched {
+            range: None,
+            all: true,
+        }
     }
 
     /// Records a change applied to the text: the range so far is mapped through it, then
@@ -1051,7 +1091,13 @@ impl Document {
     /// text (`to` may reach the end): `None` when nothing did, the whole text after a load or a
     /// repair. For a host that mirrors the text and re-reads only what changed.
     pub fn take_touched(&mut self) -> Option<(usize, usize)> {
-        let t = std::mem::replace(&mut self.touched, Touched { range: None, all: false });
+        let t = std::mem::replace(
+            &mut self.touched,
+            Touched {
+                range: None,
+                all: false,
+            },
+        );
         let n = self.text.len_chars();
         if t.all {
             return Some((0, n));

@@ -3,7 +3,9 @@
 //! every key with at most one of Ctrl, Alt and ⌘ (with or without ⇧).
 
 use caretline::commands::{binding_key, command, command_for, key_notation};
-use caretline::{command_msg, commands, default_keymap, keymap_for, By, Dir, Key, KeyCode, Mods, Msg};
+use caretline::{
+    command_msg, commands, default_keymap, keymap_for, By, Dir, Key, KeyCode, Mods, Msg,
+};
 use std::collections::HashSet;
 
 #[test]
@@ -12,12 +14,23 @@ fn ids_are_unique_and_every_command_has_a_message() {
     for c in commands() {
         assert!(seen.insert(c.id), "{} twice", c.id);
         let (cat, verb) = c.id.split_once('.').expect("category.verb");
-        assert!(!cat.is_empty() && !verb.is_empty() && c.id == c.id.to_lowercase(), "{}", c.id);
+        assert!(
+            !cat.is_empty() && !verb.is_empty() && c.id == c.id.to_lowercase(),
+            "{}",
+            c.id
+        );
         let block = c.takes_block.then_some(caretline::MarkId(1));
-        assert!(command_msg(c.id, block).is_some(), "{} has no message", c.id);
+        assert!(
+            command_msg(c.id, block).is_some(),
+            "{} has no message",
+            c.id
+        );
         assert!(!c.name.is_empty() && !c.description.is_empty());
     }
-    assert!(command_msg("view.fold", None).is_none(), "a block command needs its block");
+    assert!(
+        command_msg("view.fold", None).is_none(),
+        "a block command needs its block"
+    );
     assert!(command_msg("nope.nothing", None).is_none());
 }
 
@@ -26,18 +39,43 @@ fn every_binding_names_a_command_and_a_key() {
     for outline in [false, true] {
         let mut keys = HashSet::new();
         for b in default_keymap(outline) {
-            assert!(command(b.command).is_some(), "{} → {} isn't in the catalog", b.keys, b.command);
+            assert!(
+                command(b.command).is_some(),
+                "{} → {} isn't in the catalog",
+                b.keys,
+                b.command
+            );
             let k = binding_key(&b).unwrap_or_else(|| panic!("{} isn't one key", b.keys));
-            assert_eq!(key_notation(&k), b.keys, "the table writes keys as key_notation does");
-            assert!(keys.insert(b.keys), "{} bound twice (outline {outline})", b.keys);
+            assert_eq!(
+                key_notation(&k),
+                b.keys,
+                "the table writes keys as key_notation does"
+            );
+            assert!(
+                keys.insert(b.keys),
+                "{} bound twice (outline {outline})",
+                b.keys
+            );
             assert_eq!(command_for(outline, &k), Some(b.command));
         }
     }
 }
 
 const CODES: &[KeyCode] = &[
-    KeyCode::Enter, KeyCode::Backspace, KeyCode::Delete, KeyCode::Left, KeyCode::Right, KeyCode::Up, KeyCode::Down,
-    KeyCode::Home, KeyCode::End, KeyCode::PageUp, KeyCode::PageDown, KeyCode::Tab, KeyCode::BackTab, KeyCode::Esc,
+    KeyCode::Enter,
+    KeyCode::Backspace,
+    KeyCode::Delete,
+    KeyCode::Left,
+    KeyCode::Right,
+    KeyCode::Up,
+    KeyCode::Down,
+    KeyCode::Home,
+    KeyCode::End,
+    KeyCode::PageUp,
+    KeyCode::PageDown,
+    KeyCode::Tab,
+    KeyCode::BackTab,
+    KeyCode::Esc,
 ];
 
 /// The table gives what the old functions gave (see the module docs).
@@ -45,11 +83,21 @@ const CODES: &[KeyCode] = &[
 fn the_table_agrees_with_the_old_keymap() {
     let mut diffs = Vec::new();
     let mut codes: Vec<KeyCode> = CODES.to_vec();
-    codes.extend(('a'..='z').chain('A'..='Z').chain("0[]-=;',./\\` é<".chars()).map(KeyCode::Char));
+    codes.extend(
+        ('a'..='z')
+            .chain('A'..='Z')
+            .chain("0[]-=;',./\\` é<".chars())
+            .map(KeyCode::Char),
+    );
     for &code in &codes {
         for m in 0..8u8 {
             for shift in [false, true] {
-                let mods = Mods { ctrl: m == 1, alt: m == 2, cmd: m == 3, shift };
+                let mods = Mods {
+                    ctrl: m == 1,
+                    alt: m == 2,
+                    cmd: m == 3,
+                    shift,
+                };
                 if m > 3 {
                     continue;
                 }
@@ -60,11 +108,25 @@ fn the_table_agrees_with_the_old_keymap() {
                 if code == KeyCode::Tab && shift {
                     continue;
                 }
-                if (plain || keymap_for(false, &key).is_some()) && keymap_for(false, &key) != old_keymap(&key) {
-                    diffs.push(format!("plain {}: {:?} want {:?}", key_notation(&key), keymap_for(false, &key), old_keymap(&key)));
+                if (plain || keymap_for(false, &key).is_some())
+                    && keymap_for(false, &key) != old_keymap(&key)
+                {
+                    diffs.push(format!(
+                        "plain {}: {:?} want {:?}",
+                        key_notation(&key),
+                        keymap_for(false, &key),
+                        old_keymap(&key)
+                    ));
                 }
-                if (plain || keymap_for(true, &key).is_some()) && keymap_for(true, &key) != old_outline_keymap(&key) {
-                    diffs.push(format!("outline {}: {:?} want {:?}", key_notation(&key), keymap_for(true, &key), old_outline_keymap(&key)));
+                if (plain || keymap_for(true, &key).is_some())
+                    && keymap_for(true, &key) != old_outline_keymap(&key)
+                {
+                    diffs.push(format!(
+                        "outline {}: {:?} want {:?}",
+                        key_notation(&key),
+                        keymap_for(true, &key),
+                        old_outline_keymap(&key)
+                    ));
                 }
             }
         }
@@ -123,7 +185,11 @@ fn old_keymap(key: &Key) -> Option<Msg> {
                     _ => None,
                 };
             }
-            let c = if m.shift { c.to_uppercase().next().unwrap_or(c) } else { c };
+            let c = if m.shift {
+                c.to_uppercase().next().unwrap_or(c)
+            } else {
+                c
+            };
             Some(Msg::InsertText {
                 text: c.to_string(),
             })
@@ -201,20 +267,42 @@ fn old_outline_keymap(key: &Key) -> Option<Msg> {
     old_keymap(key)
 }
 
-
 #[allow(dead_code)]
 fn _uses(_: By, _: Dir, _: Msg) {}
 
 #[test]
 fn the_protocol_lists_commands_and_the_keymap() {
-    let mut s = caretline::Session::new(caretline::State::new("x", None, caretline::Viewport { width: 20, height: 4 }));
-    let r: serde_json::Value = serde_json::from_str(&s.handle(r#"{"id":1,"op":"commands.list"}"#, None).response).unwrap();
+    let mut s = caretline::Session::new(caretline::State::new(
+        "x",
+        None,
+        caretline::Viewport {
+            width: 20,
+            height: 4,
+        },
+    ));
+    let r: serde_json::Value =
+        serde_json::from_str(&s.handle(r#"{"id":1,"op":"commands.list"}"#, None).response).unwrap();
     let cmds = r["result"]["commands"].as_array().unwrap();
     assert_eq!(cmds.len(), commands().len());
-    assert!(cmds.iter().any(|c| c["id"] == "move.word_right" && c["category"] == "move"), "{r}");
-    let r: serde_json::Value = serde_json::from_str(&s.handle(r#"{"id":2,"op":"keymap.get","outline":true}"#, None).response).unwrap();
+    assert!(
+        cmds.iter()
+            .any(|c| c["id"] == "move.word_right" && c["category"] == "move"),
+        "{r}"
+    );
+    let r: serde_json::Value = serde_json::from_str(
+        &s.handle(r#"{"id":2,"op":"keymap.get","outline":true}"#, None)
+            .response,
+    )
+    .unwrap();
     let b = r["result"]["bindings"].as_array().unwrap();
-    assert!(b.iter().any(|b| b["keys"] == "<tab>" && b["command"] == "structure.indent"), "{r}");
+    assert!(
+        b.iter()
+            .any(|b| b["keys"] == "<tab>" && b["command"] == "structure.indent"),
+        "{r}"
+    );
     let hello = s.handle(r#"{"id":3,"op":"hello"}"#, None).response;
-    assert!(hello.contains("commands.list") && hello.contains("keymap.get"), "{hello}");
+    assert!(
+        hello.contains("commands.list") && hello.contains("keymap.get"),
+        "{hello}"
+    );
 }
