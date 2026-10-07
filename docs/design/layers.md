@@ -692,7 +692,7 @@ These are enforced in the layer reducer, so they hold for every client and every
   it (host config `agent_dim = "never" | "always"`, default `never`), or the person started the
   walkthrough the agent is stepping.
 - **Size:** a `hint`'s text at most 280 characters and 6 lines; title at most 40. Other kinds'
-  data at most 2 KB.
+  data at most 1 KB (`Limits::content_bytes`).
 - **Attribution:** renderers get the owner, and a host must draw agent layers so they can't pass
   as its own (the CLI titles them `◆ <actor>` in its agent hue).
 - **Dismissal:** the person always wins: `hint.dismiss` and `layers.toggle` act on agent layers
