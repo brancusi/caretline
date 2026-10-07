@@ -121,7 +121,6 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
     match msg {
         Msg::InsertText { text } => {
             let text = normalize_line_endings(&text, state.doc.config.line_ending.as_str());
-            let text = if state.doc.single_line() { crate::single_line::flatten(&text) } else { text };
             if !text.is_empty() {
                 insert(state, &text, Some(RunKind::Typing));
             }
@@ -279,13 +278,8 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
                 }
                 None => (state.doc.clipboard.text.clone(), state.doc.clipboard.marks.clone()),
             };
-            let flat = if state.doc.single_line() { crate::single_line::flatten(&text) } else { text.clone() };
             if text.is_empty() {
                 state.view.status = Some("the clipboard is empty".into());
-            } else if flat.is_empty() {
-                // Only line breaks: nothing to put on one line.
-            } else if flat != text {
-                paste_text(state, &flat, &[]);
             } else {
                 paste_text(state, &text, &marks);
             }

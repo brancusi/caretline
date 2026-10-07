@@ -10,8 +10,9 @@
 - `Config::single_line` (`"config": {"single_line": true}`, left out of JSON while false): a
   one-line text field. The text never holds a line break: `InsertNewline` and `SoftBreak`
   change nothing; line breaks typed, pasted, edited in by a host or an input rule, or put in
-  from elsewhere (`Msg::External`, `text.set`) become spaces, `\r\n` counted once, and those at
-  the end of the inserted text are dropped; lines never wrap; motion by a line, row or page goes
+  from elsewhere (`Msg::External`, `text.set`) are flattened where they land: each run (`\r\n`
+  counted once) becomes one space, or nothing at the start or end of the line or next to
+  whitespace, so a break never joins two words or doubles a space; lines never wrap; motion by a line, row or page goes
   to the start or the end. `State::sanitize` flattens line breaks already in the text and starts
   the history again when its undo or redo could bring one back. Ignored (and cleared) in an
   outline document. `Document::single_line()` says whether it applies.

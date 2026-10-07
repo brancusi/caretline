@@ -42,9 +42,11 @@ In a **one-line document** (`config.single_line`, see [api.md](api.md#create-a-s
 never holds a line break. `insert_newline` and `soft_break` change nothing (an input rule still
 sees them first, so a host can make Enter its submit). Any other text that goes in (typed,
 pasted, a host's `edit` or command, an input rule's edit, an `external` change, `text.set`) is
-flattened: line breaks at the end of the inserted text are dropped, and every other one
-(`\r\n` counted once) becomes a space, so pasting `"one\ntwo\n"` puts in `one two`. Text that
-is only line breaks changes nothing. Motion by a line, a visual row or a page goes to the start
+flattened where it lands: each run of line breaks (`\r\n` counted once) becomes one space,
+except that a run at the start or the end of the line, or next to whitespace, is dropped. So a
+break never joins two words and never doubles a space: pasting `"one\ntwo\n"` before `x` puts in
+`one two ` (`one two x`), at the end of the line `one two`, and a blank line between two
+paragraphs is one space. Motion by a line, a visual row or a page goes to the start
 (backward) or the end (forward), extending the selection with `extend`.
 
 ### Motion and selection

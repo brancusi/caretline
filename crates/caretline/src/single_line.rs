@@ -1,9 +1,11 @@
 //! One-line documents ([`crate::Config::single_line`]): the text never holds a line break.
 //!
-//! Every way text gets in is flattened the same way: line breaks at the end are dropped, and
-//! every other line break (`\r\n` counted once) becomes one space. Local edits are flattened
-//! where they are committed ([`flatten_txn`]), so typing, pasting, a host's `Edit`s and input
-//! rules all agree; changes from elsewhere and loaded states are flattened as text
+//! Every way text gets in is flattened by one rule, applied where the text lands: each run of
+//! line breaks (`\r\n` counted once) becomes one space, except that a run at the start or end
+//! of the line, or next to whitespace, is dropped. So a break never joins two words and never
+//! doubles a space. Local edits are flattened where they are committed ([`flatten_txn`]), so
+//! typing, pasting, a host's `Edit`s and input rules all agree; changes from elsewhere are
+//! flattened against the text around them ([`flatten_at`]), and a loaded text as a whole line
 //! ([`flatten`]).
 
 use crate::helix::chars::char_is_line_ending;
@@ -24,51 +26,71 @@ pub(crate) fn rope_has_break(text: &Rope) -> bool {
     text.len_lines() > 1 || text.chars().any(is_break)
 }
 
-/// `text` on one line: line breaks at the end dropped, every other one (CRLF counted once) a
-/// space.
+/// `text` as a whole line: [`flatten_at`] with nothing around it.
 pub(crate) fn flatten(text: &str) -> String {
+    flatten_at(text, None, None)
+}
+
+/// `text` put in between `left` and `right` (the chars around it, `None` at the line's start
+/// or end), on one line: each run of line breaks becomes one space, except that a run at the
+/// start or end of the line, or next to whitespace, is dropped.
+pub(crate) fn flatten_at(text: &str, left: Option<char>, right: Option<char>) -> String {
     if !has_break(text) {
         return text.to_string();
     }
-    flatten_mapped(text).0
+    flatten_mapped(text, left, right).0
 }
 
-/// [`flatten`], and where each char boundary of `text` (`0..=len` in chars) lands in it.
-fn flatten_mapped(text: &str) -> (String, Vec<usize>) {
+/// [`flatten_at`], and where each char boundary of `text` (`0..=len` in chars) lands in it.
+fn flatten_mapped(text: &str, left: Option<char>, right: Option<char>) -> (String, Vec<usize>) {
     let chars: Vec<char> = text.chars().collect();
-    let cut = chars.len() - chars.iter().rev().take_while(|c| is_break(**c)).count();
     let mut out = String::with_capacity(text.len());
     let mut map = vec![0; chars.len() + 1];
     let mut n = 0;
     let mut i = 0;
-    while i < cut {
+    while i < chars.len() {
         map[i] = n;
-        let c = chars[i];
-        if c == '\r' && chars.get(i + 1) == Some(&'\n') {
-            out.push(' ');
+        if !is_break(chars[i]) {
+            out.push(chars[i]);
             n += 1;
-            map[i + 1] = n;
-            i += 2;
+            i += 1;
             continue;
         }
-        out.push(if is_break(c) { ' ' } else { c });
-        n += 1;
-        i += 1;
+        let run = i;
+        while i < chars.len() && is_break(chars[i]) {
+            i += 1;
+        }
+        let before = if run > 0 { Some(chars[run - 1]) } else { left };
+        let after = if i < chars.len() { Some(chars[i]) } else { right };
+        if matches!((before, after), (Some(b), Some(a)) if !b.is_whitespace() && !a.is_whitespace()) {
+            out.push(' ');
+            n += 1;
+        }
+        for m in &mut map[run + 1..i] {
+            *m = n;
+        }
     }
-    for m in &mut map[cut..] {
-        *m = n;
-    }
+    map[chars.len()] = n;
     (out, map)
 }
 
-/// `txn` (against `old`) with every text it inserts flattened, and its selection moved to
-/// match. Unchanged when it inserts no line break.
+/// The chars around `[from, to)` of `old`: `None` at the line's (the text's) start or end.
+pub(crate) fn around(old: &Rope, from: usize, to: usize) -> (Option<char>, Option<char>) {
+    let left = (from > 0).then(|| old.char(from - 1));
+    let right = (to < old.len_chars()).then(|| old.char(to));
+    (left, right)
+}
+
+/// `txn` (against `old`) with every text it inserts flattened where it lands ([`flatten_at`]),
+/// and its selection moved to match. Unchanged when it inserts no line break.
 pub(crate) fn flatten_txn(old: &Rope, txn: Transaction) -> Transaction {
     let breaks = txn.changes().changes().iter().any(|op| matches!(op, Operation::Insert(s) if has_break(s)));
     if !breaks {
         return txn;
     }
-    // Each change: old `[from, to)`, its inserted text, and where it starts in the new text.
+    // Each change (the ops between two retains): old `[from, to)`, its inserted text, and
+    // where it starts in the new text. Between two changes the old text is kept, so the chars
+    // around a change are the old text's.
     let mut changes: Vec<(usize, usize, String, usize)> = Vec::new();
     let mut open: Option<(usize, usize, String, usize)> = None;
     let (mut old_pos, mut new_pos) = (0, 0);
@@ -95,7 +117,8 @@ pub(crate) fn flatten_txn(old: &Rope, txn: Transaction) -> Transaction {
     let mut inserts: Vec<(usize, usize, Vec<usize>)> = Vec::new();
     let mut flat: Vec<(usize, usize, Option<Tendril>)> = Vec::new();
     for (from, to, text, start) in changes {
-        let (f, map) = flatten_mapped(&text);
+        let (left, right) = around(old, from, to);
+        let (f, map) = flatten_mapped(&text, left, right);
         inserts.push((start, text.chars().count(), map));
         flat.push((from, to, (!f.is_empty()).then(|| Tendril::from(f.as_str()))));
     }
@@ -130,18 +153,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn flattens_breaks() {
+    fn a_run_of_breaks_is_one_space_between_words() {
         assert_eq!(flatten("a\nb"), "a b");
         assert_eq!(flatten("a\r\nb\rc"), "a b c");
-        assert_eq!(flatten("a\n\nb"), "a  b");
+        assert_eq!(flatten("a\n\nb"), "a b");
         assert_eq!(flatten("a\r\n\n"), "a");
-        assert_eq!(flatten("\nfoo"), " foo");
+        assert_eq!(flatten("\nfoo"), "foo");
         assert_eq!(flatten("\n"), "");
+        // Next to whitespace, a break adds nothing.
+        assert_eq!(flatten("a \nb"), "a b");
+        assert_eq!(flatten("a\n  b"), "a  b");
+    }
+
+    #[test]
+    fn the_text_around_counts() {
+        assert_eq!(flatten_at("and\n", None, Some('o')), "and ");
+        assert_eq!(flatten_at("foo\n", Some('x'), None), "foo");
+        assert_eq!(flatten_at("\nfoo", Some('x'), None), " foo");
+        assert_eq!(flatten_at("\nfoo", Some(' '), None), "foo");
+        assert_eq!(flatten_at("\n", Some('a'), Some('b')), " ");
+        assert_eq!(flatten_at("\n", Some('a'), Some(' ')), "");
     }
 
     #[test]
     fn maps_positions() {
-        let (s, map) = flatten_mapped("a\r\nb\n");
+        let (s, map) = flatten_mapped("a\r\nb\n", None, None);
         assert_eq!(s, "a b");
         assert_eq!(map, vec![0, 1, 2, 2, 3, 3]);
     }

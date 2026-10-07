@@ -107,11 +107,7 @@ pub(crate) fn apply(doc: &mut Document, views: &mut [View], msg: Msg) -> Vec<Eff
 /// it was skipped.
 fn one(doc: &mut Document, change: &ExtChange) -> Result<Option<ChangeSet>, String> {
     let le = doc.config.line_ending.as_str().to_string();
-    let single = doc.single_line();
-    let lines = |t: &str| {
-        let t = crate::update::normalize_line_endings(t, &le);
-        if single { crate::single_line::flatten(&t) } else { t }
-    };
+    let lines = |t: &str| crate::update::normalize_line_endings(t, &le);
     let rope = doc.text.clone();
     let text = rope.slice(..);
     let len = text.len_chars();
@@ -124,7 +120,15 @@ fn one(doc: &mut Document, change: &ExtChange) -> Result<Option<ChangeSet>, Stri
             let b = o.block_at(text, from);
             (b.start <= from && to <= b.end && b.id != MarkId(u64::MAX)).then(|| (b.id, b.start, b.attrs.clone()))
         });
-        return Ok(Some(edit(doc, vec![least(text, from, to, lines(ins))], move |m, _| keep_mark(m, keep))));
+        // A one-line document: flattened where it lands, between the chars around it.
+        let ins = match doc.single_line() {
+            true => {
+                let (left, right) = crate::single_line::around(&rope, from, to);
+                crate::single_line::flatten_at(&lines(ins), left, right)
+            }
+            false => lines(ins),
+        };
+        return Ok(Some(edit(doc, vec![least(text, from, to, ins)], move |m, _| keep_mark(m, keep))));
     }
     if let ExtChange::SetData { id, data } = change {
         doc.marks.set_data(*id, data.clone()).ok_or(format!("no mark {}", id.0))?;

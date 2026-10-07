@@ -27,9 +27,10 @@ pub struct Config {
     /// What a change from elsewhere ([`crate::Msg::External`]) does to the undo history.
     #[serde(default, skip_serializing_if = "ExternalUndo::is_default")]
     pub external_undo: ExternalUndo,
-    /// A one-line field: the text never holds a line break. Enter changes nothing, line breaks
-    /// typed, pasted or put in from elsewhere become spaces (those at the end are dropped),
-    /// lines never wrap, and Up and Down go to the start and the end. Ignored (and cleared by
+    /// A one-line field: the text never holds a line break. Enter changes nothing; a run of
+    /// line breaks typed, pasted or put in from elsewhere becomes one space where it lands, or
+    /// nothing at the line's start or end or next to whitespace; lines never wrap; Up and Down
+    /// go to the start and the end. Ignored (and cleared by
     /// [`Document::sanitize`]) in an outline document. After turning it on directly, call
     /// [`State::sanitize`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

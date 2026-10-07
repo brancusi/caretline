@@ -1,7 +1,7 @@
 //! One-line documents (`config.single_line`): a text field. The text never holds a line
-//! break: Enter changes nothing, breaks typed, pasted, edited in or put in from elsewhere
-//! become spaces (those at the end are dropped), lines never wrap, Up and Down go to the
-//! start and the end.
+//! break: Enter changes nothing; a run of breaks typed, pasted, edited in or put in from
+//! elsewhere becomes one space where it lands, or nothing at the line's start or end or next
+//! to whitespace; lines never wrap; Up and Down go to the start and the end.
 
 mod common;
 
@@ -62,10 +62,19 @@ fn s02_enter_keeps_a_selection() {
 // Typed and pasted text
 
 #[test]
-fn s03_pasted_lines_join_with_spaces_and_the_last_break_drops() {
-    let mut s = field("a▮b");
+fn s03_pasted_lines_join_with_spaces() {
+    // Before more text, the last break is a space too: a break never joins two words.
+    let mut s = field("a ▮b");
     send(&mut s, [Msg::Paste { text: Some("one\ntwo\nthree\n".into()) }]);
-    assert_eq!(show(&s), "aone two three▮b");
+    assert_eq!(show(&s), "a one two three ▮b");
+    // At the end of the line, it is dropped.
+    let mut s = field("x ▮");
+    send(&mut s, [Msg::Paste { text: Some("foo\n".into()) }]);
+    assert_eq!(show(&s), "x foo▮");
+    // At the start of the line, a leading break too.
+    let mut s = field("▮one");
+    send(&mut s, [Msg::Paste { text: Some("\nand\n".into()) }]);
+    assert_eq!(show(&s), "and ▮one");
 }
 
 #[test]
@@ -75,17 +84,28 @@ fn s04_crlf_counts_once() {
     assert_eq!(show(&s), "x y z▮");
     send(&mut s, [Msg::InsertText { text: " p\r\nq".into() }]);
     assert_eq!(show(&s), "x y z p q▮");
-    // Blank lines inside: one space per break.
+    // Blank lines inside: a run of breaks is one space.
     send(&mut s, [Msg::InsertText { text: "\n\nr".into() }]);
-    assert_eq!(show(&s), "x y z p q  r▮");
+    assert_eq!(show(&s), "x y z p q r▮");
+    // Next to a space, a break adds none: no doubled spaces.
+    send(&mut s, [Msg::InsertText { text: " \ns\n ".into() }]);
+    assert_eq!(show(&s), "x y z p q r s ▮");
 }
 
 #[test]
-fn s05_pasting_only_line_breaks_changes_nothing() {
-    let mut s = field("a⟦b▮⟧c");
+fn s05_pasting_only_line_breaks() {
+    // At the end of the line: nothing.
+    let mut s = field("ab▮");
     send(&mut s, [Msg::Paste { text: Some("\r\n\n".into()) }, Msg::InsertText { text: "\n".into() }]);
-    assert_eq!(show(&s), "a⟦b▮⟧c");
+    assert_eq!(show(&s), "ab▮");
     assert!(!s.doc.dirty);
+    // Between two words: one space, over the selection like any paste.
+    let mut s = field("a⟦b▮⟧c");
+    send(&mut s, [Msg::Paste { text: Some("\r\n\n".into()) }]);
+    assert_eq!(show(&s), "a ▮c");
+    // Next to that space: nothing more.
+    send(&mut s, [Msg::InsertText { text: "\n".into() }]);
+    assert_eq!(show(&s), "a ▮c");
 }
 
 #[test]
@@ -110,16 +130,16 @@ fn s07_multi_cursor_typing_on_one_line() {
     keys(&mut s, "x<cr>y");
     assert_eq!(text(&s), "axybcxyd");
     send(&mut s, [Msg::Paste { text: Some("1\n2\n".into()) }]);
-    assert_eq!(text(&s), "axy1 2bcxy1 2d");
+    assert_eq!(text(&s), "axy1 2 bcxy1 2 d");
     let carets: Vec<usize> = s.view.selection.iter().map(|r| r.head).collect();
-    assert_eq!(carets, vec![6, 13]);
+    assert_eq!(carets, vec![7, 15]);
 }
 
 #[test]
 fn s08_a_hosts_edit_and_input_rule_are_flattened_too() {
     let mut s = field("ab▮");
     send(&mut s, [Msg::Edit { changes: vec![(1, 1, "\nX\r\n".into())], join: false }]);
-    assert_eq!(text(&s), "a Xb");
+    assert_eq!(text(&s), "a X b");
     // An input rule that puts a line break in, with its own selection after it.
     s.doc.set_host(Host::new().input_rule("test.lines", |ctx, msg| {
         let Msg::InsertText { text } = msg else { return None };
@@ -131,7 +151,7 @@ fn s08_a_hosts_edit_and_input_rule_are_flattened_too() {
         })
     }));
     keys(&mut s, "<end>|");
-    assert_eq!(show(&s), "a Xb1 2▮");
+    assert_eq!(show(&s), "a X b1 2▮");
 }
 
 // ---------------------------------------------------------------------------------------
@@ -142,11 +162,14 @@ fn s09_an_external_change_with_line_breaks_is_flattened_outside_undo() {
     let mut s = field("one▮");
     keys(&mut s, " two");
     send(&mut s, [Msg::External { changes: vec![ExtChange::Replace { from: 0, to: 0, text: "zero\r\nand\n".into() }] }]);
-    // As in a paste, the break at the end of the text put in is dropped.
-    assert_eq!(show(&s), "zero andone two▮");
+    // The break before "one" is a space: it never joins two words.
+    assert_eq!(show(&s), "zero and one two▮");
     // Undo takes back only the local typing.
     keys(&mut s, "<c-z>");
-    assert_eq!(show(&s), "zero andone▮");
+    assert_eq!(show(&s), "zero and one▮");
+    // A break put in at the end of the line is dropped.
+    send(&mut s, [Msg::External { changes: vec![ExtChange::Replace { from: 12, to: 12, text: "!\n".into() }] }]);
+    assert_eq!(text(&s), "zero and one!");
 
     // text.set: the whole new text is flattened, then diffed.
     let mut session = Session::new(field("abc▮"));

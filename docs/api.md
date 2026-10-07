@@ -97,8 +97,8 @@ state.view.config.status_bar = false; // every row shows text; no status bar
 
 `config.single_line` makes the document a one-line text field (a filter box, a prompt): the
 text never holds a line break. Enter changes nothing, line breaks typed, pasted, edited in or
-changed from elsewhere become spaces (those at the end of the inserted text are dropped), lines
-never wrap and scroll sideways instead, and Up, Down and the page keys go to the start or the
+changed from elsewhere become spaces where they land (never joining two words or doubling a
+space), lines never wrap and scroll sideways instead, and Up, Down and the page keys go to the start or the
 end. It is ignored in a block document (`sanitize` turns it off there). After setting it
 directly, call `state.sanitize()`: line breaks already in the text are flattened the same way,
 and a history whose undo or redo could bring one back starts again. In JSON it is
