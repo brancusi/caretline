@@ -12,7 +12,9 @@ clap = { version = "4", features = ["derive", "env"] }
 libc = "0.2"
 rand = "0.9"
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+# No features here: the engine inherits this, and serde_json features (`preserve_order`,
+# `arbitrary_precision`) apply to a host's whole build. Binaries add their own.
+serde_json = "1"
 
 [profile.release]
 lto = "fat"

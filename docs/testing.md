@@ -14,6 +14,7 @@ keys or messages, and the expected result. No terminal, no timing, no mocks.
 | [`caretline/tests/outline.rs`](../crates/caretline/tests/outline.rs) | Block goldens in block notation (` ‖ ` blocks with a blank row between, ` ¦ ` without, `⏎` a soft break), with block ids: Enter, Backspace and Delete at block edges, Tab, tags, moves, atomic images, copy and paste, blank rows, host messages and effects |
 | [`caretline/tests/host.rs`](../crates/caretline/tests/host.rs) | The extension points with a made-up host: commands (undo, traces, replay with the host, the protocol), input rules, mark payloads through cut, paste, undo and JSON, decorations and hit-testing, tags |
 | [`caretline/tests/commands.rs`](../crates/caretline/tests/commands.rs) | The command catalog and the keymap as data: ids, messages, bindings, agreement with the hand-written keymap it replaced, the protocol ops |
+| [`caretline/tests/serde_features.rs`](../crates/caretline/tests/serde_features.rs) | The engine's JSON under serde_json features a host may turn on: the engine's manifest enables neither `preserve_order` nor `arbitrary_precision`, responses keep their key order, marks, payloads, clipboards, messages, protocol requests and traces round-trip |
 | [`caretline/tests/scope.rs`](../crates/caretline/tests/scope.rs) | No host concept (task, status vocabulary, journal…) named in the engine's sources |
 | [`caretline/tests/docs.rs`](../crates/caretline/tests/docs.rs) | The examples in these docs run |
 | [`caretline/tests/outline_fuzz.rs`](../crates/caretline/tests/outline_fuzz.rs) | Outline properties over random outlines and messages: blocks and marks agree, ids unique, no caret in a marker or an image, undo and redo exact (marks included), kind changes move no other block, host commands (a made-up retagging host) included, cut and paste in place keeps ids, Markdown files round-trip. `CARETLINE_OUTLINE_SEEDS` runs more seeds |
@@ -28,6 +29,22 @@ Run them:
 cargo test -p caretline
 cargo test -p caretline-cli
 ```
+
+Cargo turns a dependency's features on for a whole build, so a host that enables serde_json's
+`preserve_order` (insertion-ordered objects) or `arbitrary_precision` (exact numbers) enables
+it in the engine too. The engine enables neither itself (it would change JSON for every crate
+in the host's build), and its output must not depend on them: protocol responses are structs,
+whose keys come out in declaration order, never `json!` maps. CI runs the engine's tests with
+neither and with each:
+
+```sh
+cargo test -p caretline
+cargo test -p caretline --features serde_json/preserve_order
+cargo test -p caretline --features serde_json/arbitrary_precision
+```
+
+`cargo test -p caretline` on its own runs with neither; `cargo test --workspace` runs it with
+`preserve_order`, which the binaries enable for their own output.
 
 ## Caret notation
 

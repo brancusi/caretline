@@ -51,6 +51,17 @@ jobs:
             echo "caretline (the engine) must not depend on a host, terminal or async crate" >&2; exit 1
           fi
 
+      - name: The engine under serde_json features a host may enable
+        # Cargo unifies features across a host's build. The engine enables none of them
+        # (tests/serde_features.rs checks its manifest); its JSON must not change with them.
+        run: |
+          cargo test -p caretline --locked
+          cargo test -p caretline --locked --features serde_json/preserve_order
+          cargo test -p caretline --locked --features serde_json/arbitrary_precision
+          if cargo tree -p caretline -e features -i serde_json --locked | grep -E 'preserve_order|arbitrary_precision'; then
+            echo "caretline (the engine) must not enable serde_json's preserve_order or arbitrary_precision" >&2; exit 1
+          fi
+
       - name: Format (report only until the one-time reformat lands)
         continue-on-error: true
         run: cargo fmt --all --check

@@ -18,7 +18,9 @@ caretline = { path = "../caretline", version = "0.3" }
 # The official MCP SDK (Apache-2.0).
 rmcp = { version = "3.5", default-features = false, features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "time"] }
-serde_json = { workspace = true }
+# Insertion-ordered JSON objects for this binary's own output (not the engine's: it is a
+# library, and the feature would apply to every crate in a host's build).
+serde_json = { workspace = true, features = ["preserve_order"] }
 clap = { workspace = true }
 libc = { workspace = true }
 

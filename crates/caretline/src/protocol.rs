@@ -406,13 +406,13 @@ impl Session {
         match req.op.as_str() {
             "hello" => Ok(reply(to_line(
                 id,
-                serde_json::json!({
-                    "proto": PROTO,
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "rev": self.rev(),
-                    "ops": OPS,
-                    "commands": self.state().doc.host().command_names(),
-                }),
+                Hello {
+                    proto: PROTO,
+                    version: env!("CARGO_PKG_VERSION"),
+                    rev: self.rev(),
+                    ops: OPS,
+                    commands: self.state().doc.host().command_names(),
+                },
             ))),
             "state.get" => {
                 #[derive(Serialize)]
@@ -444,7 +444,7 @@ impl Session {
                 let state = req.state.ok_or_else(|| err("bad_request", "state.set needs a state"))?;
                 let rev = self.set_state(state);
                 Ok(Handled {
-                    response: to_line(id, serde_json::json!({ "rev": rev })),
+                    response: to_line(id, Rev { rev }),
                     change: Some(Change { rev, msgs: Vec::new(), state_set: true, view: None }),
                     control: None,
                 })
@@ -454,7 +454,7 @@ impl Session {
                 let text = req.text.ok_or_else(|| err("bad_request", "frame needs a text"))?;
                 let rev = self.push_frame(&text, &req.highlights, req.caret, req.status);
                 Ok(Handled {
-                    response: to_line(id, serde_json::json!({ "rev": rev })),
+                    response: to_line(id, Rev { rev }),
                     change: Some(Change { rev, msgs: Vec::new(), state_set: true, view: None }),
                     control: None,
                 })
@@ -465,7 +465,7 @@ impl Session {
                 let on = self.acting_view(req.view, own)?;
                 let applied: Vec<Msg> = self.set_text_on(on, text).into_iter().collect();
                 let rev = self.rev();
-                let response = to_line(id, serde_json::json!({ "rev": rev, "changed": !applied.is_empty(), "view": on, "msgs": applied }));
+                let response = to_line(id, TextSet { rev, changed: !applied.is_empty(), view: on, msgs: &applied });
                 let change = (!applied.is_empty()).then_some(Change { rev, msgs: applied, state_set: false, view: (on != 0).then_some(on) });
                 Ok(Handled { response, change, control: None })
             }
@@ -542,13 +542,13 @@ impl Session {
             "subscribe" => {
                 let sub = Subscription { msgs: req.with_msgs.unwrap_or(true), frame: req.frame, state: req.with_state };
                 Ok(Handled {
-                    response: to_line(id, serde_json::json!({ "rev": self.rev(), "subscribed": true })),
+                    response: to_line(id, Subscribed { rev: self.rev(), subscribed: true }),
                     change: None,
                     control: Some(Control::Subscribe(sub)),
                 })
             }
             "unsubscribe" => Ok(Handled {
-                response: to_line(id, serde_json::json!({ "rev": self.rev(), "subscribed": false })),
+                response: to_line(id, Subscribed { rev: self.rev(), subscribed: false }),
                 change: None,
                 control: Some(Control::Unsubscribe),
             }),
@@ -591,7 +591,7 @@ impl Session {
                 let v = self.open_view(view);
                 let rev = self.rev();
                 Ok(Handled {
-                    response: to_line(id, serde_json::json!({ "rev": rev, "view": v })),
+                    response: to_line(id, ViewOpened { rev, view: v }),
                     change: Some(Change { rev, msgs: Vec::new(), state_set: false, view: Some(v) }),
                     control: None,
                 })
@@ -606,30 +606,30 @@ impl Session {
                 }
                 let rev = self.rev();
                 Ok(Handled {
-                    response: to_line(id, serde_json::json!({ "rev": rev, "closed": v })),
+                    response: to_line(id, ViewClosed { rev, closed: v }),
                     change: Some(Change { rev, msgs: Vec::new(), state_set: false, view: Some(v) }),
                     control: None,
                 })
             }
             "commands.list" => Ok(reply(to_line(
                 id,
-                serde_json::json!({
-                    "commands": crate::commands::commands(),
-                    "host_commands": self.state().doc.host().command_names(),
-                }),
+                CommandList {
+                    commands: crate::commands::commands(),
+                    host_commands: self.state().doc.host().command_names(),
+                },
             ))),
             "keymap.get" => {
                 let outline = req.outline.unwrap_or(self.state().doc.outline.is_some());
-                Ok(reply(to_line(id, serde_json::json!({ "outline": outline, "bindings": crate::commands::default_keymap(outline) }))))
+                Ok(reply(to_line(id, KeymapReply { outline, bindings: crate::commands::default_keymap(outline) })))
             }
             "view.list" => {
                 let mut list = vec![view_summary(0, &self.state().view)];
                 list.extend(self.views().iter().map(|(k, v)| view_summary(*k, v)));
-                Ok(reply(to_line(id, serde_json::json!({ "rev": self.rev(), "views": list }))))
+                Ok(reply(to_line(id, ViewList { rev: self.rev(), views: list })))
             }
             "trace.checkpoint" => {
                 let rev = self.checkpoint();
-                Ok(reply(to_line(id, serde_json::json!({ "rev": rev }))))
+                Ok(reply(to_line(id, Rev { rev })))
             }
             other => Err(err(
                 "unknown_op",
@@ -664,14 +664,78 @@ impl Session {
     }
 }
 
-fn view_summary(id: u32, v: &View) -> Value {
-    serde_json::json!({
-        "view": id,
-        "w": v.viewport.width,
-        "h": v.viewport.height,
-        "caret": v.caret(),
-        "read_only": v.read_only,
-    })
+fn view_summary(id: u32, v: &View) -> ViewSummary {
+    ViewSummary { view: id, w: v.viewport.width, h: v.viewport.height, caret: v.caret(), read_only: v.read_only }
+}
+
+// Response bodies. Structs, not `json!` maps: a struct's keys come out in declaration order
+// whichever `serde_json::Map` a host's build selects (`preserve_order` is unified across it).
+
+#[derive(Serialize)]
+struct Hello<'a> {
+    proto: u32,
+    version: &'static str,
+    rev: u64,
+    ops: &'static [&'static str],
+    commands: Vec<&'a str>,
+}
+
+#[derive(Serialize)]
+struct Rev {
+    rev: u64,
+}
+
+#[derive(Serialize)]
+struct TextSet<'a> {
+    rev: u64,
+    changed: bool,
+    view: u32,
+    msgs: &'a [Msg],
+}
+
+#[derive(Serialize)]
+struct Subscribed {
+    rev: u64,
+    subscribed: bool,
+}
+
+#[derive(Serialize)]
+struct ViewOpened {
+    rev: u64,
+    view: u32,
+}
+
+#[derive(Serialize)]
+struct ViewClosed {
+    rev: u64,
+    closed: u32,
+}
+
+#[derive(Serialize)]
+struct CommandList<'a> {
+    commands: &'static [crate::commands::CommandInfo],
+    host_commands: Vec<&'a str>,
+}
+
+#[derive(Serialize)]
+struct KeymapReply {
+    outline: bool,
+    bindings: Vec<crate::commands::Binding>,
+}
+
+#[derive(Serialize)]
+struct ViewList {
+    rev: u64,
+    views: Vec<ViewSummary>,
+}
+
+#[derive(Serialize)]
+struct ViewSummary {
+    view: u32,
+    w: u16,
+    h: u16,
+    caret: usize,
+    read_only: bool,
 }
 
 /// A line that isn't a valid request: report it with the id when the JSON at least parses.

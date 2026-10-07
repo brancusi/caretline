@@ -12,6 +12,10 @@
 
 - A click (`Msg::Click`, `view::hit`) on the right half of a wide grapheme puts the caret after
   it, not before.
+- The engine no longer enables serde_json's `preserve_order` for every crate that depends on it
+  (it changed `serde_json::Map`'s key order across a host's whole build). Protocol responses
+  are built from structs, so their key order is the same with or without the feature; the
+  engine's tests also run with `arbitrary_precision` on.
 
 ## 0.3.0 (2026-10-07)
 
