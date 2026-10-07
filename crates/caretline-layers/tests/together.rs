@@ -445,8 +445,8 @@ fn reasons_for_no_arrow() {
 struct Labelled;
 
 impl Renderer for Labelled {
-    fn measure(&self, _: &Value, avail: Size) -> Size {
-        Size::new(20.min(avail.w), 3)
+    fn measure(&self, cx: &MeasureCtx) -> Size {
+        Size::new(20.min(cx.avail.w), 3)
     }
     fn chip(&self, _: &Value, anchor: &Anchor, off: Off) -> Size {
         let key = match anchor {
@@ -479,6 +479,53 @@ fn the_host_sizes_a_chip_from_its_anchor_and_direction() {
     );
     assert_eq!(p.layers[0].chip.unwrap().w, 16);
     assert_eq!(p.layers[1].chip.unwrap().w, 5);
+}
+
+/// A host that adds an attribution line (`from <actor>`) inside an agent's box, and sizes
+/// the box for it.
+struct Attributed;
+
+impl Renderer for Attributed {
+    fn measure(&self, cx: &MeasureCtx) -> Size {
+        let text = cx.data["text"].as_str().unwrap_or("").chars().count() as u16;
+        let by = cx.owner.actor().map(|a| a.chars().count() as u16 + 5);
+        let w = text.max(by.unwrap_or(0)) + 4;
+        Size::new(w.min(cx.avail.w), 3 + u16::from(by.is_some()))
+    }
+}
+
+#[test]
+fn the_renderer_measures_knowing_whose_layer_it_is() {
+    let grid = Grid::new(80, 24).with_area(Rect::new(0, 0, 80, 23));
+    let mut m = AnchorMap::new();
+    let a = host(&mut m, "a", Rect::new(10, 5, 6, 1));
+    let r = Renderers::new().register("card", Attributed);
+    let mut l = Layers::default();
+    let layer = Layer::new(a).with_content(card());
+    apply(
+        &mut l,
+        LayerOp::Push(layer.clone()),
+        None,
+        0,
+        &Limits::default(),
+    )
+    .unwrap();
+    let mine = plan(&l, &m, &grid, &r).layers[0].rect.unwrap();
+    assert_eq!((mine.w, mine.h), (9, 3));
+    let mut l = Layers::default();
+    apply(
+        &mut l,
+        LayerOp::Push(layer),
+        Some("long-helper"),
+        0,
+        &Limits::default(),
+    )
+    .unwrap();
+    let p = plan(&l, &m, &grid, &r);
+    let theirs = p.layers[0].rect.unwrap();
+    // "from long-helper" fits on its own row.
+    assert_eq!((theirs.w, theirs.h), (20, 4));
+    assert_eq!(p.layers[0].owner.actor(), Some("long-helper"));
 }
 
 #[test]

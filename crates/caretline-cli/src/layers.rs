@@ -16,7 +16,8 @@ use caretline::helix::Tendril;
 use caretline::view::{Cell, Role};
 use caretline_layers::kitty::{CellPx, Cells, Image, KittyState, Picture, Z, shape_key};
 use caretline_layers::{
-    Anchor, Dir, Edge, Hint, Layers, Mode, Off, Plan, Planned, Rect, Renderer, Size, width,
+    Anchor, Dir, Edge, Hint, Layers, MeasureCtx, Mode, Off, Plan, Planned, Rect, Renderer, Size,
+    width,
 };
 use serde_json::Value;
 use tiny_skia::{FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform};
@@ -89,12 +90,12 @@ fn truncate(s: &str, w: usize) -> String {
 pub struct HintRenderer;
 
 impl Renderer for HintRenderer {
-    fn measure(&self, data: &Value, avail: Size) -> Size {
-        let inner = (avail.w.saturating_sub(4) as usize).min(TEXT_COLS);
+    fn measure(&self, cx: &MeasureCtx) -> Size {
+        let inner = (cx.avail.w.saturating_sub(4) as usize).min(TEXT_COLS);
         if inner < 8 {
             return Size::new(0, 0);
         }
-        let (title, lines) = hint_lines(data, inner);
+        let (title, lines) = hint_lines(cx.data, inner);
         let w = title
             .iter()
             .chain(&lines)
@@ -768,6 +769,7 @@ pub fn pictures(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use caretline_layers::Owner;
     use serde_json::json;
 
     const CELL: CellPx = CellPx::new(8, 16);
@@ -848,11 +850,12 @@ mod tests {
     #[test]
     fn measure_is_pure_and_wraps() {
         let d = json!({"title": "Jump by word", "text": "⌥← and ⌥→ move one word at a time, and ↑ ↓ by rows."});
-        let a = HintRenderer.measure(&d, Size::new(80, 20));
-        assert_eq!(a, HintRenderer.measure(&d, Size::new(80, 20)));
+        let m = |avail| HintRenderer.measure(&MeasureCtx::new(&d, avail, &Owner::Host));
+        let a = m(Size::new(80, 20));
+        assert_eq!(a, m(Size::new(80, 20)));
         assert!(a.w <= TEXT_COLS as u16 + 4 && a.h >= 4, "{a:?}");
-        let narrow = HintRenderer.measure(&d, Size::new(24, 20));
+        let narrow = m(Size::new(24, 20));
         assert!(narrow.w <= 24 && narrow.h > a.h, "{narrow:?}");
-        assert_eq!(HintRenderer.measure(&d, Size::new(10, 20)), Size::new(0, 0));
+        assert_eq!(m(Size::new(10, 20)), Size::new(0, 0));
     }
 }

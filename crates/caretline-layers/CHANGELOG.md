@@ -113,6 +113,11 @@
   edited, &changes)`. `Edited::All` maps every text anchor (a host with one document);
   `Edited::Views { views, unscoped }` maps anchors scoped to one of `views`, and unscoped
   ones only when `unscoped` (the edited document is the focused view's).
+- `Renderer::measure(&self, cx: &MeasureCtx) -> Size` (was `measure(data, avail)`).
+  `MeasureCtx { data, avail, owner }` adds whose layer it is, so a host can size an agent's
+  attribution (its name in the border, a "from" line) inside the box. Still pure: the same
+  context gives the same size. A closure `Fn(&Value, Size) -> Size` is still a renderer (it
+  ignores the owner). `MeasureCtx` is `#[non_exhaustive]`; build one with `MeasureCtx::new`.
 
 ### Fixed
 

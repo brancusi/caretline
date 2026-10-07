@@ -70,8 +70,8 @@ pub use model::{
     Part, Pulse, Reason, Refusal, Ring, ScreenPos, Selector, Spotlight, apply, expire,
 };
 pub use place::{
-    Attach, CellKind, Edge, Grid, MAX_WIDTH, Mode, NARROW_COLS, NARROW_ROWS, NoArrow, Plan,
-    Planned, Region, Renderer, Renderers, Route, Size, Spot, Step, hit_regions, plan, width,
+    Attach, CellKind, Edge, Grid, MAX_WIDTH, MeasureCtx, Mode, NARROW_COLS, NARROW_ROWS, NoArrow,
+    Plan, Planned, Region, Renderer, Renderers, Route, Size, Spot, Step, hit_regions, plan, width,
 };
 pub use resolve::{AnchorKey, AnchorMap, Chain, Off, Resolve, Resolved};
 pub use route::Dir;

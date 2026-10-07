@@ -32,12 +32,32 @@ impl Size {
     }
 }
 
+/// What a renderer measures: the layer's content data, the room it has on one side, and whose
+/// layer it is, so a host can size what it draws for the owner (an agent's name in the
+/// border, an attribution line) inside the box.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct MeasureCtx<'a> {
+    /// The layer's content data.
+    pub data: &'a Value,
+    /// The most the box may be, borders included.
+    pub avail: Size,
+    /// Whose layer it is (`Owner::actor` for an agent's name).
+    pub owner: &'a Owner,
+}
+
+impl<'a> MeasureCtx<'a> {
+    pub fn new(data: &'a Value, avail: Size, owner: &'a Owner) -> MeasureCtx<'a> {
+        MeasureCtx { data, avail, owner }
+    }
+}
+
 /// What a host registers per content kind. Placement asks it how big a box is; drawing the box
-/// is the host's, outside this crate. `measure` must be pure: the same data and room, the same
-/// size.
+/// is the host's, outside this crate. `measure` must be pure: the same data, room and owner,
+/// the same size.
 pub trait Renderer {
-    /// The box for `data`, borders included, at most `avail`. A zero size means no box.
-    fn measure(&self, data: &Value, avail: Size) -> Size;
+    /// The box for `cx.data`, borders included, at most `cx.avail`. A zero size means no box.
+    fn measure(&self, cx: &MeasureCtx<'_>) -> Size;
     /// The edge chip shown where an off-screen anchor lies: its width (it is one row high;
     /// default 8). It gets the layer's data, the anchor that lies off screen and which way, so
     /// a host can size a label such as "↓ 2/11 here" to fit. Pure, like `measure`.
@@ -46,9 +66,10 @@ pub trait Renderer {
     }
 }
 
+/// A closure of the data and the room is a renderer that ignores the owner.
 impl<F: Fn(&Value, Size) -> Size> Renderer for F {
-    fn measure(&self, data: &Value, avail: Size) -> Size {
-        self(data, avail)
+    fn measure(&self, cx: &MeasureCtx<'_>) -> Size {
+        self(cx.data, cx.avail)
     }
 }
 
@@ -352,7 +373,7 @@ fn plan_one(
         let whole = Size::new(max_w, area.h);
         // What the renderer gives for `avail`, never over the whole room; zero: no box.
         let measure = |avail: Size| {
-            let m = rend.measure(data, avail);
+            let m = rend.measure(&MeasureCtx::new(data, avail, &layer.owner));
             let s = (m.w.min(whole.w), m.h.min(whole.h));
             (s.0 > 0 && s.1 > 0).then_some(s)
         };
