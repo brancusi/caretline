@@ -74,7 +74,7 @@ fn doc_wh(notation: &str, width: u16, height: u16) -> State {
     for &p in &starts {
         s.doc.marks.mint(p);
     }
-    s.enable_outline(OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    s.enable_outline(OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     // Blank rows as written: explicit only where the default differs.
     let o = s.blocks().unwrap();
     for (k, (_, want)) in blocks.iter().enumerate().skip(1) {
@@ -355,7 +355,7 @@ fn select_blocks(s: &mut State, a: usize, b: usize) {
 
 #[test]
 fn whole_blocks_cut_and_pasted_into_an_empty_item_replace_it() {
-    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     let before = ids(&s);
     select_blocks(&mut s, 1, 5);
     let fx = keys(&mut s, "<c-x>");
@@ -392,7 +392,7 @@ fn whole_blocks_pasted_over_their_own_selection_change_nothing() {
 
 #[test]
 fn whole_blocks_pasted_at_an_items_end_follow_it_as_siblings() {
-    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     // Copy "Farmers market" and its child (depth 1), paste at the end of "Friday" (depth 0).
     select_blocks(&mut s, 3, 5);
     keys(&mut s, "<c-c>");
@@ -404,7 +404,7 @@ fn whole_blocks_pasted_at_an_items_end_follow_it_as_siblings() {
         "- [a] Friday\n- [b] Farmers market\n  - [a] Buy peaches\n- [a] Saturday\n  - [a] Fix the bike chain\n  - [b] Farmers market\n    - [a] Buy peaches\n- Notes"
     );
     // At the end of an item with children, they follow its whole subtree, at its depth.
-    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     select_blocks(&mut s, 0, 1);
     keys(&mut s, "<c-c>");
     let o = s.blocks().unwrap();
@@ -424,7 +424,7 @@ fn whole_blocks_pasted_at_an_items_end_follow_it_as_siblings() {
 
 #[test]
 fn whole_blocks_pasted_inside_text_join_it_as_markdown_does() {
-    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    let mut s = markdown::load(WEEKEND, None, Viewport { width: 60, height: 12 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     select_blocks(&mut s, 2, 3);
     keys(&mut s, "<c-c>");
     s.view.selection = Selection::point(s.blocks().unwrap().blocks[5].content_start() + 2); // "No|tes"
@@ -781,7 +781,7 @@ fn outline_messages_in_a_plain_document_only_say_so() {
 #[test]
 fn save_writes_markdown_and_load_reads_it_back() {
     let md = "# Trip\n\n- [a] Pay the deposit\n  - ask Ana\n    on two lines\n- [b] Flights\n\nNotes.\n";
-    let mut s = markdown::load(md, Some("trip.md".into()), Viewport { width: 80, height: 24 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    let mut s = markdown::load(md, Some("trip.md".into()), Viewport { width: 80, height: 24 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     assert!(!s.doc.dirty);
     keys(&mut s, "<d-down>!");
     let fx = keys(&mut s, "<c-s>");
@@ -817,7 +817,7 @@ fn a_paragraphs_children_copy_indented_and_paste_back_nested() {
 fn a_paragraphs_children_round_trip_through_a_file() {
     use caretline::outline::markdown::{load, to_file};
     let md = "Para line\n\n  first subitem\n  more\n\n  - [a] a tagged item\n\nAfter\n";
-    let s = load(md, None, Viewport { width: 80, height: 24 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    let s = load(md, None, Viewport { width: 80, height: 24 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     let o = s.blocks().unwrap();
     let shape: Vec<(u16, Kind)> = o.blocks.iter().map(|b| (b.depth, b.kind)).collect();
     assert_eq!(shape, [(0, Kind::Para), (1, Kind::Para), (1, Kind::Bullet), (0, Kind::Para)]);

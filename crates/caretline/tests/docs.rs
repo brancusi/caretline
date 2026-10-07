@@ -93,7 +93,7 @@ fn task_cycle(ctx: &Ctx, _: &Value) -> Result<Edit, String> {
 
 #[test]
 fn the_case_study_builds_tasks_on_tags() {
-    let config = OutlineConfig { tags: " x/w-".into(), new_tag: Some(' '), ..OutlineConfig::default() };
+    let config = OutlineConfig::default().with_tags(" x/w-".into()).with_new_tag(Some(' '));
     let mut s = markdown::load("Pay rent\n", None, Viewport { width: 40, height: 6 }, config);
     s.doc.set_host(Host::new().command("task_cycle", task_cycle));
     let cycle = || Msg::Command { name: "task_cycle".into(), args: Value::Null };

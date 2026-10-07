@@ -20,8 +20,12 @@ use crate::state::{Config, Document, Follow, Scroll, State, View};
 /// The outline layout a host gives a view: column geometry as data. With it, an outline
 /// document's markers move out of the text into a hang, nested blocks get their own
 /// columns, and folds hide children (see `docs/structure.md`).
+///
+/// `#[non_exhaustive]`: build one from [`OutlineLayout::default`] and the `with_` setters (or
+/// set fields on it).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct OutlineLayout {
     /// Columns before everything: the gutter, where a decoration's `gutter` text goes.
     #[serde(alias = "marks")]
@@ -47,6 +51,16 @@ impl Default for OutlineLayout {
         OutlineLayout { gutter: 2, indent: 4, hang: 4, column: 72, min_column: 20, extra_rows: BTreeMap::new(), hang_glyphs: false }
     }
 }
+
+setters!(OutlineLayout {
+    with_gutter => gutter: u16,
+    with_indent => indent: u16,
+    with_hang => hang: u16,
+    with_column => column: u16,
+    with_min_column => min_column: u16,
+    with_extra_rows => extra_rows: BTreeMap<MarkId, u16>,
+    with_hang_glyphs => hang_glyphs: bool,
+});
 
 /// Soft-wrapped lines at least this long remember where their rows start (see
 /// [`WrapCache`]); shorter lines are laid out from their start every time.

@@ -943,7 +943,7 @@ fn new_state(body: &str, path: Option<String>, width: u16, height: u16, outline:
         caretline::State::new(body, path, viewport)
     };
     if layout {
-        state.view.layout = Some(caretline::OutlineLayout { hang_glyphs: true, ..Default::default() });
+        state.view.layout = Some(caretline::OutlineLayout::default().with_hang_glyphs(true));
     }
     state
 }

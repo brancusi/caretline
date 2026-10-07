@@ -16,7 +16,11 @@ use crate::marks::{Clipboard, MarkDelta, MarkId, Marks};
 use crate::outline::{OutlineCache, OutlineConfig};
 
 /// Document settings: how the text is edited and wrapped, whichever view shows it.
+///
+/// `#[non_exhaustive]`: build one from [`Config::default`] and the `with_` setters (or set
+/// fields on it), so a new setting is never a breaking change.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Config {
     /// Columns per tab stop.
     pub tab_width: u16,
@@ -49,6 +53,14 @@ impl Default for Config {
     }
 }
 
+setters!(Config {
+    with_tab_width => tab_width: u16,
+    with_soft_wrap => soft_wrap: bool,
+    with_line_ending => line_ending: LineEnding,
+    with_external_undo => external_undo: ExternalUndo,
+    with_single_line => single_line: bool,
+});
+
 /// How undo treats a change from elsewhere.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,7 +80,11 @@ impl ExternalUndo {
 }
 
 /// View settings: how one view draws and follows the caret.
+///
+/// `#[non_exhaustive]`: build one from [`ViewConfig::default`] and the `with_` setters (or set
+/// fields on it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ViewConfig {
     /// Draw the status bar on the last row. Off, every row shows text (for embedders and
     /// panels that show their own chrome).
@@ -89,6 +105,13 @@ impl Default for ViewConfig {
         ViewConfig { status_bar: true, scrolloff: 2, follow: Follow::Margin, page_overlap: 0 }
     }
 }
+
+setters!(ViewConfig {
+    with_status_bar => status_bar: bool,
+    with_scrolloff => scrolloff: u16,
+    with_follow => follow: Follow,
+    with_page_overlap => page_overlap: u16,
+});
 
 /// How a view follows the caret after a message.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -604,7 +627,10 @@ pub struct StateInput {
 /// The deserialized form of the `config` inside a [`StateInput`]: the document's and the
 /// view's settings side by side, every one optional, with the defaults, except the line
 /// ending, which is detected from the text.
+///
+/// `#[non_exhaustive]`: build one from [`ConfigInput::default`] and set its fields.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[non_exhaustive]
 pub struct ConfigInput {
     pub tab_width: Option<u16>,
     pub soft_wrap: Option<bool>,

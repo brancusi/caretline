@@ -380,7 +380,7 @@ extension points, and how you would build anything like it.
 its statuses, and has Enter after a task open a new one:
 
 ```rust
-let config = OutlineConfig { tags: " x/w-".into(), new_tag: Some(' '), ..OutlineConfig::default() };
+let config = OutlineConfig::default().with_tags(" x/w-".into()).with_new_tag(Some(' '));
 ```
 
 caretline now keeps the caret out of `[x] `, draws it in the hang, and has Backspace remove it

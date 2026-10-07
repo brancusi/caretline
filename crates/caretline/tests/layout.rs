@@ -11,9 +11,9 @@ use rand::{Rng, SeedableRng};
 const TRIP: &str = "# Lisbon trip\n\nBooked the flat in Lisbon.\nIt faces the river.\n\n- [a] Pay the deposit\n  - ask Ana about her desk\n- [a] Book flights\n- [b] Renew passport\n\n![boiler label](files/boiler.png)\n\n1. Pack\n2. Leave\n";
 
 fn laid_out(md: &str, w: u16, h: u16) -> State {
-    let mut s = markdown::load(md, None, Viewport { width: w, height: h }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    let mut s = markdown::load(md, None, Viewport { width: w, height: h }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     s.view.config.status_bar = false;
-    s.view.layout = Some(OutlineLayout { hang_glyphs: true, ..Default::default() });
+    s.view.layout = Some(OutlineLayout::default().with_hang_glyphs(true));
     update(&mut s, Msg::Resize { width: w, height: h });
     s
 }
@@ -156,7 +156,7 @@ fn folds_belong_to_the_view() {
 
 #[test]
 fn folds_hide_rows_without_a_layout_too() {
-    let mut s = markdown::load("- a\n  - b\n  - c\n- d\n", None, Viewport { width: 20, height: 6 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    let mut s = markdown::load("- a\n  - b\n  - c\n- d\n", None, Viewport { width: 20, height: 6 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     let a = ids(&s)[0];
     update(&mut s, Msg::Fold { id: a });
     assert_eq!(view(&s).to_text().lines().take(2).collect::<Vec<_>>(), ["- a", "- d"]);

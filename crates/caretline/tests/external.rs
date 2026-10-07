@@ -101,7 +101,7 @@ fn outline_doc(rng: &mut StdRng) -> State {
 }
 
 fn tagged() -> OutlineConfig {
-    OutlineConfig { tags: "ab".into(), ..OutlineConfig::default() }
+    OutlineConfig::default().with_tags("ab".into())
 }
 
 /// A local edit inside a local block's content: typing, or deleting a span of it.
@@ -281,7 +281,7 @@ fn two_views_and_random_changes_from_elsewhere_keep_the_invariants() {
 // Behaviour
 
 fn outline(md: &str) -> State {
-    markdown::load(md, Some("x.md".into()), Viewport { width: 40, height: 10 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() })
+    markdown::load(md, Some("x.md".into()), Viewport { width: 40, height: 10 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')))
 }
 
 #[test]
@@ -493,7 +493,7 @@ fn a_change_inside_a_block_keeps_its_mark() {
     let mut s = State::new("\n\n", None, Viewport { width: 40, height: 10 });
     s.doc.marks.insert(caretline::Mark { pos: 0, id: MarkId(1), attrs: Default::default() }).unwrap();
     s.doc.marks.insert(caretline::Mark { pos: 1, id: MarkId(0), attrs: Default::default() }).unwrap();
-    s.doc.outline = Some(OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    s.doc.outline = Some(OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     s.outline_changed();
     let ids = |s: &State| s.blocks().unwrap().blocks.iter().map(|b| (b.id.0, b.start, b.end)).collect::<Vec<_>>();
     assert_eq!(ids(&s), [(1, 0, 0), (0, 1, 2)]);
@@ -504,7 +504,7 @@ fn a_change_inside_a_block_keeps_its_mark() {
     let mut s = State::new("\n\n", None, Viewport { width: 40, height: 10 });
     s.doc.marks.insert(caretline::Mark { pos: 0, id: MarkId(1), attrs: Default::default() }).unwrap();
     s.doc.marks.insert(caretline::Mark { pos: 1, id: MarkId(0), attrs: Default::default() }).unwrap();
-    s.doc.outline = Some(OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    s.doc.outline = Some(OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     s.outline_changed();
     external(&mut s, ExtChange::ReplaceContent { id: MarkId(0), text: String::new() });
     assert_eq!(ids(&s), [(1, 0, 0), (0, 1, 1)]);

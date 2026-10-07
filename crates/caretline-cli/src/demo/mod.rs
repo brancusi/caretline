@@ -128,7 +128,7 @@ pub(crate) fn initial_state(kind: Kind, path: Option<String>, viewport: Viewport
         Kind::Agent => AGENT_DOC,
     };
     let mut state = crate::new_state(text, path, viewport, true);
-    state.view.layout = Some(OutlineLayout { hang_glyphs: true, ..Default::default() });
+    state.view.layout = Some(OutlineLayout::default().with_hang_glyphs(true));
     let text = state.doc.text.to_string();
     let caret = match kind {
         // The end of step 1's paragraph: the person just types.

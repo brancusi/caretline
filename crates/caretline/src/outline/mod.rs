@@ -37,8 +37,12 @@ use crate::marks::{MarkAttrs, MarkId, Marks};
 use crate::state::{Document, State};
 
 /// How an outline document reads and edits its text.
+///
+/// `#[non_exhaustive]`: build one from [`OutlineConfig::default`] and the `with_` setters (or
+/// set fields on it).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct OutlineConfig {
     /// Spaces per depth on a block's first line.
     pub indent: u8,
@@ -69,6 +73,14 @@ impl Default for OutlineConfig {
         }
     }
 }
+
+setters!(OutlineConfig {
+    with_indent => indent: u8,
+    with_atomic_images => atomic_images: bool,
+    with_numbered => numbered: bool,
+    with_tags => tags: String,
+    with_new_tag => new_tag: Option<char>,
+});
 
 impl OutlineConfig {
     /// Whether `c` may be a bullet's tag.

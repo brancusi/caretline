@@ -215,12 +215,12 @@ fn without_a_decorator_plain_glyphs_are_the_layouts_choice() {
     let mut s = laid_out("- one\n");
     s.doc.set_host(Host::new());
     assert!(!view(&s).to_text().contains('•'));
-    s.view.layout = Some(OutlineLayout { hang_glyphs: true, ..OutlineLayout::default() });
+    s.view.layout = Some(OutlineLayout::default().with_hang_glyphs(true));
     assert!(view(&s).to_text().contains('•'));
 }
 
 fn tagged() -> OutlineConfig {
-    OutlineConfig { tags: "ab".into(), new_tag: Some('a'), ..OutlineConfig::default() }
+    OutlineConfig::default().with_tags("ab".into()).with_new_tag(Some('a'))
 }
 
 #[test]

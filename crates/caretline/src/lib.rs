@@ -20,6 +20,23 @@
 //! exactly ([`trace`]). [`Session`] keeps one (state, revision, trace) and [`protocol`]
 //! answers JSON requests against it.
 
+/// Builder-style setters for a `#[non_exhaustive]` config struct (which a host can't build
+/// with a struct literal): `with_field(value)` for each field.
+macro_rules! setters {
+    ($t:ty { $($setter:ident => $field:ident: $ty:ty),* $(,)? }) => {
+        impl $t {
+            $(
+                #[doc = concat!("The same, with `", stringify!($field), "` set.")]
+                #[must_use]
+                pub fn $setter(mut self, $field: $ty) -> Self {
+                    self.$field = $field;
+                    self
+                }
+            )*
+        }
+    };
+}
+
 pub mod commands;
 pub mod diff;
 pub mod helix;

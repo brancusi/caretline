@@ -12,17 +12,26 @@
   change nothing; line breaks typed, pasted, edited in by a host or an input rule, or put in
   from elsewhere (`Msg::External`, `text.set`) are flattened where they land: each run (`\r\n`
   counted once) becomes one space, or nothing at the start or end of the line or next to
-  whitespace, so a break never joins two words or doubles a space; lines never wrap; motion by a line, row or page goes
-  to the start or the end. `State::sanitize` flattens line breaks already in the text and starts
-  the history again when its undo or redo could bring one back. Ignored (and cleared) in an
-  outline document. `Document::single_line()` says whether it applies.
+  whitespace, so a break never joins two words or doubles a space; lines never wrap; motion by
+  a line, row or page goes to the start or the end. `State::sanitize` flattens line breaks
+  already in the text and starts the history again when its undo or redo could bring one
+  back. Ignored (and cleared) in an outline document. `Document::single_line()` says whether
+  it applies.
+- `with_` setters on `Config`, `ViewConfig`, `OutlineConfig` and `OutlineLayout`, one per field
+  (`OutlineLayout::default().with_hang_glyphs(true)`).
 - `History::transactions`: every revision's transaction and inversion.
 
 ### Breaking
 
-- `Config` and `ConfigInput` gain a public field (`single_line`); neither is
-  `#[non_exhaustive]`, so a struct literal that names every field needs `single_line` (or
-  `..Default::default()`). The next release is a minor bump (0.4).
+- `Config`, `ConfigInput`, `ViewConfig`, `OutlineConfig` and `OutlineLayout` are
+  `#[non_exhaustive]`, so adding a setting is no longer a breaking change. Outside the crate
+  they can't be built with a struct literal, not even with `..Default::default()`. Start from
+  `Default` and chain the `with_` setters, or set the public fields on a default value:
+  `OutlineConfig { tags: "ab".into(), ..OutlineConfig::default() }` becomes
+  `OutlineConfig::default().with_tags("ab".into())`; for `ConfigInput` (no setters), take
+  `ConfigInput::default()` and set its fields. This release also adds fields to them
+  (`Config::single_line`, `ConfigInput::single_line`, `ViewConfig::page_overlap`), which broke
+  struct literals anyway. The next release is a minor bump (0.4).
 
 ### Fixed
 

@@ -230,7 +230,7 @@ pub mod gen {
 /// Outline documents with tags `a` and `b` (Enter after a tagged item makes an `a`).
 #[allow(dead_code)]
 pub fn tagged_cfg() -> caretline::OutlineConfig {
-    caretline::OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..caretline::OutlineConfig::default() }
+    caretline::OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a'))
 }
 
 /// A made-up host for fuzzing commands: `test.retag` steps every selected block through

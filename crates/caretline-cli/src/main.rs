@@ -173,7 +173,7 @@ fn serve(args: ServeArgs) -> Result<(), String> {
         state.enable_outline(OutlineConfig::default());
     }
     if args.layout && state.view.layout.is_none() {
-        state.view.layout = Some(caretline::OutlineLayout { hang_glyphs: true, ..Default::default() });
+        state.view.layout = Some(caretline::OutlineLayout::default().with_hang_glyphs(true));
     }
     if let (Some(path), Some(_)) = (&args.file, &args.state) {
         state.doc.path = Some(path.clone());
@@ -299,7 +299,7 @@ fn run() -> Result<(), String> {
         state.enable_outline(OutlineConfig::default());
     }
     if args.layout && state.view.layout.is_none() {
-        state.view.layout = Some(caretline::OutlineLayout { hang_glyphs: true, ..Default::default() });
+        state.view.layout = Some(caretline::OutlineLayout::default().with_hang_glyphs(true));
     }
     if let (Some(path), Some(_)) = (&args.file, &args.state) {
         // A file given with a state names where the state saves.

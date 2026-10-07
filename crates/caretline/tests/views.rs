@@ -342,7 +342,7 @@ fn typing_in_a_big_doc_with_two_views() {
         let marker = if i % 9 == 0 { "- [a] " } else { "- " };
         md.push_str(&format!("{pad}{marker}the quick brown fox jumps over a lazy dog\n"));
     }
-    let base = markdown::load(&md, None, Viewport { width: 120, height: 40 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() }).doc;
+    let base = markdown::load(&md, None, Viewport { width: 120, height: 40 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a'))).doc;
     let keys = if cfg!(debug_assertions) { 20 } else { 300 };
     let mut per_key = Vec::new();
     for n in [1, 2] {
@@ -376,7 +376,7 @@ fn typing_in_a_big_doc_with_two_views() {
 #[test]
 fn the_same_messages_give_the_same_documents() {
     let run = || {
-        let mut doc = markdown::load("- \n", None, Viewport { width: 40, height: 10 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() }).doc;
+        let mut doc = markdown::load("- \n", None, Viewport { width: 40, height: 10 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a'))).doc;
         let mut views = [at(40, 10), at(30, 6)];
         views[0].selection = Selection::point(2);
         for (now, i, msg) in [

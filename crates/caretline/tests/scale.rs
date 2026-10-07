@@ -93,7 +93,7 @@ fn typing_in_a_5000_block_outline() {
     for i in 0..5000 {
         md.push_str(&format!("- [a] item number {i} with some words\n"));
     }
-    let base = markdown::load(&md, None, Viewport { width: 100, height: 40 }, OutlineConfig { tags: "abc".into(), new_tag: Some('a'), ..OutlineConfig::default() });
+    let base = markdown::load(&md, None, Viewport { width: 100, height: 40 }, OutlineConfig::default().with_tags("abc".into()).with_new_tag(Some('a')));
     let keys = if cfg!(debug_assertions) { 20 } else { 400 };
     // Without and with the outline layout (markers in a hang, a column per depth).
     for layout in [None, Some(caretline::OutlineLayout::default())] {

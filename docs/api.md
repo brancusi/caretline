@@ -95,6 +95,11 @@ state.doc.config.soft_wrap = false;
 state.view.config.status_bar = false; // every row shows text; no status bar
 ```
 
+The config types (`Config`, `ViewConfig`, `OutlineConfig`, `OutlineLayout`, and `ConfigInput`
+when you build a state by hand) are `#[non_exhaustive]`, so new settings never break your build.
+To make one, start from `default()` and chain the `with_` setters:
+`OutlineLayout::default().with_hang_glyphs(true)`.
+
 `config.single_line` makes the document a one-line text field (a filter box, a prompt): the
 text never holds a line break. Enter changes nothing, line breaks typed, pasted, edited in or
 changed from elsewhere become spaces where they land (never joining two words or doubling a
