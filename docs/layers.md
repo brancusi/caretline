@@ -3,7 +3,7 @@
 > **New and not released.** [`caretline-layers`](../crates/caretline-layers) is in the
 > repository but not yet on crates.io, and its API may change before its first release. This
 > page covers what is built (steps 1a and 1b of the [design](../docs/design/layers.md):
-> placement, and the kitty plumbing for pixels in Ghostty); the next steps (engine hooks,
+> placement, views, and the kitty plumbing for pixels in Ghostty); the next steps (engine hooks,
 > in-frame mode, walkthroughs, protocol and MCP tools in caretline itself) are listed in the
 > design's section 9.
 
@@ -131,6 +131,7 @@ edits.
 | The caret | `{"caret": true}` | `Anchor::Caret` |
 | A screen position | `{"screen": "center"}` (`top`, `bottom`) | `Anchor::Screen(ScreenPos::Center)` |
 | **A host kind** | `{"host": {"kind": "row", "key": "r-104"}}` | `Anchor::Host { kind, key }` |
+| A text, block or caret anchor **in one view** | `{"text": {"from": 4, "to": 9}, "in": "panel:2"}` | `Anchor::scoped("panel:2", a)` ([several views](#one-document-several-views)) |
 
 Host kinds are the host's own things: a table row by id, a list item, a diff line, a tab.
 caretline never interprets the kind or the key.
@@ -144,7 +145,10 @@ way an off-screen anchor lies):
 - **`FrameResolver`** (feature `caretline`): text, block and caret anchors from a caretline
   `Frame` drawn at (`x`, `y`): `FrameResolver::new(&frame).at(x, y).with_doc(&doc)`. It reads
   only the visible rows; with the document it also says which way an off-screen block lies.
-- **`Chain`**: both, asked in order: `Chain(vec![&anchors, &editor])`.
+  For a document in several views, each view's resolver gets an id and a clip
+  ([below](#one-document-several-views)).
+- **`Chain`**: several, all asked: `Chain(vec![&anchors, &editor])`. The first answer whose
+  cells show wins (the focused view's first), else the first that says which way it lies.
 
 **Following edits.** Block anchors need nothing: marks follow their blocks. Text anchors move
 with the text. The engine hands out each message's text changes: `update_with_changes` (and
@@ -171,6 +175,46 @@ The start of a range sticks after an insertion there, the end before one. A rang
 was deleted is dropped and the next fallback takes over; a layer with no anchor left goes.
 `map_anchors(&mut layers, &changes)` does the mapping alone.
 
+## One document, several views
+
+A host can show one document in several views: a main editor and a side panel, each a
+caretline `View` drawn at its own offset and clipped to its own rect. Give each view a
+`FrameResolver` with a stable id (the host's own names), its offset and its clip, mark the
+focused one, and put them in one `Chain`:
+
+```rust
+let main = FrameResolver::new(&main_frame).with_doc(&doc).id("main").focused();
+let panel = FrameResolver::new(&panel_frame)
+    .with_doc(&doc)
+    .at(62, 2)
+    .id("panel:2")
+    .clip(Rect::new(62, 2, 36, 9)); // the cells the panel shows on the host's screen
+let anchors = Chain(vec![&host_anchors, &main, &panel]);
+```
+
+- **The clip.** Cells outside a view's clip aren't visible. An anchor whose cells are all
+  clipped away lies off screen the way they are (above or below with its column, left or
+  right with its row), and a direction the frame gives (scrolled out of the view) is pulled
+  inside the clip, so the edge chip sits by that view.
+- **Scoped anchors.** A text, block or caret anchor can name its view with `in`:
+  `{"text": {"from": 4, "to": 9}, "in": "panel:2"}`, or `Anchor::scoped("panel:2", anchor)` in
+  Rust (`Anchor::In { view, anchor }`; `view()` and `unscoped()` take it apart). It resolves
+  only in the resolver with that id and never falls back to another view (a resolver without
+  an id answers only unscoped anchors). A screen or host anchor can't be scoped (a host key
+  names its own place), and serde and `apply` refuse an empty view, a second scope or any
+  other key beside the target.
+- **Unscoped anchors** resolve in this order (`Chain`): the focused view if it shows the
+  anchor; else the first resolver, in order, that shows it; else which way it lies from the
+  focused view; else the first direction any resolver gives. A resolver that says "off
+  screen" doesn't hide a later one that shows it. A host's own resolver marks itself focused
+  with `Resolve::is_focused` (default `false`).
+- **Which view answered.** `Resolved.view` (wire `in`) names the resolver that answered, so
+  `Planned.anchor` and the replies of `ops::reply` and `ops::resolved` say where the layer
+  landed: `{"rects": […], "in": "panel:2"}`.
+- **Edits through any view.** Every view shows the same document, so the `ChangeSet` of an
+  edit made through any of them (`update_doc_with_changes`) maps every text anchor, scoped
+  or not, in `observe` and `map_anchors`.
+
 ## Content and `Renderer::measure`
 
 Content is `{kind, data}`, as opaque to the crate as mark payloads are to the engine. The host
@@ -193,6 +237,13 @@ impl Renderer for HintBox {
 
 let renderers = Renderers::new().register(HINT, HintBox);
 ```
+
+`measure` is called once for each side placement tries, with that side's room as `avail`:
+below and above, the rows between the anchor (past the arrow's gap) and the area's edge, at
+most the width cap (`max_width`, never over two-thirds of the area) wide; right and left, the
+columns past the gap, at most the cap. A side with no room isn't measured. Honour `avail`: a
+renderer that wraps its text to `avail.w` gives a narrow, tall box where only a narrow side is
+free, and a box that keeps its size whatever room it gets is placed as before.
 
 `measure` must be pure: the same data and room give the same size, or a replay places boxes
 differently. A closure `Fn(&Value, Size) -> Size` is a renderer too. A layer whose kind has no
@@ -256,9 +307,9 @@ The **`Plan`** (serializable) holds, per layer in draw order (`Planned`):
 | Field | What the host draws |
 |---|---|
 | `rect`, `mode`, `side` | The box (`mode: box`, beside the anchor on `side`) or a one-row strip (`mode: strip`: the area is under 48 columns or 12 rows, or no box fits) |
-| `anchor` | Where the anchor resolved: rects, or `off` (above, below, left, right) |
+| `anchor` | Where the anchor resolved: rects, or `off` (above, below, left, right), and `in`, the view that answered |
 | `chip` | The edge chip on the edge an off-screen anchor lies beyond |
-| `dock` | A box for an off-screen anchor docks flush against its chip: where on the box's border (`Attach { edge, offset }`) the chip touches it, so the host joins the two there |
+| `dock` | A box for an off-screen anchor docks against its own chip: it sits next to the chip and shares part of its edge, and `dock` (`Attach { edge, offset }`) names a cell of that shared edge on the box's border, so the host joins the two there. When no box can touch the chip, the layer is a strip |
 | `route` | The arrow: `junction` on the box's border and the same place as `attach` (`Attach { edge, offset }`: which edge, and how many cells along it from the corner), then `steps`, one cell each with the direction it enters and leaves; the last is the head. Lay out the border round `attach`: a title never sits where the arrow leaves |
 | `no_arrow` | Why a layer that asked for an arrow has none: `docked` (the anchor is off screen; the chip points the way), `screen` (a screen position), `no_box` (a strip, or no box), `no_way` (no route round the other layers, holes, protected cells and wide graphemes) |
 | `ring` | The anchor's cells to mark |
@@ -269,7 +320,8 @@ whether a cell is dimmed), `regions` with `Plan::hit(x, y)` (a box is `<layer>`,
 `<layer>/reveal`; a host adds its own buttons as `<layer>/<name>`), and `missing` (layers none
 of whose anchors resolved).
 
-Boxes are placed in z order, each scored over the sides it may take: text covered, distance to
+Boxes are placed in z order, each scored over the sides it may take (measured for each side's
+room): text covered, distance to
 the anchor and, with an arrow, the arrow's route; never over its anchor or any other layer's
 (every layer's anchor is known before any box is placed), another layer's box, chip, strip or
 arrow, a hole, protected cells or (for agents) the caret. No arrow runs under a box, and chips
@@ -280,8 +332,10 @@ the title row. Ties go to the first side listed, which gives flip; a box shifts 
 to stay inside the area, reaches the edge rather than leave a sliver of words beside it, and
 falls back to a strip when nothing fits.
 
-Placement is quick enough for every frame: at 100×40 (release build) a box costs about 4 µs, a
-box with its arrow about 27 µs, and a spotlight with an arrow about 44 µs.
+With an arrow, the least-scoring box of every candidate wins; boxes are routed a side at a time,
+and a box that couldn't win even with the cheapest arrow is never routed. Placement is quick
+enough for every frame: at 100×40 (release build) a box costs about 6 µs (a measure per side),
+a box with its arrow about 27 µs, and a spotlight with an arrow about 37 µs.
 
 ## Ops for your protocol
 
@@ -308,6 +362,16 @@ if let ops::Request::Apply(op) = req {
 protocol client is normally an agent, so a host may set it itself. `ops::reply` with this
 frame's plan says where the layer landed (`{"rects": …}`, `{"off": "below"}`, or `null` with
 `reason: "not_found"`); `ops::error` turns a refusal into `{"error": {"reason", "detail"}}`.
+
+**`ops::schema()`** returns a JSON Schema (draft 2020-12, a `serde_json::Value`) for the wire:
+every request `ops::parse` accepts, one per op with `op`, `actor` and the host's `id` and
+`view` (`$defs/request`), and every reply (`$defs/reply`, `$defs/resolved`, `$defs/list`,
+`$defs/error`), with the parts (`anchor` and its `in`, `layer`, `content`, `hint`, `owner`,
+`side`, `rect`) as `$defs` too. The document as a whole matches any request or reply. Publish
+it with your protocol, or hand it to an agent's tool definitions. It describes the shape
+`parse` reads; what `apply` then refuses (no anchor, nothing to show, your `Limits`) isn't in
+it. The crate's tests check it against the ops tests' requests, real replies and the design's
+protocol examples.
 
 ## Purity: the rules for a host
 

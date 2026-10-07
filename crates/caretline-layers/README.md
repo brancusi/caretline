@@ -16,16 +16,22 @@ them.
 - **Anchors are stable keys**: chars, block ids, the caret, or a host's own keys (a table row
   by id, a diff line). They resolve to cells every frame, from a caretline frame
   (`FrameResolver`) or what the host recorded while drawing (`AnchorMap`).
-- **Content is the host's**: `{kind, data}`, measured by a `Renderer` the host registers.
+- **Views**: one document in several views gets a `FrameResolver` per view, each with an
+  id, offset and clip, the focused one marked. An anchor scoped to a view (`"in":
+  "panel:2"`) resolves only there; an unscoped one in the focused view first, and the answer
+  says which view it came from.
+- **Content is the host's**: `{kind, data}`, measured by a `Renderer` the host registers,
+  once per candidate side with that side's room.
   Every host should render the `hint` kind (`{"title"?, "text"}`).
 - **Placement is pure**: `plan(&layers, &anchors, &grid, &renderers)` returns where each
   box, strip, edge chip, arrow, ring and spotlight hole goes, and the click regions. Layers
   keep off each other's boxes, chips, anchors and arrows; an arrow says where it attaches to
   its box, or why there is none (`no_arrow`); a box for an off-screen anchor docks against
-  its edge chip (`dock`).
+  its edge chip and touches it (`dock`).
 - **Edits come from the engine**: `caretline::update_with_changes` returns each message's
   `ChangeSet`, and `observe` maps text anchors through it.
-- **`ops`** parses `hint.show`, `layer.push` and friends from any JSON protocol.
+- **`ops`** parses `hint.show`, `layer.push` and friends from any JSON protocol, and
+  `ops::schema()` is a JSON Schema for its requests and replies.
 - **Pixels** (feature `kitty`, off by default): `kitty::KittyState` turns a plan and the
   host's own RGBA images into kitty graphics bytes (transmit, re-place on scroll, swap, crop,
   delete by id), and `probe` builds the terminal probe and parses its replies. The host

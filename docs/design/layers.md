@@ -158,7 +158,8 @@ passes it on (3.1), and `layer.push` replies with it.
 1. **The area** is the text rows. The status row is protected, except for a strip when the host
    turned its status bar off.
 2. **Size:** the host's `measure(data, avail)` gives the box size for at most `max_w` and at most
-   two-thirds of the width. It is pure: the same data and room give the same size.
+   two-thirds of the width, once per candidate side with that side's room (as built: 12.3). It
+   is pure: the same data and room give the same size.
 3. **Candidates:** for each side in `sides` (default below, above, right, left), place the box
    beside the anchor, then **shift** along the side to stay inside the area.
 4. **Score:** text cells covered (1 each), cells inside another layer's holes (0.3), the anchor,
@@ -547,6 +548,8 @@ id = "compare"
 host = { panels = { right = "outline" }, focus = "main" }   # the host's own patch; opaque
 narration = { title = "Two views, one document", text = "The outline on the right follows the text you edit on the left." }
 
+advance = { command = "move.word_right" }   # before the [[step.layers]] tables, or TOML puts it in the last one
+
 [[step.layers]]                      # id "compare/0"
 anchor = { find = "## 2 · Move" }
 kind = "hint"
@@ -558,8 +561,6 @@ id = "outline-entry"                 # given, instead of "compare/1"
 anchor = { find = "## 2 · Move", in = "panel:outline" }
 kind = "hint"
 data = { text = "…and the outline shows the same heading." }
-
-advance = { command = "move.word_right" }
 ```
 
 **Jumping** (`tour.step {to}`, back, a branch's `goto`) is deterministic: the tour applies
