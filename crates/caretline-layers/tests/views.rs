@@ -256,7 +256,12 @@ fn an_edit_through_one_view_maps_anchors_in_both() {
             text: "Hello. ".into(),
         },
     );
-    assert!(observe(&mut layers, cs.as_ref(), 2_000));
+    // One document in both views: the edit maps anchors scoped to either, and unscoped ones.
+    let both_views = Edited::Views {
+        views: &["main", "panel:2"],
+        unscoped: true,
+    };
+    assert!(observe(&mut layers, both_views, cs.as_ref(), 2_000));
     let (main, panel, _) = frames(&doc, &views);
     let screen = screen(&main, &panel);
     let (m, p) = resolvers(&doc, &main, &panel, false);
@@ -286,8 +291,121 @@ fn an_edit_through_one_view_maps_anchors_in_both() {
             }],
         },
     );
-    observe(&mut layers, cs.as_ref(), 3_000);
+    observe(&mut layers, both_views, cs.as_ref(), 3_000);
     assert_eq!(layers.layers.len(), 2);
+}
+
+/// The text of a text anchor's chars in a document.
+fn text_of(doc: &Document, a: &Anchor) -> String {
+    let Anchor::Text { from, to } = *a.unscoped() else {
+        panic!("{a:?}")
+    };
+    doc.text.slice(from..to).to_string()
+}
+
+#[test]
+fn an_edit_moves_only_the_anchors_in_its_own_document() {
+    // Two documents: page A in `main` (focused), page B in `panel:1`. A `ChangeSet` belongs
+    // to one of them.
+    let vp = |width, height| View::new(Viewport { width, height });
+    let mut a = Document::new("alpha bravo charlie delta", Some("a.md".into()));
+    let mut b = Document::new("abc hello world, and more text", Some("b.md".into()));
+    let mut a_views = vec![vp(60, 20)];
+    let mut b_views = vec![vp(36, 9)];
+    let mut layers = Layers::default();
+    // A hint scoped to the panel, at "hello" of page B; one scoped to main and an unscoped
+    // one, both at "bravo" of page A.
+    let in_b: Anchor =
+        serde_json::from_str(r#"{"text":{"from":4,"to":9},"in":"panel:1"}"#).unwrap();
+    let bravo = Anchor::Text { from: 6, to: 11 };
+    for anchor in [in_b, Anchor::scoped("main", bravo.clone()), bravo] {
+        push(&mut layers, hint_at(anchor, "x"), None);
+    }
+    let texts = |layers: &Layers, a: &Document, b: &Document| -> Vec<String> {
+        layers
+            .layers
+            .iter()
+            .zip([b, a, a])
+            .map(|(l, d)| text_of(d, &l.anchor[0]))
+            .collect()
+    };
+    assert_eq!(texts(&layers, &a, &b), ["hello", "bravo", "bravo"]);
+
+    // Type three chars at the top of page A, in main: the panel's anchor stays where it was.
+    let (_, cs) = update_doc_with_changes(
+        &mut a,
+        &mut a_views,
+        0,
+        Msg::InsertText { text: "XYZ".into() },
+    );
+    let main = Edited::Views {
+        views: &["main"],
+        unscoped: true,
+    };
+    assert!(observe(&mut layers, main, cs.as_ref(), 0));
+    assert_eq!(texts(&layers, &a, &b), ["hello", "bravo", "bravo"]);
+    assert_eq!(
+        layers.layers[0].anchor[0],
+        Anchor::scoped("panel:1", Anchor::Text { from: 4, to: 9 })
+    );
+
+    // Type at the top of page B, in the panel (not the focused view's document): only the
+    // panel's anchor moves; the unscoped one belongs to the focused view's page A.
+    let (_, cs) = update_doc_with_changes(
+        &mut b,
+        &mut b_views,
+        0,
+        Msg::InsertText { text: "> ".into() },
+    );
+    let panel = Edited::Views {
+        views: &["panel:1"],
+        unscoped: false,
+    };
+    assert!(observe(&mut layers, panel, cs.as_ref(), 0));
+    assert_eq!(texts(&layers, &a, &b), ["hello", "bravo", "bravo"]);
+    assert_eq!(
+        layers.layers[0].anchor[0],
+        Anchor::scoped("panel:1", Anchor::Text { from: 6, to: 11 })
+    );
+
+    // Deleting "hello" from page B drops only the anchor on it.
+    let (_, cs) = update_doc_with_changes(
+        &mut b,
+        &mut b_views,
+        0,
+        Msg::External {
+            changes: vec![caretline::ExtChange::Replace {
+                from: 6,
+                to: 11,
+                text: String::new(),
+            }],
+        },
+    );
+    assert!(observe(&mut layers, panel, cs.as_ref(), 0));
+    assert_eq!(layers.layers.len(), 2);
+    assert!(
+        layers
+            .layers
+            .iter()
+            .all(|l| text_of(&a, &l.anchor[0]) == "bravo")
+    );
+
+    // `Edited::All` is for a host with one document: here, page B's edit would move page
+    // A's anchors.
+    let (_, cs) = update_doc_with_changes(
+        &mut b,
+        &mut b_views,
+        0,
+        Msg::InsertText { text: "new".into() },
+    );
+    observe(&mut layers, Edited::All, cs.as_ref(), 0);
+    assert_eq!(layers.layers.len(), 2);
+    assert!(
+        layers
+            .layers
+            .iter()
+            .all(|l| text_of(&a, &l.anchor[0]) != "bravo")
+    );
 }
 
 #[test]

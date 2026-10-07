@@ -108,8 +108,18 @@
   spotlight with an arrow 36.6 µs (was 42.7), a box alone 5.6 µs (was 4.2: four measures,
   one per side, with the test host's measure).
 
+- `observe` and `map_anchors` take an `Edited` saying which views show the document that
+  changed: `observe(&mut layers, edited, changes, now_ms)`, `map_anchors(&mut layers,
+  edited, &changes)`. `Edited::All` maps every text anchor (a host with one document);
+  `Edited::Views { views, unscoped }` maps anchors scoped to one of `views`, and unscoped
+  ones only when `unscoped` (the edited document is the focused view's).
+
 ### Fixed
 
+- An edit to one document no longer moves anchors in another. A `ChangeSet` belongs to one
+  document, but `observe` mapped every text anchor through it, so typing in `main` (page A)
+  shifted a hint scoped to `panel:1` (page B), or dropped it when page B was shorter. Anchors
+  scoped to views that don't show the edited document are now left alone (`Edited`).
 - A docked box (its anchor off screen) now always touches its own edge chip: it sits next
   to the chip and shares part of its edge, and `Planned.dock` names a cell of that shared
   edge. It used to take any candidate along the edge (one at the area's far side won where
