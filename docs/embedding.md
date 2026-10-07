@@ -26,6 +26,12 @@ caretline = "0.3"
 Its library is `caretline::`; this repository's crate is the same code. For something on
 `main` that is newer than the latest release, use a git dependency on this repository.
 
+The engine leaves serde_json's features alone: it turns on neither `preserve_order` nor
+`arbitrary_precision`, so adding it doesn't change how `serde_json::Map` orders keys or how
+numbers parse anywhere in your build. If your app enables either, the engine's JSON (states,
+traces, messages, mark payloads, protocol responses) comes out the same; CI tests it with
+each.
+
 The crate has no terminal dependency, so it works
 under any renderer.
 
@@ -114,7 +120,9 @@ fn draw_editor(f: &mut Frame, area: Rect, state: &State) {
             let style = match cell.role {
                 Role::Text => Style::default(),
                 Role::Selection => Style::default().add_modifier(Modifier::REVERSED),
-                Role::Status | Role::StatusAccent => Style::default().add_modifier(Modifier::DIM),
+                Role::Status | Role::StatusAccent | Role::Hang => Style::default().add_modifier(Modifier::DIM),
+                // A role a host named in a decoration: `frame.role_name(cell.role)` says which.
+                Role::Named(_) => Style::default(),
             };
             buf.set_string(area.x + x, area.y + y, &cell.symbol, style);
         }
@@ -150,6 +158,7 @@ fn main() -> std::io::Result<()> {
                 Effect::Quit => break 'outer,
                 Effect::ClipboardSet { .. } => {} // hand it to your clipboard
                 Effect::WriteFile { .. } => {}    // write it, then send Msg::Saved
+                _ => {} // notices, block changes, host effects (`Effect` is non-exhaustive)
             }
         }
     }

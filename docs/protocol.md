@@ -17,8 +17,8 @@ The same operations are available in process through
 $ printf 'hello world\nsecond line\n' > draft.md
 $ printf '%s\n' '{"id":1,"op":"hello"}' '{"id":2,"op":"keys","keys":"<a-right><s-a-right>"}' '{"id":3,"op":"render","w":30,"h":4}' \
     | caretline serve draft.md --size 30x4 --no-clock
-{"id":1,"result":{"proto":1,"version":"0.1.0","rev":0,"ops":["hello","state.get","state.set","text.set","history.get","msgs","keys","render","subscribe","unsubscribe","trace.get","trace.checkpoint","view.open","view.close","view.list"]}}
-{"id":2,"result":{"rev":2,"effects":[],"msgs":[{"msg":"move","dir":"forward","by":"word","extend":false},{"msg":"move","dir":"forward","by":"word","extend":true}]}}
+{"id":1,"result":{"proto":1,"version":"0.3.0","rev":0,"ops":["hello","state.get","state.set","text.set","history.get","frame","msgs","keys","render","subscribe","unsubscribe","trace.get","trace.checkpoint","view.open","view.close","view.list","commands.list","keymap.get"],"commands":[]}}
+{"id":2,"result":{"rev":2,"effects":[],"msgs":[{"msg":"move","dir":"forward","by":"word","extend":false},{"msg":"move","dir":"forward","by":"word","extend":true}],"view":0}}
 {"id":3,"result":{"rev":2,"w":30,"h":4,"format":"text","cursor":[11,0],"frame":"hello world\nsecond line\n\n draft.md         6 sel  1:12\n"}}
 ```
 
@@ -32,7 +32,8 @@ you can match responses. A connection's responses come back in request order.
 ```
 
 A success is `{"id", "result"}`. A failure is `{"id", "error": {"kind", "message"}}`. Every
-result carries the current `rev`.
+result carries the current `rev`. A result's keys come in a fixed order, the same whatever
+serde_json features the program embedding the engine turns on.
 
 ### Operations
 
@@ -194,8 +195,8 @@ $ printf 'hello world\nsecond line\n' > draft.md
 $ printf '%s\n' '{"id":1,"op":"view.open","w":24,"h":4}' '{"id":2,"op":"keys","view":1,"keys":"<down><end>"}' \
     '{"id":3,"op":"keys","keys":">> "}' '{"id":4,"op":"render","view":1}' | caretline serve draft.md --size 30x4 --no-clock
 {"id":1,"result":{"rev":1,"view":1}}
-{"id":2,"result":{"rev":3,"effects":[],"msgs":[…]}}
-{"id":3,"result":{"rev":6,"effects":[],"msgs":[…]}}
+{"id":2,"result":{"rev":3,"effects":[],"msgs":[…],"view":1}}
+{"id":3,"result":{"rev":6,"effects":[],"msgs":[…],"view":0}}
 {"id":4,"result":{"rev":6,"w":24,"h":4,"format":"text","cursor":[11,1],"frame":">> hello world\nsecond line\n\n draft.md [+]      2:12\n"}}
 ```
 
@@ -448,23 +449,24 @@ The status bar says `listening on …/caretline-<pid>.sock`. In another shell:
 
 ```console
 $ caretline send hello
-{"result":{"proto":1,"version":"0.1.0","rev":3,"ops":["hello","state.get","state.set","text.set","history.get","msgs","keys","render","subscribe","unsubscribe","trace.get","trace.checkpoint","view.open","view.close","view.list"]}}
+{"result":{"proto":1,"version":"0.3.0","rev":3,"ops":["hello","state.get","state.set","text.set","history.get","frame","msgs","keys","render","subscribe","unsubscribe","trace.get","trace.checkpoint","view.open","view.close","view.list","commands.list","keymap.get"],"commands":[]}}
 $ caretline send keys '<d-down>from another shell'
-{"result":{"rev":23,"effects":[],"msgs":[{"msg":"tick","now_ms":1791353251020},{"msg":"move","dir":"forward","by":"doc_end","extend":false},{"msg":"insert_text","text":"f"}, …]}}
+{"result":{"rev":24,"effects":[],"msgs":[{"msg":"tick","now_ms":1791353251020},{"msg":"move","dir":"forward","by":"doc_end","extend":false},{"msg":"insert_text","text":"f"}, …],"view":1}}
 $ caretline send render 40x5 --raw
 hello world
 second line
 from another shell
 
- draft.md [+]                      3:19
+ draft.md [+]                       1:1
 $ caretline send --apply-effects keys '<c-s>'
-{"result":{"rev":26,"effects":[{"effect":"write_file","path":"draft.md","text":"hello world\nsecond line\nfrom another shell"}],"executed":true,"msgs":[{"msg":"tick","now_ms":1791353254310},{"msg":"save"},{"msg":"saved"}]}}
+{"result":{"rev":29,"effects":[{"effect":"write_file","path":"draft.md","text":"hello world\nsecond line\nfrom another shell"}],"executed":true,"msgs":[{"msg":"tick","now_ms":1791353254310},{"msg":"save"},{"msg":"saved"}],"view":2}}
 $ caretline send --apply-effects keys '<c-q>'
-{"result":{"rev":28,"effects":[{"effect":"quit"}],"executed":true,"msgs":[{"msg":"tick","now_ms":1791353256002},{"msg":"quit"}]}}
+{"result":{"rev":33,"effects":[{"effect":"quit"}],"executed":true,"msgs":[{"msg":"tick","now_ms":1791353256002},{"msg":"quit"}],"view":3}}
 ```
 
-The save took three revs (23 to 26): the clock's `tick`, the `save` message and the `saved`
-the editor fed back.
+The save took three revs (27 to 29): the clock's `tick`, the `save` message and the `saved`
+the editor fed back. Opening and closing the `send`'s own view (below) takes a rev each, and
+the person's caret stays at `1:1`.
 
 Each `send` writes through its own view, a copy of the person's taken at its first write, so
 the person's caret stays where it was (text put in at it goes after it). The person at the
