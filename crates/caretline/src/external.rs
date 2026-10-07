@@ -72,8 +72,9 @@ pub enum ExtChange {
 }
 
 /// Applies `Msg::External` to the document and every view.
-pub(crate) fn apply(doc: &mut Document, views: &mut [View], msg: Msg) -> Vec<Effect> {
-    let Msg::External { changes } = msg else { return Vec::new() };
+/// Returns the effects and the text changes applied, in order.
+pub(crate) fn apply(doc: &mut Document, views: &mut [View], msg: Msg) -> (Vec<Effect>, Vec<ChangeSet>) {
+    let Msg::External { changes } = msg else { return (Vec::new(), Vec::new()) };
     let mut effects = Vec::new();
     let tops = crate::views::tops(doc, views);
     let mut applied: Vec<ChangeSet> = Vec::new();
@@ -86,7 +87,7 @@ pub(crate) fn apply(doc: &mut Document, views: &mut [View], msg: Msg) -> Vec<Eff
         }
     }
     if applied.is_empty() && !marks_changed {
-        return effects;
+        return (effects, applied);
     }
     doc.edits.0 = doc.edits.0.wrapping_add(1);
     doc.rev += 1;
@@ -100,7 +101,7 @@ pub(crate) fn apply(doc: &mut Document, views: &mut [View], msg: Msg) -> Vec<Eff
         crate::views::rebase(doc, v, &applied, tops[i]);
     }
     doc.dirty = doc.compute_dirty();
-    effects
+    (effects, applied)
 }
 
 /// Applies one change. Returns its text changes (`None` for a change of marks only), or why

@@ -16,6 +16,11 @@
 //! - [`view`] is pure: state in, a cell grid ([`Frame`]) out.
 //! - [`keymap`](keymap::keymap) is a pure function from a key to an optional message.
 //!
+//! - [`update_with_changes`] (and [`update_doc_with_changes`],
+//!   [`Session::apply_with_changes`]) also return the message's text changes as one
+//!   [`ChangeSet`], so a host maps positions of its own through every edit with
+//!   [`ChangeSet::map_pos`] and an [`Assoc`].
+//!
 //! So a session is its initial state plus its messages, and replaying them reproduces it
 //! exactly ([`trace`]). [`Session`] keeps one (state, revision, trace) and [`protocol`]
 //! answers JSON requests against it.
@@ -44,10 +49,12 @@ pub use marks::{MarkAttrs, Mark, MarkId, Marks};
 pub use outline::{BlockInfo, Kind, NewBlock, Outline, OutlineConfig};
 pub use keymap::{keymap, keymap_for, outline_keymap, parse_keys, script_to_msgs, script_to_msgs_for, Key, KeyCode, Mods};
 pub use external::ExtChange;
+/// A message's text changes ([`update_with_changes`]) and which side a mapped position keeps.
+pub use helix::{Assoc, ChangeSet};
 pub use msg::{By, Dir, Effect, Msg};
 pub use session::Session;
 pub use state::{Config, Document, ExternalUndo, Follow, Scroll, State, View, ViewConfig, Viewport};
-pub use update::{replay, update};
-pub use views::update_doc;
+pub use update::{replay, update, update_with_changes};
+pub use views::{update_doc, update_doc_with_changes};
 pub use layout::OutlineLayout;
 pub use view::{view, Frame};

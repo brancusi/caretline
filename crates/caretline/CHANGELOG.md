@@ -4,6 +4,14 @@
 
 ### Added
 
+- `update_with_changes(&mut State, Msg) -> (Vec<Effect>, Option<ChangeSet>)`,
+  `update_doc_with_changes(doc, views, acting, msg)` and `Session::apply_with_changes` /
+  `Session::apply_on_with_changes`: what `update`, `update_doc` and `Session::apply` do, also
+  returning the message's text changes as one `ChangeSet` from the text before it to the text
+  after (typing, paste, undo and redo, host commands, input rules and `Msg::External`; several
+  edits in one message composed). `None` when the text didn't change. A host maps positions
+  of its own through it with `ChangeSet::map_pos` and an `Assoc`, both now also re-exported
+  at the crate root. Nothing is kept in the state.
 - `Layout::click_at`: where a click puts the caret.
 - `ViewConfig::page_overlap`: rows of the previous screen a page motion keeps on screen (a page
   moves the text rows less this). Default 0, as before.

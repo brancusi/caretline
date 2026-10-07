@@ -5,7 +5,7 @@ use crate::helix::chars::{char_is_line_ending, char_is_word};
 use crate::helix::graphemes::{next_grapheme_boundary, prev_grapheme_boundary};
 use crate::helix::history::State as HistoryState;
 use crate::helix::line_ending::line_end_char_index;
-use crate::helix::{Range, RopeSlice, Selection, SmallVec, Tendril, Transaction};
+use crate::helix::{ChangeSet, Range, RopeSlice, Selection, SmallVec, Tendril, Transaction};
 use crate::layout::{ensure_caret_visible, Layout};
 use crate::msg::{By, Dir, Effect, Msg};
 use crate::helix::transaction::Operation;
@@ -16,16 +16,47 @@ use crate::state::{EditRun, RunKind, Scroll, State, RUN_GAP_MS, RUN_MAX_CHARS, R
 /// for the runtime to perform. For several views of one document, see
 /// [`crate::update_doc`].
 pub fn update(state: &mut State, msg: Msg) -> Vec<Effect> {
+    update_logged(state, msg).0
+}
+
+/// [`update`], also returning the message's text changes: one [`ChangeSet`] that maps a char
+/// position in the text before the message to the text after it
+/// ([`ChangeSet::map_pos`] with an [`Assoc`](crate::Assoc)). It covers every way a
+/// message changes the text: typing, deleting, pasting, undo and redo, host commands and
+/// input rules, and [`Msg::External`]; several edits in one message are composed into one.
+/// `None` when the text didn't change.
+///
+/// The changes are returned, never kept in the state, so a host that tracks positions of its
+/// own (anchors, bookmarks, a remote cursor) maps them here, after every message:
+///
+/// ```
+/// use caretline::{update_with_changes, Assoc, Msg, State, Viewport};
+///
+/// let mut state = State::new("world", None, Viewport { width: 80, height: 24 });
+/// let (_, changes) = update_with_changes(&mut state, Msg::InsertText { text: "hello ".into() });
+/// assert_eq!(changes.unwrap().map_pos(0, Assoc::After), 6);
+/// ```
+pub fn update_with_changes(state: &mut State, msg: Msg) -> (Vec<Effect>, Option<ChangeSet>) {
+    let (effects, log) = update_logged(state, msg);
+    (effects, compose_log(log))
+}
+
+/// [`update`], returning the text changes made in order (not composed).
+fn update_logged(state: &mut State, msg: Msg) -> (Vec<Effect>, Vec<ChangeSet>) {
     if msg.is_external() {
-        return crate::views::update_doc(&mut state.doc, std::slice::from_mut(&mut state.view), 0, msg);
+        return crate::views::update_doc_logged(&mut state.doc, std::slice::from_mut(&mut state.view), 0, msg);
     }
     if state.view.read_only && msg.edits() {
-        return vec![Effect::Refused];
+        return (vec![Effect::Refused], Vec::new());
     }
     state.doc.change_log.0.clear();
     let effects = step(state, msg);
-    state.doc.change_log.0.clear();
-    effects
+    (effects, std::mem::take(&mut state.doc.change_log.0))
+}
+
+/// One message's text changes, made in order, as one: `None` when they change nothing.
+pub(crate) fn compose_log(log: Vec<ChangeSet>) -> Option<ChangeSet> {
+    log.into_iter().filter(|c| !c.is_empty()).reduce(ChangeSet::compose).filter(|c| !c.is_empty())
 }
 
 /// One message through one view: everything `update` does, without the read-only check.

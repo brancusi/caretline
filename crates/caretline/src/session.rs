@@ -13,7 +13,8 @@ use crate::keymap::script_to_msgs_for;
 use crate::msg::{Effect, Msg};
 use crate::state::State;
 use crate::state::View;
-use crate::trace::{apply_with_views, OnView, TraceLine, ViewOpen};
+use crate::helix::ChangeSet;
+use crate::trace::{apply_with_views_changes, OnView, TraceLine, ViewOpen};
 use crate::update::update;
 use crate::view::{view, Frame};
 
@@ -200,15 +201,28 @@ impl Session {
     /// effects, unperformed. Every other view is rebased through what it changed. A message to
     /// a view that isn't open does nothing.
     pub fn apply_on(&mut self, id: u32, msg: Msg) -> Vec<Effect> {
+        self.apply_on_with_changes(id, msg).0
+    }
+
+    /// [`Session::apply`], also returning the message's text changes: one [`ChangeSet`]
+    /// from the text before it to the text after, `None` when the text didn't change (see
+    /// [`crate::update_with_changes`]). Nothing about them is kept in the session.
+    pub fn apply_with_changes(&mut self, msg: Msg) -> (Vec<Effect>, Option<ChangeSet>) {
+        self.apply_on_with_changes(0, msg)
+    }
+
+    /// [`Session::apply_on`], also returning the message's text changes (whichever view
+    /// acted, they are the document's).
+    pub fn apply_on_with_changes(&mut self, id: u32, msg: Msg) -> (Vec<Effect>, Option<ChangeSet>) {
         if id != 0 && !self.views.iter().any(|(k, _)| *k == id) {
-            return Vec::new();
+            return (Vec::new(), None);
         }
         self.rev += 1;
         let line = if id == 0 { TraceLine::Msg(msg.clone()) } else { TraceLine::On(OnView { view: id, msg: msg.clone() }) };
         self.push_line(line);
-        let effects = if self.views.is_empty() { update(&mut self.state, msg) } else { apply_with_views(&mut self.state, &mut self.views, id, msg) };
+        let out = apply_with_views_changes(&mut self.state, &mut self.views, id, msg);
         self.trim();
-        effects
+        out
     }
 
     /// Opens another view of the document (fitted to it) and returns its id. Recorded in the
