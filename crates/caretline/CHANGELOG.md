@@ -49,6 +49,11 @@
   (it changed `serde_json::Map`'s key order across a host's whole build). Protocol responses
   are built from structs, so their key order is the same with or without the feature; the
   engine's tests also run with `arbitrary_precision` on.
+- Soft-wrapped rows never exceed the column when a wide grapheme (an emoji, a CJK character, a
+  tab) meets the wrap edge: it used to overflow by one cell; it now starts the next row. This
+  holds in plain and prose (outline) wrapping, for long words and word boundaries alike. Only
+  a grapheme wider than the whole column still overflows, alone on its row (the view clips
+  it), and spaces that hang past a prose row's end are unchanged.
 
 ## 0.3.0 (2026-10-07)
 

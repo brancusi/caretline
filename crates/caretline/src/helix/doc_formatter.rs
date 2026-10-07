@@ -3,7 +3,11 @@
 // SPDX-License-Identifier: MPL-2.0. This file is under the Mozilla Public License 2.0;
 // see LICENSE-MPL-2.0 in the `helix` directory.
 // Changes from upstream: module paths; `Highlight` comes from a local shim instead of the syntax module;
-// `resume_at_row` and `indent_level` (caretline additions) let layout restart inside a long line.
+// `resume_at_row` and `indent_level` (caretline additions) let layout restart inside a long line;
+// `hang_spaces` (prose wrapping); soft wrap checks a grapheme's start column plus its width
+// against the viewport width (`fits`), so a wide grapheme at a row's end starts the next row
+// instead of overflowing by a cell, and a word that starts a row breaks there instead of moving
+// to a fresh row (`row_start`).
 
 //! The `DocumentFormatter` forms the bridge between the raw document text
 //! and onscreen positioning. It yields the text graphemes as an iterator
@@ -17,7 +21,6 @@
 //! called a "block" and the caller must advance it as needed.
 
 use std::borrow::Cow;
-use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::mem::replace;
 
@@ -201,6 +204,10 @@ pub struct DocumentFormatter<'t> {
     /// Is set to `None` if the indentation level is not yet known
     /// because no non-whitespace graphemes have been encountered yet
     indent_level: Option<usize>,
+    /// (caretline) The column where the current visual row starts: 0 on a line's first row,
+    /// the carried indent on a wrapped row. A word that starts here gains nothing by moving
+    /// to a fresh row.
+    row_start: usize,
     /// In case a long word needs to be split a single grapheme might need to be wrapped
     /// while the rest of the word stays on the same line
     peeked_grapheme: Option<GraphemeWithSource<'t>>,
@@ -235,6 +242,7 @@ impl<'t> DocumentFormatter<'t> {
             char_pos: block_char_idx,
             exhausted: false,
             indent_level: None,
+            row_start: 0,
             peeked_grapheme: None,
             word_buf: Vec::with_capacity(64),
             word_i: 0,
@@ -271,6 +279,7 @@ impl<'t> DocumentFormatter<'t> {
             char_pos: char_idx,
             exhausted: false,
             indent_level: indent,
+            row_start: col,
             peeked_grapheme: None,
             word_buf: Vec::with_capacity(64),
             word_i: 0,
@@ -364,6 +373,7 @@ impl<'t> DocumentFormatter<'t> {
                 .virtual_lines_at(self.char_pos, self.visual_pos, self.line_pos);
         self.visual_pos.col = indent_carry_over as usize;
         self.visual_pos.row += 1 + virtual_lines;
+        self.row_start = self.visual_pos.col;
         let mut i = 0;
         let mut word_width = 0;
         let wrap_indicator = UnicodeSegmentation::graphemes(&*self.text_fmt.wrap_indicator, true)
@@ -410,66 +420,79 @@ impl<'t> DocumentFormatter<'t> {
         self.peeked_grapheme.take()
     }
 
+    /// Whether `grapheme`, starting at column `col`, fits on the row whole.
+    ///
+    /// caretline: the check adds the grapheme's width to its start column, so a wide
+    /// grapheme (an emoji, a CJK character, a tab) that would cross the row's end starts the
+    /// next row instead. Upstream compares only the start column with the width, which lets
+    /// a width-2 grapheme starting one cell before the end overflow the row by a cell.
+    fn fits(fmt: &TextFormat, grapheme: &GraphemeWithSource<'t>, col: usize) -> bool {
+        let width = fmt.viewport_width as usize;
+        // The EOF char and newline chars are always selectable in helix. That means
+        // that wrapping happens "too-early" if a word fits a line perfectly. This
+        // is intentional so that all selectable graphemes are always visible (and
+        // therefore the cursor never disappears). However if the user manually set a
+        // lower softwrap width then this is undesirable. Just increasing the viewport-
+        // width by one doesn't work because if a line is wrapped multiple times then
+        // some words may extend past the specified width.
+        //
+        // So we special case a word that ends exactly at line bounds and is followed
+        // by a newline/eof character here.
+        col + grapheme.width() <= width
+            || (fmt.soft_wrap_at_text_width
+                && col == width
+                && (grapheme.is_newline() || grapheme.is_eof()))
+    }
+
     fn advance_to_next_word(&mut self) {
         self.word_buf.clear();
         let mut word_width = 0;
         let mut word_chars = 0;
+        // (caretline) How many graphemes at the front of `word_buf` are the wrap indicator.
+        let mut indicator = 0;
 
-        if self.exhausted {
+        // (caretline) The EOF grapheme may be peeked but not yet taken.
+        if self.exhausted && self.peeked_grapheme.is_none() {
             return;
         }
 
         loop {
-            let mut col = self.visual_pos.col + word_width;
+            let col = self.visual_pos.col + word_width;
             let char_pos = self.char_pos + word_chars;
-            // (caretline) A space at the row's end hangs past it (`hang_spaces`).
-            if self.text_fmt.hang_spaces
-                && col >= self.text_fmt.viewport_width as usize
-                && self
-                    .peek_grapheme(col, char_pos)
-                    .is_some_and(|g| g.is_whitespace() && !g.is_newline() && !g.is_eof())
-            {
-                let grapheme = self.next_grapheme(col, char_pos).expect("peeked");
-                self.word_buf.push(grapheme);
-                return;
-            }
-            match col.cmp(&(self.text_fmt.viewport_width as usize)) {
-                // The EOF char and newline chars are always selectable in helix. That means
-                // that wrapping happens "too-early" if a word fits a line perfectly. This
-                // is intentional so that all selectable graphemes are always visible (and
-                // therefore the cursor never disappears). However if the user manually set a
-                // lower softwrap width then this is undesirable. Just increasing the viewport-
-                // width by one doesn't work because if a line is wrapped multiple times then
-                // some words may extend past the specified width.
-                //
-                // So we special case a word that ends exactly at line bounds and is followed
-                // by a newline/eof character here.
-                Ordering::Equal
-                    if self.text_fmt.soft_wrap_at_text_width
-                        && self
-                            .peek_grapheme(col, char_pos)
-                            .is_some_and(|grapheme| grapheme.is_newline() || grapheme.is_eof()) => {
-                }
-                // (caretline) With `hang_spaces`, a word that started at the row's start can't
-                // move to a fresh row: it breaks here.
-                Ordering::Equal
-                    if word_width > self.text_fmt.max_wrap as usize
-                        || (self.text_fmt.hang_spaces && self.visual_pos.col == 0) =>
-                {
-                    return
-                }
-                Ordering::Greater
-                    if word_width > self.text_fmt.max_wrap as usize
-                        || (self.text_fmt.hang_spaces && self.visual_pos.col == 0) =>
-                {
-                    self.peeked_grapheme = self.word_buf.pop();
+            let fmt = self.text_fmt;
+            let (fits, hangs) = match self.peek_grapheme(col, char_pos) {
+                None => return,
+                Some(g) => (
+                    Self::fits(fmt, g, col),
+                    fmt.hang_spaces && g.is_whitespace() && !g.is_newline() && !g.is_eof(),
+                ),
+            };
+            if !fits {
+                if hangs {
+                    // (caretline) With `hang_spaces`, whitespace that doesn't fit hangs past
+                    // the row's end; the next row starts with the next word.
+                    let grapheme = self.next_grapheme(col, char_pos).expect("peeked");
+                    self.word_buf.push(grapheme);
                     return;
                 }
-                Ordering::Equal | Ordering::Greater => {
+                if self.visual_pos.col == self.row_start {
+                    // (caretline) The word began at the row's start, so moving it to a fresh
+                    // row can't help: it breaks here and the grapheme starts the next row.
+                    // A grapheme wider than the whole row with nothing before it on the row
+                    // is placed anyway (the view clips it), so wrapping always advances.
+                    if self.word_buf.len() > indicator {
+                        return;
+                    }
+                } else if word_width > self.text_fmt.max_wrap as usize {
+                    // A long word breaks at the row's end.
+                    return;
+                } else {
+                    // A short word moves to the next row whole; check it again there.
+                    let before = self.word_buf.len();
                     word_width = self.wrap_word();
-                    col = self.visual_pos.col + word_width;
+                    indicator = self.word_buf.len() - before;
+                    continue;
                 }
-                Ordering::Less => (),
             }
 
             let Some(grapheme) = self.next_grapheme(col, char_pos) else {
@@ -549,6 +572,7 @@ impl<'t> Iterator for DocumentFormatter<'t> {
                     .virtual_lines_at(self.char_pos, self.visual_pos, self.line_pos);
             self.visual_pos.row += 1 + virtual_lines;
             self.visual_pos.col = 0;
+            self.row_start = 0;
             if !grapheme.is_virtual() {
                 self.line_pos += 1;
             }
