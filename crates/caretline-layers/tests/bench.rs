@@ -1,7 +1,7 @@
 #![cfg(feature = "caretline")]
 //! Timings at 100x40 (design §3.5, §12):
 //! `cargo test -p caretline-layers --release --test bench -- --ignored --nocapture`
-//! (`BENCH_N` plans per case, default 5,000; more gives steadier numbers).
+//! (`BENCH_N` plans per round, default 5,000; each case reports its best of five rounds).
 
 mod common;
 
@@ -21,14 +21,17 @@ fn time(name: &str, layers: &Layers) {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(5_000);
-    let t = Instant::now();
-    for _ in 0..n {
-        std::hint::black_box(plan(layers, &res, &grid, &r));
-    }
-    println!(
-        "{name}: plan {:.1} µs",
-        t.elapsed().as_secs_f64() * 1e6 / n as f64
-    );
+    // The best of five rounds: the least disturbed by whatever else the machine is doing.
+    let best = (0..5)
+        .map(|_| {
+            let t = Instant::now();
+            for _ in 0..n {
+                std::hint::black_box(plan(layers, &res, &grid, &r));
+            }
+            t.elapsed().as_secs_f64() * 1e6 / n as f64
+        })
+        .fold(f64::INFINITY, f64::min);
+    println!("{name}: plan {best:.1} µs");
 }
 
 #[test]

@@ -117,6 +117,12 @@ pub enum Anchor {
     /// A kind the host resolves (an [`AnchorMap`](crate::AnchorMap) key). Wire:
     /// `{"host": {"kind": "row", "key": "a1b2"}}`.
     Host { kind: String, key: String },
+    /// A text, block or caret anchor that resolves only in one view: the
+    /// [`FrameResolver`](crate::FrameResolver) with that id. Wire: the anchor with `in`
+    /// beside it, `{"text": {"from": 4, "to": 9}, "in": "panel:2"}`. Build it with
+    /// [`Anchor::scoped`]; a screen or host anchor isn't scoped, nor a scoped one again
+    /// ([`Anchor::problem`]).
+    In { view: String, anchor: Box<Anchor> },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -145,9 +151,52 @@ struct HostWire {
     key: String,
 }
 
-impl Serialize for Anchor {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let w = match self.clone() {
+impl Anchor {
+    /// `anchor`, resolving only in the view `view`. Scoping a scoped anchor replaces its view.
+    pub fn scoped(view: &str, anchor: Anchor) -> Anchor {
+        Anchor::In {
+            view: view.into(),
+            anchor: Box::new(anchor.unscoped().clone()),
+        }
+    }
+
+    /// The view it is scoped to, if any.
+    pub fn view(&self) -> Option<&str> {
+        match self {
+            Anchor::In { view, .. } => Some(view),
+            _ => None,
+        }
+    }
+
+    /// Itself without its scope.
+    pub fn unscoped(&self) -> &Anchor {
+        match self {
+            Anchor::In { anchor, .. } => anchor,
+            a => a,
+        }
+    }
+
+    /// Why it isn't well formed: an empty view id, or a scope on a screen, host or scoped
+    /// anchor. [`apply`] refuses a layer with such an anchor, and serde never reads or writes
+    /// one.
+    pub fn problem(&self) -> Option<&'static str> {
+        let Anchor::In { view, anchor } = self else {
+            return None;
+        };
+        if view.is_empty() {
+            Some("a view id (`in`) can't be empty")
+        } else if matches!(
+            **anchor,
+            Anchor::Screen(_) | Anchor::Host { .. } | Anchor::In { .. }
+        ) {
+            Some("`in` scopes a text, block or caret anchor")
+        } else {
+            None
+        }
+    }
+
+    fn wire(&self) -> AnchorWire {
+        match self.clone() {
             Anchor::Text { from, to } => AnchorWire::Text(TextWire {
                 block: None,
                 from,
@@ -162,14 +211,53 @@ impl Serialize for Anchor {
             Anchor::Caret => AnchorWire::Caret(true),
             Anchor::Screen(p) => AnchorWire::Screen(p),
             Anchor::Host { kind, key } => AnchorWire::Host(HostWire { kind, key }),
+            Anchor::In { anchor, .. } => anchor.wire(),
+        }
+    }
+}
+
+/// The key beside the target that scopes an anchor to a view.
+const IN: &str = "in";
+
+impl Serialize for Anchor {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{Error, SerializeMap};
+        if let Some(p) = self.problem() {
+            return Err(S::Error::custom(p));
+        }
+        let Some(view) = self.view() else {
+            return self.wire().serialize(s);
         };
-        w.serialize(s)
+        let Value::Object(target) = serde_json::to_value(self.wire()).map_err(S::Error::custom)?
+        else {
+            return Err(S::Error::custom("an anchor is an object"));
+        };
+        let mut m = s.serialize_map(Some(target.len() + 1))?;
+        for (k, v) in &target {
+            m.serialize_entry(k, v)?;
+        }
+        m.serialize_entry(IN, view)?;
+        m.end()
     }
 }
 
 impl<'de> Deserialize<'de> for Anchor {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Anchor, D::Error> {
-        Ok(match AnchorWire::deserialize(d)? {
+        use serde::de::Error;
+        // One target key, and an optional `in` beside it; nothing else.
+        let mut m = serde_json::Map::<String, Value>::deserialize(d)?;
+        let view = match m.remove(IN) {
+            None => None,
+            Some(Value::String(v)) => Some(v),
+            Some(_) => return Err(D::Error::custom("\"in\" is a view id (a string)")),
+        };
+        if m.len() != 1 {
+            return Err(D::Error::custom(
+                "an anchor is one of text, block, caret, screen or host, with an optional \"in\"",
+            ));
+        }
+        let w: AnchorWire = serde_json::from_value(Value::Object(m)).map_err(D::Error::custom)?;
+        let a = match w {
             AnchorWire::Text(TextWire {
                 block: None,
                 from,
@@ -187,7 +275,16 @@ impl<'de> Deserialize<'de> for Anchor {
             }
             AnchorWire::Screen(p) => Anchor::Screen(p),
             AnchorWire::Host(HostWire { kind, key }) => Anchor::Host { kind, key },
-        })
+        };
+        let Some(view) = view else { return Ok(a) };
+        let a = Anchor::In {
+            view,
+            anchor: Box::new(a),
+        };
+        match a.problem() {
+            Some(p) => Err(D::Error::custom(p)),
+            None => Ok(a),
+        }
     }
 }
 
@@ -692,6 +789,9 @@ fn push(
 ) -> Result<Applied, Refusal> {
     if layer.anchor.is_empty() {
         return refuse(Reason::Invalid, "a layer needs at least one anchor");
+    }
+    if let Some(p) = layer.anchor.iter().find_map(Anchor::problem) {
+        return refuse(Reason::Invalid, p);
     }
     if layer.content.is_none() && layer.ring.is_none() && layer.spotlight.is_none() {
         return refuse(

@@ -68,3 +68,51 @@
   `CSI 16 t`, DA1 as the fence; `cell_size_request`) and a pure parser for the replies
   (`scan` → `Reply::{Graphics, Version, CellSize, WindowSize, Da1}`, or `Partial`, or `No`
   for keys), so a runtime turns them into messages instead of keys. `Probe` gathers them.
+- View-scoped anchors, for one document shown in several views. `FrameResolver` gains
+  `.id("panel:2")`, `.clip(rect)` (cells outside it aren't visible; an anchor clipped away
+  lies off screen the way its cells are, with its column or row) and `.focused()`. A text,
+  block or caret anchor can name its view: `{"text": {"from": 4, "to": 9}, "in": "panel:2"}`
+  (`Anchor::In { view, anchor }`, built with `Anchor::scoped`); it resolves only there.
+  `in` on a screen or host anchor, an empty view or a second scope is refused by serde and
+  by `apply`. `Resolved.view` (wire `in`) and so `Planned.anchor` and `ops::resolved` say
+  which view an anchor resolved in. `map_anchors` maps scoped anchors too, whichever view
+  the edit came through.
+- `Resolve::is_focused` (default `false`).
+- `ops::schema() -> serde_json::Value`: a JSON Schema (draft 2020-12) for every request
+  `ops::parse` accepts (`$defs/request`, one per op, with `op`, `id`, `view` and `actor`)
+  and every reply (`$defs/reply`, `resolved`, `list`, `error`), with `anchor` (and its
+  `in`), `layer`, `content`, `hint` and `owner`. A test checks the ops tests' requests (those
+  `parse` refuses must fail it too), real replies, and the design's protocol examples
+  against it.
+- `Renderer::measure(data, avail)` is called once per candidate side with that side's real
+  room (below and above: the rows past the arrow's gap, at most the width cap; right and
+  left: the columns past the gap, at most the cap), so a renderer can return a narrow, tall
+  box for a narrow side. A side with no room isn't measured.
+
+### Changed (breaking within 0.1.0's development)
+
+- `Anchor` has a new variant, `In`: exhaustive matches need an arm. `Resolved` has a new
+  public field, `view`: struct literals need it (or use `Resolved::at` / `Resolved::off`).
+- `Chain` no longer takes the first answer: of its resolvers' answers it takes the focused
+  one's if its cells show, else the first whose cells show, else the focused one's
+  off-screen direction, else the first. A resolver that answered "off screen" no longer
+  hides a later one that shows the anchor.
+- Placement with an arrow picks the least-scoring box of every candidate, not of the first
+  few that route: the result no longer depends on how a first guess ranked them. Boxes are
+  routed a side at a time, the best guess's side first; a side none of whose boxes could
+  win even with the cheapest arrow (one blank cell per cell of gap) gets no search at all,
+  and the search for a side covers only the boxes that could. Every golden plan is
+  unchanged. At 100×40 (release, `tests/bench.rs`, the least of ten runs of five rounds,
+  alternating with the previous build): a box with its arrow 26.7 µs (was 26.8), a
+  spotlight with an arrow 36.6 µs (was 42.7), a box alone 5.6 µs (was 4.2: four measures,
+  one per side, with the test host's measure).
+
+### Fixed
+
+- A docked box (its anchor off screen) now always touches its own edge chip: it sits next
+  to the chip and shares part of its edge, and `Planned.dock` names a cell of that shared
+  edge. It used to take any candidate along the edge (one at the area's far side won where
+  it covered less text, or one a few rows away), and `dock` was clamped to the box's
+  border, touching nothing. When no box can touch the chip, the layer is a strip.
+- `Planned.owner`'s documentation said a host must attribute agents' layers; attributing
+  them is recommended, and the host's choice.

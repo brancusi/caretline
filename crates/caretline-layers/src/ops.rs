@@ -183,21 +183,26 @@ fn off_name(o: &Off) -> &'static str {
 }
 
 /// Where a layer landed in a plan: `{"rects": […]}`, `{"off": "below"}`, or `null` (with
-/// `reason: "not_found"` beside it in [`reply`]).
+/// `reason: "not_found"` beside it in [`reply`]); with `"in": "<view>"` when it resolved in a
+/// named view.
 pub fn resolved(plan: &Plan, layer: &str) -> Value {
-    match plan
+    let Some(r) = plan
         .layers
         .iter()
         .find(|l| l.id == layer)
         .and_then(|l| l.anchor.as_ref())
-    {
-        Some(r) if !r.rects.is_empty() => json!({"rects": r.rects}),
-        Some(r) => r
-            .off
-            .as_ref()
-            .map_or(Value::Null, |o| json!({"off": off_name(o)})),
-        None => Value::Null,
+    else {
+        return Value::Null;
+    };
+    let mut v = match (&r.rects, &r.off) {
+        (rects, _) if !rects.is_empty() => json!({"rects": rects}),
+        (_, Some(o)) => json!({"off": off_name(o)}),
+        _ => return Value::Null,
+    };
+    if let Some(view) = &r.view {
+        v["in"] = json!(view);
     }
+    v
 }
 
 /// The result of an applied op: the layer id, what it popped, and, given this frame's plan,
@@ -229,4 +234,309 @@ pub fn list(layers: &Layers) -> Value {
 /// A refusal as an error result: `{"error": {"reason": "rate_limited", "detail": "…"}}`.
 pub fn error(r: &Refusal) -> Value {
     json!({"error": {"reason": r.reason, "detail": r.detail}})
+}
+
+/// A JSON Schema (draft 2020-12) for the ops: every request [`parse`] accepts, with its `op`
+/// (and the host's `id` and `view`, which it ignores), under `$defs/request`, and each reply
+/// shape under `$defs/reply` ([`reply`]), `$defs/resolved` ([`resolved`]), `$defs/list`
+/// ([`list`]) and `$defs/error` ([`error`]). The parts are `$defs` too: `anchor` (with its
+/// `in` scope), `layer`, `content`, `hint`, `owner`, `side`, `rect`. The document as a whole
+/// matches any request or reply.
+///
+/// It describes the wire's shape, as `parse` reads it; what [`apply`](crate::apply) then
+/// refuses (no anchor, nothing to show, a host's limits) is semantic, and not in it.
+pub fn schema() -> Value {
+    let u16 = json!({"type": "integer", "minimum": 0, "maximum": 65535});
+    let u32 = json!({"type": "integer", "minimum": 0, "maximum": 4_294_967_295u64});
+    let u64 = json!({"type": "integer", "minimum": 0});
+    let i16 = json!({"type": "integer", "minimum": -32768, "maximum": 32767});
+    let scope = json!({"$ref": "#/$defs/view"});
+    // A request: its `op`, the host's routing (`id`, `view`: anything), the actor, and its
+    // own fields.
+    let request = |op: &str, mut props: Value, required: &[&str]| {
+        let p = props.as_object_mut().expect("properties");
+        p.insert("op".into(), json!({"const": op}));
+        p.insert(
+            "id".into(),
+            json!({"description": "The host's request id; any JSON, ignored here."}),
+        );
+        p.insert(
+            "view".into(),
+            json!({"description": "The host's routing (which screen); any JSON, ignored here."}),
+        );
+        p.insert(
+            "actor".into(),
+            json!({"type": ["string", "null"], "description": "The agent the request comes from; none: the host's or the person's own."}),
+        );
+        let mut req = vec!["op"];
+        req.extend(required);
+        json!({"type": "object", "properties": props, "required": req, "additionalProperties": false})
+    };
+    let given = |field: &str, s: Value| json!({"required": [field], "properties": {field: s}});
+    let layer_given = given("layer", json!({"type": "string"}));
+    let owner_given = given("owner", json!({"$ref": "#/$defs/owner"}));
+    let all_true = given("all", json!({"const": true}));
+    let only =
+        |yes: &Value, no: [&Value; 2]| json!({"allOf": [yes, {"not": no[0]}, {"not": no[1]}]});
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://caretline.app/schema/layers-ops.json",
+        "title": "caretline-layers ops",
+        "description": "Requests a host's protocol passes to caretline_layers::ops::parse, and the replies ops::reply, ops::list and ops::error give.",
+        "anyOf": [
+            {"$ref": "#/$defs/request"},
+            {"$ref": "#/$defs/reply"},
+            {"$ref": "#/$defs/list"},
+            {"$ref": "#/$defs/error"}
+        ],
+        "$defs": {
+            "rect": {
+                "type": "object",
+                "properties": {"x": u16, "y": u16, "w": u16, "h": u16},
+                "required": ["x", "y", "w", "h"],
+                "additionalProperties": false
+            },
+            "side": {"enum": ["below", "above", "right", "left"]},
+            "view": {"type": "string", "minLength": 1, "description": "A view's id, as the host names it (FrameResolver::id)."},
+            "owner": {
+                "anyOf": [
+                    {"enum": ["person", "host", "guide"]},
+                    {"type": "string", "pattern": "^agent:.+"}
+                ]
+            },
+            "anchor": {
+                "description": "What a layer points at: one target key, and for text, block and caret anchors an optional `in`, the view it resolves in.",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "text": {
+                                "type": "object",
+                                "properties": {"block": u64, "from": u64, "to": u64},
+                                "required": ["from", "to"],
+                                "additionalProperties": false
+                            },
+                            "in": scope
+                        },
+                        "required": ["text"],
+                        "additionalProperties": false
+                    },
+                    {
+                        "type": "object",
+                        "properties": {"block": u64, "in": scope},
+                        "required": ["block"],
+                        "additionalProperties": false
+                    },
+                    {
+                        "type": "object",
+                        "properties": {"caret": {"const": true}, "in": scope},
+                        "required": ["caret"],
+                        "additionalProperties": false
+                    },
+                    {
+                        "type": "object",
+                        "properties": {"screen": {"enum": ["center", "top", "bottom"]}},
+                        "required": ["screen"],
+                        "additionalProperties": false
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "host": {
+                                "type": "object",
+                                "properties": {"kind": {"type": "string"}, "key": {"type": "string"}},
+                                "required": ["kind", "key"],
+                                "additionalProperties": false
+                            }
+                        },
+                        "required": ["host"],
+                        "additionalProperties": false
+                    }
+                ]
+            },
+            "anchors": {
+                "description": "One anchor, or fallbacks in order.",
+                "oneOf": [
+                    {"$ref": "#/$defs/anchor"},
+                    {"type": "array", "items": {"$ref": "#/$defs/anchor"}}
+                ]
+            },
+            "content": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string"},
+                    "data": {"description": "The kind's data, opaque here; a `hint`'s is #/$defs/hint."}
+                },
+                "required": ["kind"],
+                "additionalProperties": false
+            },
+            "hint": {
+                "type": "object",
+                "properties": {"title": {"type": ["string", "null"]}, "text": {"type": "string"}},
+                "additionalProperties": false
+            },
+            "layer": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "owner": {"$ref": "#/$defs/owner"},
+                    "z": i16,
+                    "since_ms": u64,
+                    "ttl_ms": {"anyOf": [u64, {"type": "null"}]},
+                    "anchor": {"type": "array", "items": {"$ref": "#/$defs/anchor"}},
+                    "content": {"anyOf": [{"$ref": "#/$defs/content"}, {"type": "null"}]},
+                    "arrow": {"type": "boolean"},
+                    "ring": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "pulse": {
+                                        "anyOf": [
+                                            {
+                                                "type": "object",
+                                                "properties": {"period_ms": u32, "cycles": u16},
+                                                "required": ["period_ms", "cycles"],
+                                                "additionalProperties": false
+                                            },
+                                            {"type": "null"}
+                                        ]
+                                    }
+                                },
+                                "additionalProperties": false
+                            },
+                            {"type": "null"}
+                        ]
+                    },
+                    "spotlight": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {"holes": {"type": "array", "items": {"enum": ["anchor", "box"]}}},
+                                "additionalProperties": false
+                            },
+                            {"type": "null"}
+                        ]
+                    },
+                    "capture": {"type": "boolean"},
+                    "hide_off_screen": {"type": "boolean"},
+                    "place": {"type": "array", "items": {"$ref": "#/$defs/side"}},
+                    "max_width": {"anyOf": [u16, {"type": "null"}]}
+                },
+                "required": ["anchor"],
+                "additionalProperties": false
+            },
+            "request": {
+                "oneOf": [
+                    {"$ref": "#/$defs/hint.show"},
+                    {"$ref": "#/$defs/hint.hide"},
+                    {"$ref": "#/$defs/layer.push"},
+                    {"$ref": "#/$defs/layer.update"},
+                    {"$ref": "#/$defs/layer.pop"},
+                    {"$ref": "#/$defs/layer.list"}
+                ]
+            },
+            "hint.show": request("hint.show", json!({
+                "anchor": {"$ref": "#/$defs/anchors"},
+                "text": {"type": "string"},
+                "title": {"type": ["string", "null"]},
+                "ttl_ms": {"anyOf": [u64, {"type": "null"}]},
+                "place": {"type": "array", "items": {"$ref": "#/$defs/side"}},
+                "arrow": {"type": "boolean", "description": "Default true."},
+                "ring": {"type": "boolean", "description": "Default true."}
+            }), &["anchor", "text"]),
+            "layer.push": request("layer.push", json!({"layer": {"$ref": "#/$defs/layer"}}), &["layer"]),
+            "layer.update": request("layer.update", json!({"layer": {"$ref": "#/$defs/layer"}}), &["layer"]),
+            "hint.hide": {
+                "allOf": [
+                    request("hint.hide", json!({
+                        "layer": {"type": ["string", "null"]},
+                        "owner": {"type": "null"},
+                        "all": {"type": "boolean"}
+                    }), &[]),
+                    {"anyOf": [only(&layer_given, [&owner_given, &all_true]), only(&all_true, [&layer_given, &owner_given])]}
+                ],
+                "description": "One of `layer` or `all: true`."
+            },
+            "layer.pop": {
+                "allOf": [
+                    request("layer.pop", json!({
+                        "layer": {"type": ["string", "null"]},
+                        "owner": {"anyOf": [{"$ref": "#/$defs/owner"}, {"type": "null"}]},
+                        "all": {"type": "boolean"}
+                    }), &[]),
+                    {"anyOf": [
+                        only(&layer_given, [&owner_given, &all_true]),
+                        only(&owner_given, [&layer_given, &all_true]),
+                        only(&all_true, [&layer_given, &owner_given])
+                    ]}
+                ],
+                "description": "One of `layer`, `owner` or `all: true`."
+            },
+            "layer.list": request("layer.list", json!({}), &[]),
+            "resolved": {
+                "description": "Where a layer's anchor landed: its cells, or which way it lies; `in`, the view it resolved in. Null: no anchor resolved.",
+                "oneOf": [
+                    {"type": "null"},
+                    {
+                        "type": "object",
+                        "properties": {
+                            "rects": {"type": "array", "items": {"$ref": "#/$defs/rect"}, "minItems": 1},
+                            "in": scope
+                        },
+                        "required": ["rects"],
+                        "additionalProperties": false
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "off": {"enum": ["above", "below", "left", "right"]},
+                            "in": scope
+                        },
+                        "required": ["off"],
+                        "additionalProperties": false
+                    }
+                ]
+            },
+            "reply": {
+                "description": "An applied op: the layer pushed or updated and where it resolved (`reason: not_found` when nowhere), and the layers it popped.",
+                "type": "object",
+                "properties": {
+                    "layer": {"type": "string"},
+                    "resolved": {"$ref": "#/$defs/resolved"},
+                    "reason": {"const": "not_found"},
+                    "popped": {"type": "array", "items": {"type": "string"}}
+                },
+                "additionalProperties": false
+            },
+            "list": {
+                "type": "object",
+                "properties": {
+                    "layers": {"type": "array", "items": {"$ref": "#/$defs/layer"}},
+                    "hidden": {"type": "boolean"}
+                },
+                "required": ["layers", "hidden"],
+                "additionalProperties": false
+            },
+            "error": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "properties": {
+                            "reason": {"enum": [
+                                "rate_limited", "dim_not_allowed", "capture_not_allowed",
+                                "too_long", "not_found", "not_allowed", "too_many", "invalid"
+                            ]},
+                            "detail": {"type": "string"}
+                        },
+                        "required": ["reason", "detail"],
+                        "additionalProperties": false
+                    }
+                },
+                "required": ["error"],
+                "additionalProperties": false
+            }
+        }
+    })
 }

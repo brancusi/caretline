@@ -1,0 +1,233 @@
+{
+  "width": 100,
+  "height": 24,
+  "layers": [
+    {
+      "id": "L-1",
+      "z": 0,
+      "agent": false,
+      "owner": "host",
+      "anchor": {
+        "rects": [
+          {
+            "x": 62,
+            "y": 6,
+            "w": 27,
+            "h": 1
+          }
+        ],
+        "in": "panel:2"
+      },
+      "rect": {
+        "x": 76,
+        "y": 1,
+        "w": 24,
+        "h": 4
+      },
+      "mode": "box",
+      "side": "above",
+      "route": {
+        "junction": [
+          77,
+          4
+        ],
+        "attach": {
+          "edge": "bottom",
+          "offset": 1
+        },
+        "steps": [
+          {
+            "x": 77,
+            "y": 5,
+            "enter": "down",
+            "leave": "down"
+          }
+        ]
+      }
+    },
+    {
+      "id": "L-2",
+      "z": 0,
+      "agent": false,
+      "owner": "host",
+      "anchor": {
+        "rects": [
+          {
+            "x": 45,
+            "y": 8,
+            "w": 14,
+            "h": 1
+          }
+        ],
+        "in": "main"
+      },
+      "rect": {
+        "x": 47,
+        "y": 11,
+        "w": 19,
+        "h": 4
+      },
+      "mode": "box",
+      "side": "below",
+      "route": {
+        "junction": [
+          50,
+          11
+        ],
+        "attach": {
+          "edge": "top",
+          "offset": 3
+        },
+        "steps": [
+          {
+            "x": 50,
+            "y": 10,
+            "enter": "up",
+            "leave": "up"
+          },
+          {
+            "x": 50,
+            "y": 9,
+            "enter": "up",
+            "leave": "up"
+          }
+        ]
+      }
+    },
+    {
+      "id": "L-3",
+      "z": 0,
+      "agent": false,
+      "owner": "host",
+      "anchor": {
+        "rects": [
+          {
+            "x": 62,
+            "y": 4,
+            "w": 7,
+            "h": 1
+          }
+        ],
+        "in": "panel:2"
+      },
+      "rect": {
+        "x": 28,
+        "y": 3,
+        "w": 32,
+        "h": 4
+      },
+      "mode": "box",
+      "side": "left",
+      "route": {
+        "junction": [
+          59,
+          5
+        ],
+        "attach": {
+          "edge": "right",
+          "offset": 2
+        },
+        "steps": [
+          {
+            "x": 60,
+            "y": 5,
+            "enter": "right",
+            "leave": "up"
+          },
+          {
+            "x": 60,
+            "y": 4,
+            "enter": "up",
+            "leave": "right"
+          },
+          {
+            "x": 61,
+            "y": 4,
+            "enter": "right",
+            "leave": "right"
+          }
+        ]
+      }
+    },
+    {
+      "id": "L-4",
+      "z": 0,
+      "agent": false,
+      "owner": "host",
+      "anchor": {
+        "off": {
+          "below": {
+            "x": 62
+          }
+        },
+        "in": "panel:2"
+      },
+      "rect": {
+        "x": 61,
+        "y": 18,
+        "w": 15,
+        "h": 4
+      },
+      "mode": "box",
+      "side": "above",
+      "chip": {
+        "x": 62,
+        "y": 22,
+        "w": 8,
+        "h": 1
+      },
+      "dock": {
+        "edge": "bottom",
+        "offset": 5
+      }
+    }
+  ],
+  "spots": [],
+  "regions": [
+    {
+      "rect": {
+        "x": 76,
+        "y": 1,
+        "w": 24,
+        "h": 4
+      },
+      "id": "L-1"
+    },
+    {
+      "rect": {
+        "x": 47,
+        "y": 11,
+        "w": 19,
+        "h": 4
+      },
+      "id": "L-2"
+    },
+    {
+      "rect": {
+        "x": 28,
+        "y": 3,
+        "w": 32,
+        "h": 4
+      },
+      "id": "L-3"
+    },
+    {
+      "rect": {
+        "x": 62,
+        "y": 22,
+        "w": 8,
+        "h": 1
+      },
+      "id": "L-4/reveal"
+    },
+    {
+      "rect": {
+        "x": 61,
+        "y": 18,
+        "w": 15,
+        "h": 4
+      },
+      "id": "L-4"
+    }
+  ]
+}

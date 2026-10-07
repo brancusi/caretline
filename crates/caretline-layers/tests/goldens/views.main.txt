@@ -1,0 +1,49 @@
+# Getting around
+                                                                            +----------------------+
+This page is a short tour of the editor. Read it from top     began.        | Note                 |
+to bottom and                                                               | Scoped to the panel. |
+try each key as you go: nothing here can break.               ## Undo       ++---------------------+
+                                                                             v
+## Moving by words                                            Every change can be undone. Undo
+                                                              steps follow the way you typed: a
+Hold Option and press an arrow key to jump a word at a time.  word
+ The caret                                        ^           at a time while you type, and one
+stops at the start of each word, so a long line is|quick to   step for a paste.
+cross.                                         +--+--------------+
+                                               | Note            |
+## Selecting                                   | Scoped to main. |
+                                               +-----------------+
+Hold Shift with any motion to select as you move. Shift and
+Option
+together select whole words, and the selection grows from
+where you+------------------------------+                                            +-------------+
+         | Note                         |                                            | Note        |
+## Undo<-+ In both: the focused view's. |                                            | In neither. |
+         +------------------------------+                                            +-------------+
+Every change can be undone. Undo steps follow the way you                                   v here
+ guide.md                                               1:1
+--- map
+
+                                                                            ########################
+                                                                            ########################
+                                                                            ########################
+                                                                            ########################
+                                                                             >
+
+
+
+                                                  >
+                                                  >
+                                               ###################
+                                               ###################
+                                               ###################
+                                               ###################
+
+
+
+         ################################                                            ###############
+         ################################                                            ###############
+       >>################################                                            ###############
+         ################################                                            ###############
+                                                                                            cccccccc
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss

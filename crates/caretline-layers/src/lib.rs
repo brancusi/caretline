@@ -16,11 +16,17 @@
 //!   render.
 //! - **Anchors** ([`Anchor`]): stable keys (chars, mark ids, host keys; never screen
 //!   positions), resolved to cells every frame by a [`Resolve`]: the host's [`AnchorMap`], a
-//!   caretline [`FrameResolver`] (feature `caretline`), or both with [`Chain`]. Text anchors
+//!   caretline [`FrameResolver`] (feature `caretline`), or several with [`Chain`]. Text anchors
 //!   follow edits through the `ChangeSet` each editor message returns
 //!   (`caretline::update_with_changes`; [`observe`], [`map_anchors`]).
+//! - **Views:** one document shown in several views gets a [`FrameResolver`] per view, each
+//!   with an id, offset and clip, the focused one marked. An anchor scoped to a view
+//!   ([`Anchor::scoped`], wire `"in"`) resolves only there; an unscoped one in the focused
+//!   view, else the first that shows it, else which way it lies from the focused view.
+//!   [`Resolved::view`] says which.
 //! - **Placement** ([`plan`]): a pure function of the layers, the resolved anchors, the
-//!   [`Grid`] and the measured sizes. It returns a serializable [`Plan`]: each layer's box or
+//!   [`Grid`] and the sizes the host's renderer measures for each side's room. It returns a
+//!   serializable [`Plan`]: each layer's box or
 //!   strip, the edge chip of an off-screen anchor, the arrow's route as cells, ring cells,
 //!   spotlight holes, and click [`Region`]s with [`Plan::hit`].
 //! - **Ops** ([`ops`]): protocol-neutral `hint.*` and `layer.*` requests and replies, for a
@@ -37,6 +43,9 @@
 //! let plan = plan(&layers, &Chain(vec![&anchors, &editor]), &grid, &renderers);
 //! for l in &plan.layers { /* draw l.rect, l.route, l.ring, l.chip; dim plan.spots */ }
 //! ```
+
+// `ops::schema` is one `json!` literal, deeper than the default limit.
+#![recursion_limit = "256"]
 
 #[cfg(feature = "caretline")]
 mod frame;
