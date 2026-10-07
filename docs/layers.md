@@ -2,9 +2,10 @@
 
 > **New and not released.** [`caretline-layers`](../crates/caretline-layers) is in the
 > repository but not yet on crates.io, and its API may change before its first release. This
-> page covers what is built (step 1a of the [design](../docs/design/layers.md)); the next
-> steps (engine hooks, in-frame mode, pixels, walkthroughs, protocol and MCP tools in caretline
-> itself) are listed in the design's section 9.
+> page covers what is built (steps 1a and 1b of the [design](../docs/design/layers.md):
+> placement, and the kitty plumbing for pixels in Ghostty); the next steps (engine hooks,
+> in-frame mode, walkthroughs, protocol and MCP tools in caretline itself) are listed in the
+> design's section 9.
 
 `caretline-layers` puts things **over** a host's screen: a hint box beside a word, an arrow
 to a table row, a ring round a block, a spotlight that dims everything else. It decides where
@@ -35,7 +36,9 @@ The default feature `caretline` adds what needs the engine: `FrameResolver`, `Gr
 and mapping anchors through the `ChangeSet` each editor message returns
 (`caretline::update_with_changes`, which needs a caretline release newer than 0.3.0; until then
 depend on caretline by git revision too). Without it (`default-features = false`) the crate
-needs only serde, for a host that draws no caretline editor at all.
+needs only serde, for a host that draws no caretline editor at all. The `kitty` feature (off
+by default) adds the pixel plumbing ([Pixels in Ghostty](#pixels-in-ghostty)) and only
+`miniz_oxide`.
 
 ## The model
 
@@ -405,10 +408,151 @@ A host that draws a caretline editor rather than a table does the same with a
 `FrameResolver` for its anchors, and after every message passes the changes
 `update_with_changes` returned to `observe` ([Following edits](#anchors)).
 
+## Pixels in Ghostty
+
+With the `kitty` feature, a host that draws in Ghostty can show its layers in pixels: a panel
+with a soft shadow under a box's words, an anti-aliased arrow, a ring, a translucent veil for a
+spotlight. The crate still draws nothing. It turns the host's images into kitty graphics bytes
+and keeps them cheap: pixels are sent once, a scroll only moves them, and a frame where nothing
+changed sends nothing.
+
+```toml
+caretline-layers = { git = "https://github.com/brancusi/caretline", rev = "<full sha>", features = ["kitty"] }
+```
+
+| The host supplies | `kitty` does |
+|---|---|
+| A `Picture` per layer part (`"panel"`, `"arrow"`, …): straight-alpha RGBA from its own raster, a shape key, the cells it covers, `Z::Below` or `Z::Above` the text, an optional clip | Transmits what the terminal lacks, re-places what moved (`a=p`, no pixels), places a changed part before deleting the old one, deletes what's gone by id, crops a picture that reaches past the screen or its clip |
+| The cell size in device pixels (`CellPx`), every frame | Ids from content: the image id hashes the shape key and the cell size, the placement id the (layer, part). The same frames give the same bytes |
+| The writes, inside the frame's synchronized update | `Output.bytes`, plus what it sent, placed and deleted |
+| For `t=t`, a `TempFiles` writer | The file name Ghostty accepts (it contains `tty-graphics-protocol`) |
+
+**Each frame**, after `plan`:
+
+1. Draw the text frame. In a box drawn in pixels, write only the words (the panel image is the
+   box); leave arrows, rings and dimmed text alone, since the images go over them.
+2. Build the pictures. Ask `kitty.holds(key, cell)` first: if the terminal already has a key's
+   pixels, pass `image: None` and skip the raster.
+3. Call `kitty.frame(&plan, &pictures, cell, files)` and write `Output.bytes` **after the
+   text, before the synchronized update (DEC mode 2026) ends**, so text and pixels change
+   together.
+
+```rust
+use std::io::{self, Write};
+
+use caretline_layers::kitty::{CellPx, Cells, Image, KittyState, Picture, Z, shape_key};
+use caretline_layers::{Mode, Plan};
+
+/// One flat panel image under a box: the host's own raster (here, a solid fill).
+fn raster_panel(cols: u16, rows: u16, cell: CellPx) -> Option<Image> {
+    let (w, h) = (cols as u32 * cell.w as u32, rows as u32 * cell.h as u32);
+    Image::new(w, h, [31u8, 36, 48, 255].repeat((w * h) as usize))
+}
+
+/// The pictures for this frame: one panel per box.
+fn pictures(plan: &Plan, cell: CellPx, kitty: &KittyState) -> Vec<Picture> {
+    let mut out = Vec::new();
+    for l in &plan.layers {
+        let (Some(r), Some(Mode::Box)) = (l.rect, l.mode) else { continue };
+        // Everything the pixels depend on, and a version of your drawing code.
+        let key = shape_key(&[b"my-panel-v1", &cell.w.to_le_bytes(), &cell.h.to_le_bytes(),
+                              &r.w.to_le_bytes(), &r.h.to_le_bytes()]);
+        let image = if kitty.holds(key, cell) { None } else { raster_panel(r.w, r.h, cell) };
+        out.push(Picture { layer: l.id.clone(), part: "panel".into(), key, z: Z::Below,
+                           at: Cells::from(r), clip: None, image });
+    }
+    out
+}
+
+fn paint(out: &mut impl Write, plan: &Plan, cell: CellPx, kitty: &mut KittyState) -> io::Result<()> {
+    let pics = pictures(plan, cell, kitty);
+    let px = kitty.frame(plan, &pics, cell, None);
+    out.write_all(b"\x1b[?2026h")?;   // begin the synchronized update
+    // ... the text frame: each box's cells hold only its words ...
+    out.write_all(&px.bytes)?;        // then the pixels, in the same update
+    out.write_all(b"\x1b[?2026l")?;   // end it
+    out.flush()
+}
+```
+
+A shape key must change whenever the pixels would: hash the sizes, the route's points, the
+holes, the cell size and a version of your drawing code with `shape_key` (FNV-1a, the same on
+every machine). A tall image, such as a veil a few screens high, can stay put while the view
+scrolls: give it `at` cells that reach past the screen and the crate re-crops it.
+
+**`KittyState` is a renderer cache, never state.** It remembers what the terminal holds,
+derived only from the frames you drew. Keep it beside your terminal writer, not in your app's
+state or a trace. Its lifecycle:
+
+- `KittyState::new(Options::default())`: `t=d`, zlib level 6, base64 in 4096-byte chunks, which
+  works over SSH. `Transport::File` (`t=t`) sends about a fifteenth of the bytes for a local
+  session; it needs your `TempFiles` and falls back to `t=d` for a file it couldn't write.
+- `clear()` returns the bytes that delete every image placed, by id (never `d=A`: the screen may
+  hold other programs' images), and forgets them. Write them on exit, when pixels are turned
+  off, and while something else covers the screen (the CLI does it for its keys overlay).
+- `reset()` forgets without deleting: for when the terminal no longer holds what you placed
+  (it was reset, or another program deleted everything). The next frame re-sends it all.
+- A new cell size (a font change, or a move to a screen with another scale) needs neither: the
+  ids include the cell size, so the next frame sends new images and deletes the old ones.
+
+**Probing.** Pixels are on only when the terminal says so. `probe::request()` asks four things
+in one write: a kitty graphics query, XTVERSION, the cell size (`CSI 16 t`) and DA1, which
+every terminal answers, as the fence. The replies arrive on stdin among the person's keys, so
+run them through `probe::scan` in your input parser: a `Reply` with its length, `Partial`
+(wait), or `No` (a key):
+
+```rust
+use caretline_layers::probe::{self, Probe, Scan};
+
+/// Takes the probe's replies out of what the terminal sent; the rest are keys.
+/// Returns how many bytes it used: keep the rest for the next read.
+fn take_replies(input: &[u8], probe: &mut Probe, keys: &mut Vec<u8>) -> usize {
+    let mut i = 0;
+    while i < input.len() {
+        match probe::scan(&input[i..]) {
+            Scan::Reply(reply, n) => {
+                probe.add(&reply);
+                i += n;
+            }
+            Scan::Partial => break, // more bytes may finish it (after a pause, they are keys)
+            Scan::No => {
+                keys.push(input[i]);
+                i += 1;
+            }
+        }
+    }
+    i
+}
+
+fn pixels_on(p: &Probe) -> Option<CellPx> {
+    let trusted = matches!(p.terminal().as_deref(), Some("ghostty" | "kitty"));
+    (p.fenced && p.graphics_ok() && trusted).then_some(p.cell?)
+}
+```
+
+Wait for DA1 (`fenced`) or a short timeout (the CLI waits 200 ms at most); any answer missing
+by then means cells. Which terminals to trust is yours: the CLI trusts Ghostty and kitty and
+stays in cells inside tmux or screen, where the graphics never reach the terminal.
+
+**The cell size is an input.** The crate never asks the terminal: you pass a `CellPx` to every
+`frame`. Get it from the probe, and when the window's pixel size (`TIOCGWINSZ`) stops matching
+cells × cell size, the font changed: write `probe::cell_size_request()` and take the new
+`CellSize` reply. Treat it like any other input that reaches your renderer, so the same inputs
+give the same bytes. (caretline will carry it in `Msg::Resize` itself in step 1c; until then
+the CLI keeps it in its runtime.)
+
+`caretline demo layers` is a working host: its renderer is
+[`src/layers.rs`](../crates/caretline-cli/src/layers.rs) (tiny-skia rasters for a panel, arrow,
+ring and veil) and its loop [`src/demo/layers.rs`](../crates/caretline-cli/src/demo/layers.rs).
+The status bar shows each pixel frame's bytes, rasters and time; in Ghostty 1.3.1 the first
+frame is 17.2 KB with `t=d` (1.1 KB with `t=t`), a scroll step about 300 bytes and an unchanged
+frame nothing.
+
 ## Not built yet
 
 These are designed but not built ([design, section 9](../docs/design/layers.md)): the engine
-hooks for drawing layers inside a caretline frame (in-frame mode), the kitty graphics plumbing
-for pixel renderers, `caretline-tour` walkthroughs, `hint.*` and `layer.*` in caretline's own
-protocol, and MCP tools for agents. Until then a host uses the screen-level mode on this page,
-and nothing in `caretline`, `caretline-cli` or `caretline-mcp` shows layers.
+hooks for drawing layers inside a caretline frame (in-frame mode), the cell size as an editor
+message, `caretline-tour` walkthroughs, `hint.*` and `layer.*` in caretline's own protocol, and
+MCP tools for agents. Until then a host uses the screen-level mode on this page. The editor
+(`caretline FILE`) and `caretline-mcp` show no layers; `caretline demo layers` is the one
+place the CLI does.

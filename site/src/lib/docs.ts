@@ -13,7 +13,7 @@ export const DOCS: { id: string; slug: string; title: string; blurb: string; gro
   { id: 'protocol', slug: 'protocol', title: 'State protocol', blurb: 'Drive a headless engine or a live editor over JSON lines.', group: 'Drive it' },
   { id: 'mcp', slug: 'mcp', title: 'MCP server', blurb: 'Let an agent edit a live editor alongside you: guarded writes, its own caret, replay.', group: 'Drive it' },
   { id: 'embedding', slug: 'embedding', title: 'Embedding', blurb: 'Put it in your own app; extend it with host commands, input rules, payloads and decorations.', group: 'Drive it' },
-  { id: 'layers', slug: 'layers', title: 'Layers (new)', blurb: 'Unreleased: hints, arrows and spotlights over a host\'s screen. caretline-layers places and tracks them; the host draws.', group: 'Drive it' },
+  { id: 'layers', slug: 'layers', title: 'Layers (new)', blurb: 'Unreleased: hints, arrows and spotlights over a host\'s screen. caretline-layers places and tracks them; the host draws, in cells or in Ghostty pixels.', group: 'Drive it' },
   { id: 'testing', slug: 'testing', title: 'Testing', blurb: 'Goldens, replay, the fuzzer, fixtures, tests from traces.', group: 'Drive it' },
   { id: 'performance', slug: 'performance', title: 'Performance', blurb: 'How fast it is, where the limits are, how to go faster.', group: 'Drive it' },
 ];

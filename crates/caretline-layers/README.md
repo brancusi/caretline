@@ -26,9 +26,13 @@ them.
 - **Edits come from the engine**: `caretline::update_with_changes` returns each message's
   `ChangeSet`, and `observe` maps text anchors through it.
 - **`ops`** parses `hint.show`, `layer.push` and friends from any JSON protocol.
+- **Pixels** (feature `kitty`, off by default): `kitty::KittyState` turns a plan and the
+  host's own RGBA images into kitty graphics bytes (transmit, re-place on scroll, swap, crop,
+  delete by id), and `probe` builds the terminal probe and parses its replies. The host
+  rasterises, writes the bytes and reads the replies. Targets Ghostty.
 
 `cargo run -p caretline-layers --example layers_ratatui` is a ratatui host that takes an
 agent's `hint.show`, plans it, and draws the hint itself.
 
 Pure: no clock, randomness, I/O, terminal or async. The `caretline` feature (default) adds
-`FrameResolver` and anchor mapping through edits.
+`FrameResolver` and anchor mapping through edits; `kitty` adds only `miniz_oxide`.

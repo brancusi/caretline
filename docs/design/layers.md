@@ -1,6 +1,6 @@
 # Design: the layer system
 
-Status: design; phase 1a in progress. Covers `caretline-layers` (where things go over a caretline
+Status: design; steps 1a and 1b built (section 12). Covers `caretline-layers` (where things go over a caretline
 screen, and for how long) and `caretline-tour` (walkthroughs), the few generic hooks the engine
 needs for them, the kitty graphics plumbing for Ghostty, and the phases. How a layer looks is not
 in any caretline crate: hosts draw.
@@ -18,7 +18,7 @@ in any caretline crate: hosts draw.
 | Pixels | Target **Ghostty 1.3.1**. Behind the `kitty` feature the crate owns the plumbing: the host hands an RGBA image per layer part, the crate transmits, re-places, swaps and deletes it. No raster, theme or glyph in the crate |
 | Purity | One state atom; everything serializable; time only from ticks; the cell pixel size enters as a message; renderers are pure; the kitty memory is a cache. Pixel goldens replay across machines (4) |
 | Agents | `hint.show` over the protocol and a `show_hint` MCP tool: capped, expiring, never modal, never dimming unless the person allows it. Agents get the host's cell composite; pixels are drawn only by the process that owns the terminal |
-| Phase 1 | 1a the `caretline-layers` core (in progress); 1b the kitty plumbing and the CLI's renderers from the spike; 1c the engine hooks (with `cell_px`), in-frame mode, `caretline-tour` and `caretline demo guide`. About 7 engineer-weeks (9.1) |
+| Phase 1 | 1a the `caretline-layers` core (built); 1b the kitty plumbing and the CLI's `hint` renderer (built, 12.2); 1c the engine hooks (with `cell_px`), in-frame mode, `caretline-tour` and `caretline demo guide`. About 7 engineer-weeks (9.1) |
 
 ## 1. Scope and where it lives
 
@@ -292,20 +292,23 @@ multiplexers is out of scope for pixels.
 |---|---|---|---|
 | 1 | Placements in cells | `caretline_layers::place` | none |
 | 2 | One RGBA image per layer part (panel, connector, ring, veil), each with a shape key | the host's renderer (the CLI's, with `tiny-skia`) | none |
-| 3 | `Kitty::frame(&parts, &images) -> Vec<u8>`: transmit what the terminal lacks, re-place what moved, delete what's gone | `caretline-layers`, feature `kitty` | none |
+| 3 | `KittyState::frame(&plan, &pictures, cell_px, files) -> Output`: transmit what the terminal lacks, re-place what moved, delete what's gone | `caretline-layers`, feature `kitty` | none (`t=t` files through the host's `TempFiles`) |
 | 4 | Write the bytes after the text frame, inside the same DEC 2026 synchronized update | the runtime (`caretline-cli`, or a host's) | here only |
 
-The engine never gets pixels. In pixel mode the runtime renders with `view::render_skipping(…,
-&["layers"])` and has the renderers draw only their words into the frame (`Surface::TextOnly`);
-every other consumer gets the cell composite (`Surface::Cells`).
+The engine never gets pixels. In pixel mode the renderers draw only their words into the frame
+(`Surface::TextOnly`); every other consumer gets the cell composite (`Surface::Cells`). Once
+in-frame mode lands (1c) the runtime renders with `view::render_skipping(…, &["layers"])`; in 1b
+the CLI's demo draws over the composed frame itself.
 
 **What the plumbing does.**
 - **Ids from content:** an image id is a hash of the part's shape key (the renderer's inputs:
   kind, data, size in cells, `cell_px`, part name). A placement id is a hash of (layer id, part).
   Never counters, so the bytes sent are identical on replay. A hash collision with a different
   key in the cache is resolved by rehashing with a fixed salt.
-- **Re-raster only on a new shape key:** `Kitty::missing(&parts)` names the keys the terminal
-  doesn't hold; the host rasterises only those.
+- **Re-raster only on a new shape key:** `KittyState::holds(key, cell_px)` says whether the
+  terminal already has a key's pixels; a `Picture` for one comes with `image: None`, and the host
+  rasterises only the rest. A picture without pixels the terminal lacks is reported in
+  `Output.missing` and not shown.
 - **Re-place on scroll:** unchanged pixels at a new place are `a=p` with the same `i` and `p`. A
   part may carry a source crop (`x=`, `y=`, `w=`, `h=`), so a tall image scrolls by re-cropping.
 - **Swaps:** a new image for the same part is placed before the old one is deleted, in one 2026
@@ -316,7 +319,9 @@ every other consumer gets the cell composite (`Surface::Cells`).
 - **Transport:** `t=d` inline, zlib level 6 (`o=z`), in 4096-byte chunks (`m=1`), by default: it
   works over SSH. `t=t` (a file in `$TMPDIR` whose name contains `tty-graphics-protocol`) when the
   session is local and a probe confirmed it: about 15× fewer bytes on the terminal.
-- **Cell size:** the plumbing reads `cell_px` from the frame (E6), never from the terminal.
+- **Cell size:** a `CellPx` value the host passes to every `frame` call, never read from the
+  terminal by the crate. It is part of the image id, so a new cell size re-sends. Until E6 (1c)
+  the CLI keeps it in its runtime, from the probe; then it comes from the frame (`cell_px`).
 
 **The probe.** The crate builds the bytes; the runtime sends them in one write and reads the
 answers through its own input parser:
@@ -325,13 +330,15 @@ answers through its own input parser:
 3. `CSI 16 t` (cell size);
 4. DA1 (`CSI c`) as the fence.
 
-Pixels are on when the `a=q` answer is OK, XTVERSION names Ghostty, and the cell size came back
-before the DA1 answer or a 200 ms timeout. Any missing answer means cells. Inside tmux the APC
+Pixels are on when the `a=q` answer is OK, XTVERSION names Ghostty (as built, kitty too), and the
+cell size came back before the DA1 answer or a 200 ms timeout. Any missing answer means cells. Inside tmux the APC
 never reaches the terminal, so the probe fails. `CARETLINE_LAYERS=auto|pixels|cells` overrides it.
 
 **The runtime owns raw input parsing**, because terminal replies arrive mid-session, between keys.
 The parser turns a reply into a message (the cell size into `Msg::Resize { cell_px }`, the
-graphics answer into a `layers` caps op) and never changes state directly (4). It re-probes when
+graphics answer into a `layers` caps op) and never changes state directly (4). As built (1b) the
+crate's `probe::scan` recognises the replies, and the CLI's parser hands them to its event loop as
+inputs that are never keys; a new cell size updates the runtime's copy until E6 makes it a message. It re-probes when
 the `TIOCGWINSZ` pixel fields disagree with cells × cell size: changing the font size changes
 pixels without always changing cells.
 
@@ -375,7 +382,9 @@ Renderer-side recommendations are in 5.4.
   version, byte-exact on one platform (Linux x86_64 in CI); other platforms compare within a
   tolerance.
 - Kitty byte goldens for a sequence of frames (first place, scroll, change one part, pulse, remove),
-  identical on every machine, because ids and `cell_px` come from the state.
+  identical on every machine, because ids and `cell_px` come from the state. As built (1b):
+  `tests/goldens/kitty.{first,scroll,change,remove}.txt` at a pinned cell size, and PNG goldens of
+  the CLI's panel, arrow, ring and veil at 8×16 px cells; no pulse yet.
 
 ## 4. Purity and replay
 
@@ -442,7 +451,8 @@ Cells have no alpha, so the CLI's cell renderer marks them with the engine's gen
 | **B · cells** (fallback, goldens) | Any terminal, tmux, SSH without graphics, snapshots, the protocol | Rounded box drawing, `▲▼◀▶●○`, the `dim` and `ring` flags |
 | **A · ASCII** | ASCII glyphs, dumb terminals | `+-|^v<>*`, `[key]`, dimming only with colour |
 
-Every rung draws from the same placements, so the geometry goldens hold for all of them.
+Every rung draws from the same placements, so the geometry goldens hold for all of them. Built so far
+(1b): P (Ghostty and kitty) and B; C and A are not.
 
 ### 5.4 Pixel notes (the CLI)
 
@@ -574,8 +584,8 @@ let host = caretline_layers::install(host, LayersConfig::default()
 | **A · In-frame** | The screen is a caretline frame (the standalone editor, a panel) | `install` registers the `layers` ext reducer, the frame pass, the ops and the catalog. The frame pass resolves, places and calls each renderer's `draw` into the `Frame`. Add `caretline_tour::install(host, tours)` for walkthroughs |
 | **B · Screen-level** | The host draws more than caretline (lists, tabs, panes around editors) | The host keeps `Layers` in its own state and calls `apply` and `observe` from its reducer, passing each message's ChangeSet. While drawing it records an `AnchorMap` (`anchors.put(AnchorKey::host("row", key), rect)`) and adds each embedded editor's frame and offset. Then it calls `place` and draws the placements its own way. Mode B needs no engine change |
 
-Either mode can add pixels: the host's renderers produce parts, and the runtime calls
-`Kitty::frame` and writes the bytes before ending the synchronized update.
+Either mode can add pixels: the host's renderers produce `Picture`s, and the runtime calls
+`KittyState::frame` and writes `Output.bytes` before ending the synchronized update.
 
 **Extending:**
 - **Content kinds:** `renderer(kind, impl Renderer, KindInfo)`. Host kinds are namespaced
@@ -832,21 +842,49 @@ pub struct LayersConfig { pub limits: Limits, pub agent_dim: AgentDim, /* render
 pub fn install(host: Host, cfg: LayersConfig) -> Host;   // ext "layers", frame pass, ops, catalog
 
 #[cfg(feature = "kitty")]
-pub mod kitty {
-    pub struct Part { pub key: u64, pub layer: String, pub part: String, pub z: i32,
-                      pub at: (u16, u16), pub cells: (u16, u16), pub crop: Option<PxRect> }   // key: the shape key
-    pub struct Rgba { pub px: (u32, u32), pub data: Arc<[u8]> }
-    pub enum Transport { Direct, TempFile }   // t=d zlib 6 chunked | t=t in $TMPDIR
-    pub struct Kitty { /* the renderer cache: images transmitted, ids placed */ }
-    impl Kitty {
-        pub fn new(transport: Transport) -> Kitty;
-        pub fn missing(&self, parts: &[Part]) -> Vec<u64>;                          // keys to rasterise
-        pub fn frame(&mut self, parts: &[Part], images: &HashMap<u64, Rgba>, cell: CellPx) -> Vec<u8>;   // APC bytes, no IO
-        pub fn clear(&mut self) -> Vec<u8>;                                          // delete every id placed
-        pub fn forget(&mut self);                                                    // drop the cache; next frame re-sends
+pub mod kitty {   // as built in 1b
+    pub struct CellPx { pub w: u16, pub h: u16 }                  // device pixels, a value the host passes
+    pub struct Image { pub w: u32, pub h: u32, pub rgba: Arc<[u8]> }   // straight alpha; Image::new checks the length
+    pub enum Z { Below, Above }                                   // under the text (above cell backgrounds) or over it
+    pub struct Cells { pub x: i32, pub y: i32, pub w: u16, pub h: u16 }   // may reach past the screen
+    pub struct Picture { pub layer: String, pub part: String, pub key: u64,   // key: the shape key
+                         pub z: Z, pub at: Cells, pub clip: Option<Rect>,
+                         pub image: Option<Image> }               // None when the terminal holds the key
+    pub enum Transport { Direct, File }                           // t=d zlib, base64 chunks | t=t
+    pub struct Options { pub transport: Transport, pub chunk: usize, pub level: u8 }   // default Direct, 4096, 6
+    pub trait TempFiles { fn write(&mut self, name: &str, data: &[u8]) -> Option<String>; }   // the host's I/O
+    pub struct Output { pub bytes: Vec<u8>, pub sent: Vec<u32>, pub placed: usize,
+                        pub deleted: usize, pub missing: Vec<(String, String)> }
+    pub struct KittyState { /* the renderer cache: images held, (layer, part) placements */ }
+    impl KittyState {
+        pub fn new(opts: Options) -> KittyState;
+        pub fn options(&self) -> Options;
+        pub fn set_options(&mut self, opts: Options);             // later images only
+        pub fn holds(&self, key: u64, cell: CellPx) -> bool;      // no need to rasterise
+        pub fn image_id(&self, key: u64, cell: CellPx) -> u32;
+        pub fn is_empty(&self) -> bool;
+        pub fn frame(&mut self, plan: &Plan, pictures: &[Picture], cell: CellPx,
+                     files: Option<&mut dyn TempFiles>) -> Output;   // APC bytes, no I/O
+        pub fn clear(&mut self) -> Vec<u8>;                       // delete every id placed, and forget
+        pub fn reset(&mut self);                                  // forget; the next frame re-sends
     }
-    pub fn probe_request() -> Vec<u8>;
-    pub fn parse_reply(input: &[u8]) -> Option<(Reply, usize)>;   // for the runtime's input parser
+    pub fn shape_key(parts: &[&[u8]]) -> u64;                     // FNV-1a: stable across machines
+    pub fn base64(bytes: &[u8]) -> String;
+}
+
+#[cfg(feature = "kitty")]
+pub mod probe {
+    pub const QUERY_ID: u32 = 31;
+    pub fn request() -> Vec<u8>;                                  // a=q, XTVERSION, CSI 16 t, DA1
+    pub fn cell_size_request() -> &'static [u8];                  // CSI 16 t alone
+    pub enum Reply { Graphics { id: Option<u32>, ok: bool, message: String }, Version(String),
+                     CellSize(CellPx), WindowSize { w: u32, h: u32 }, Da1(Vec<u32>) }
+    pub enum Scan { Reply(Reply, usize), Partial, No }            // No: a key, mouse, paste or text
+    pub fn scan(input: &[u8]) -> Scan;                            // for the runtime's input parser
+    pub struct Probe { pub graphics: Option<bool>, pub version: Option<String>,
+                       pub cell: Option<CellPx>, pub fenced: bool }
+    impl Probe { pub fn add(&mut self, r: &Reply) -> bool; pub fn terminal(&self) -> Option<String>;
+                 pub fn graphics_ok(&self) -> bool; }
 }
 ```
 
@@ -871,7 +909,7 @@ pub fn install(host: Host, built_in: Vec<Tour>) -> Host;   // ext "tour", layer 
 | Phase | Scope | Size |
 |---|---|---|
 | **1a · `caretline-layers` core** (in progress) | For hosts that draw their own screen, with no engine change: `Layer`, `Layers`, `LayerOp`, `apply` and `observe` as plain functions; content kinds and the `Renderer` trait (`measure`); built-in anchors and `AnchorMap`; ChangeSet mapping and off-screen state; placement (sides, flip, shift, clamp, collision, protected rects, the sliver rule, strip fallback); routes; holes; regions and `hit`; agent limits; placements as JSON; scope test; placement goldens and a bench | ~1,600 LOC: **1.5 weeks** |
-| **1b · Kitty plumbing and the CLI's renderers** | The spike is done (3.6). The `kitty` feature: shape-key ids, transmit, re-place with crops, place-then-delete swaps, deletes, `t=d` and `t=t`, probe bytes and reply parsing, byte goldens. In `caretline-cli`: the `hint` and `cli.guide` renderers in cells (rungs A–C) and pixels (`tiny-skia`: panel, curve, ring, veil, pulse variants), the theme, the probe, `CARETLINE_LAYERS`, PNG goldens | Plumbing ~600 LOC; renderers ~1,100 LOC: **2 weeks** |
+| **1b · Kitty plumbing and the CLI's renderers** (built, 12.2; `cli.guide`, pulses and the `t=t` probe deferred) | The spike is done (3.6). The `kitty` feature: shape-key ids, transmit, re-place with crops, place-then-delete swaps, deletes, `t=d` and `t=t`, probe bytes and reply parsing, byte goldens. In `caretline-cli`: the `hint` and `cli.guide` renderers in cells (rungs A–C) and pixels (`tiny-skia`: panel, curve, ring, veil, pulse variants), the theme, the probe, `CARETLINE_LAYERS`, PNG goldens | Plumbing ~600 LOC; renderers ~1,100 LOC: **2 weeks** |
 | **1c · Engine hooks and the guide** | E1–E6 with tests: `View.ext`, `Msg::Ext`, frame passes, `CellFlags` and the `cells` wire field, `locate`, catalog and ops, and **`cell_px` in `Msg::Resize`** (a golden and a CHANGELOG line); the scope words; in-frame mode (`install`, the frame pass, `FrameResolver`, region hits); `caretline-tour` (TOML, predicates, branching, the reducer, the layer source, seen-state effects); `caretline-cli`: `caretline demo guide` (the 11 `## N ·` sections of `tour.md` as `demo/guide.toml`), `demo tour` kept as an alias, the hand-written `tour_hint` match deleted, F-keys, `guides.json`, the runtime's input parser turning terminal replies into messages; replay goldens, pixels included | Engine ~700 LOC (4 days); mode A ~400 LOC (2 days); tour ~800 LOC (4 days); CLI ~500 LOC (3 days); goldens (2 days): **about 3 weeks** |
 | **2 · Agents** | `layer_kinds` in `hello`; `hint.*`, `layer.*` and `tour.*` routed through `Host::op`; `render` with `format: "layers"`; agent limits end to end; the MCP tools, `--no-hints`; `docs/protocol.md`, `docs/mcp.md`; `caretline demo agent` shows a hint as it edits | ~700 LOC: **1 week** |
 | **3 · Host adoption** | Hosts register their `hint` renderer and their own kinds; host anchor kinds and `LayerSource` for mode B hosts; a "Layers and guides" section in `docs/embedding.md`; the site playground runs the guide with cell renderers; tier-2 manifests; a shared renderer crate only if a second host wants the CLI's look | **1–2 weeks**, then separate designs |
@@ -925,7 +963,7 @@ Phase 1 is about 6.5–7 engineer-weeks in all: 1b's plumbing can run in paralle
 | A box over text hides what the person is reading | Placement scoring, the sliver rule, `layers.toggle`, short default TTLs |
 | The pixel path is tested in one terminal | Cells stay the golden source and the fallback; the probe requires every answer; `CARETLINE_LAYERS=cells` |
 | Ghostty changes kitty behaviour (animation lands, limits change) | Pin the facts in 3.6 to a version; re-check on each Ghostty release; pulses don't depend on animation |
-| The kitty cache disagrees with the terminal | It is a cache: `forget` and re-send. Content-hash ids make stale ones harmless to re-place |
+| The kitty cache disagrees with the terminal | It is a cache: `reset` and re-send. Content-hash ids make stale ones harmless to re-place |
 | Images left on screen after a crash | The runtime clears by id on exit and on start |
 | F-key conflicts in some terminals | Bindings are data; remappable; chips and palette commands too |
 | Screen readers read box text mid-line | Strip mode via config; layers off |
@@ -1196,7 +1234,9 @@ going past the edge of the window.
 - `t=s` (shared memory), if `t=t` proves not enough locally.
 - When a second host wants the CLI's look: the shape of a shared renderer crate.
 
-## 12. As built: step 1a (`caretline-layers`)
+## 12. As built
+
+### 12.1 Step 1a (`caretline-layers`)
 
 The first step built the screen-level half (mode B) as its own crate, with
 the scope narrowed. Where it differs from the sections above:
@@ -1282,3 +1322,59 @@ the scope narrowed. Where it differs from the sections above:
   (`update_doc_with_changes`, `Session::apply_with_changes`) returns the message's
   `ChangeSet`; `observe` and `map_anchors` map text anchors through it. The stopgap that
   diffed two texts (`changes_between`) is gone.
+
+### 12.2 Step 1b (the kitty plumbing and the CLI's `hint` renderer)
+
+The second step built the pixel half for one kind, `hint`, and a demo to see it. Where it
+differs from the sections above:
+
+- **The API** is the one in 8.2 (as built): `KittyState::frame(&plan, &pictures, cell_px, files)
+  -> Output` instead of `Kitty::frame(&parts, &images)`. A `Picture` carries its own pixels
+  (`image: Option<Image>`, `None` when `holds` says the terminal has the key), so there is no
+  `missing` call before the frame; `Output.missing` reports a picture that needed pixels and had
+  none. `forget` is `reset`. `Z::Below | Above` replaces a raw z: the crate numbers parts from
+  -1,048,575 up below the text and from 2 up above it, in the plan's draw order.
+- **What it sends.** Image ids hash the shape key and the cell size; placement ids hash (layer,
+  part); a collision rehashes with a fixed salt. A move is `a=p` with the same ids; a change
+  transmits, places, then deletes the old image (`a=d,d=I`); a part gone is deleted by id; a
+  picture past the screen or its `clip` is placed with a source rect. The bytes are wrapped in
+  a cursor save and restore. `t=d` is zlib 6 and base64 in 4096-byte chunks; `t=t` goes through
+  the host's `TempFiles` writer (falling back to `t=d` for a file it couldn't write), with
+  `tty-graphics-protocol` in the file's name. `clear` deletes everything placed, by id.
+- **The probe** is `probe::request` (the four questions of 3.6), `cell_size_request` for a font
+  change, and `scan`, a pure parser a runtime calls on its input: a reply with its length,
+  `Partial`, or `No` for a key. `Probe` gathers the answers; `graphics_ok` needs the graphics
+  OK and the cell size, and which terminals to trust is the host's call.
+- **The CLI.** `caretline demo layers` puts one hint (an arrow, a ring and a spotlight) at a
+  word of the tour. Its renderer draws in cells everywhere (and in `--snapshot` goldens) and in
+  pixels where the probe allows: a panel with a soft shadow under the words, an anti-aliased
+  arrow, ring and a veil with feathered holes over them, rasterised with tiny-skia. The veil is a
+  quarter of a cell's pixels per cell, three times the text area's height, so a scroll re-crops
+  it. The runtime probes at startup (200 ms at most, fenced by DA1), trusts Ghostty and kitty,
+  stays in cells inside tmux or screen, honours `CARETLINE_LAYERS`, and asks for the cell size
+  again when the window's pixels stop matching cells × cell size. Images are deleted by id on
+  exit and while the keys overlay shows.
+- **The cell size lives in the CLI's runtime** (`Gfx.cell_px`), from the probe and later
+  `CSI 16 t` answers: E6 is phase 1c, and until then pixel output does not replay from a trace.
+- **CI** checks that `caretline-layers --features kitty` pulls in no terminal, async or raster
+  crate, and runs clippy on it without the `caretline` feature too.
+
+**Measured** in Ghostty 1.3.1 (release build, `caretline demo layers` with the spotlight on;
+the status bar shows each frame's bytes, rasters and time):
+
+| Situation | Cost |
+|---|---|
+| First frame (panel, arrow, ring, veil) | 17.2 KB with `t=d`, 1.1 KB with `t=t`; 14 ms and 7 ms, raster included |
+| A scroll step | about 300 bytes: re-places and the veil's re-crop |
+| An unchanged frame (the caret moving, a repaint) | 0 bytes |
+| Spotlight toggled off / on | 154 bytes (deletes) / 5.7 KB (the veil sent again) |
+
+**Deferred:**
+- **E6** (`cell_px` as a message) and with it pixel replay goldens: phase 1c.
+- **Raw input parsing** runs only in demos that want pixels (`Demo::wants_pixels`); the editor
+  itself still reads keys through crossterm. It moves to the runtime for every session with the
+  engine hooks (1c).
+- **Pulse variants** (pre-rendered rings swapped on the frame clock): not built; rings are still.
+- **The `cli.guide` renderer** and `caretline demo guide`: with `caretline-tour` in 1c.
+- **A `t=t` probe:** `t` switches transports by hand in the demo; nothing yet checks that the
+  terminal can read the temporary files before choosing `t=t` for a local session.

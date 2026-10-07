@@ -18,7 +18,7 @@ See the [Quickstart](quickstart.md) for what the installer does and what the dem
 
 | Command | Does |
 |---|---|
-| `caretline demo [tour\|scenes\|agent]` | Built-in demos, no files needed: see the [Quickstart](quickstart.md). `--snapshot WxH` prints a demo's first frame; `demo agent --headless` runs the agent against a headless editor and prints a JSON report |
+| `caretline demo [tour\|scenes\|agent\|layers]` | Built-in demos, no files needed: see the [Quickstart](quickstart.md) and [Layers over the tour](#layers-over-the-tour). `--snapshot WxH` prints a demo's first frame; `demo agent --headless` runs the agent against a headless editor and prints a JSON report |
 | `caretline [FILE]` | Edit FILE interactively (created on first save) |
 | `caretline FILE --trace T.jsonl` | Edit, recording the session to a trace |
 | `caretline FILE --no-mouse` | Edit without capturing the mouse |
@@ -312,6 +312,43 @@ caretline demo scenes --bench --fps 120 --scene donut,plasma --seconds 5
 
 For 120 fps on screen, the terminal must paint that fast too: in WezTerm set
 `config.max_fps = 120`, on a 120 Hz display.
+
+## Layers over the tour
+
+`caretline demo layers` (not in a release yet: build from a checkout) shows a hint with an
+arrow, a ring and a spotlight over the tour's text, placed by
+[`caretline-layers`](layers.md). The hint points at a word in the "Move" section and follows it
+as the view scrolls; the text is read-only here.
+
+- **In Ghostty** (and kitty) it draws in pixels: a panel with a soft shadow under the box's
+  words, an anti-aliased arrow and ring, and a veil with feathered holes over the text, sent
+  with the kitty graphics protocol inside each frame's synchronized update. The status bar
+  shows the last pixel frame's bytes, rasters and time.
+- **Elsewhere**, inside tmux or screen, and with `--snapshot`, it draws in cells: a rounded
+  box, the arrow in box-drawing glyphs, the anchor in a ring style and everything else dimmed.
+  The status bar says why pixels are off.
+
+| Key | Does |
+|---|---|
+| `↑` `↓` `PgUp` `PgDn` | Scroll; the hint follows its word |
+| `←` `→` `Home` `End` | Move the caret |
+| `s` | Spotlight on or off |
+| `p` | Pixels or cells (pixels only where the probe allowed them) |
+| `t` | The pixel transport: inline (`t=d`, works over SSH) or temporary files (`t=t`, local) |
+| `q`, `Esc`, `⌃C` | Quit |
+
+At startup it probes the terminal (a graphics query, XTVERSION and the cell size, fenced by
+DA1, 200 ms at most) and uses pixels when the graphics query says OK, the cell size comes back
+and the terminal is Ghostty or kitty. `CARETLINE_LAYERS=auto|pixels|cells` overrides that
+(`pixels` also tries an untested terminal, or one inside a multiplexer). After a font-size
+change it asks for the cell size again.
+
+```sh
+caretline demo layers
+CARETLINE_LAYERS=cells caretline demo layers
+caretline demo layers --snapshot 80x24                 # the first frame, in cells
+caretline demo layers --snapshot 60x20 --keys '<down><down>s'   # scrolled, spotlight off
+```
 
 ## Errors
 
