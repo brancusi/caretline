@@ -64,3 +64,16 @@ Guidance for AI agents (and people) working on caretline. `CLAUDE.md` points her
   by eye.
 - **Keep the engine standalone:** no new dependency on a terminal, async runtime or host crate
   (CI checks `cargo tree -p caretline`).
+
+## Before every commit and push
+
+- **Pushes are paused** until the owner's security review: commit locally after every change;
+  no pushes, tags, releases, crates.io publishes or site deploys.
+- Stage explicit paths (`git add <files>`), never `git add -A` / `git add .`. Build outside the
+  checkout (`CARGO_TARGET_DIR` in a scratch area) or in the gitignored `/target`.
+- `scripts/preflight.sh` (`--staged` for the index) must pass: no build output, files over 512 KB,
+  stray binaries, home or scratch paths, the local user name, private repo URLs or credential-shaped
+  strings. `scripts/install-hooks.sh` makes every push run it. Exceptions go in `.preflight-allow`
+  with a comment. Never `--no-verify`.
+- caretline must never contain thought-control internals: no thc vault data, board ids, private
+  design docs or internal repo references. Host concepts stay out of the engine (`tests/scope.rs`).

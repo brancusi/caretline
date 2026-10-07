@@ -1,0 +1,2 @@
+# The playground engine, built from crates/caretline by site/scripts (about 1 MB, rebuilt on engine changes).
+^site/public/wasm/caretline\.wasm$
