@@ -50,3 +50,41 @@
   anchor, off)` sizes the edge chip knowing which anchor lies off screen and which way.
 - `ops`: protocol-neutral `hint.show`, `hint.hide`, `layer.push`, `layer.update`,
   `layer.pop` and `layer.list` requests (`parse`) and replies (`reply`, `list`, `error`).
+- View-scoped anchors, for one document shown in several views. `FrameResolver` gains
+  `.id("panel:2")`, `.clip(rect)` (cells outside it aren't visible; an anchor clipped away
+  lies off screen the way its cells are, with its column or row) and `.focused()`. A text,
+  block or caret anchor can name its view: `{"text": {"from": 4, "to": 9}, "in": "panel:2"}`
+  (`Anchor::In { view, anchor }`, built with `Anchor::scoped`); it resolves only there.
+  `in` on a screen or host anchor, an empty view or a second scope is refused by serde and
+  by `apply`. `Resolved.view` (wire `in`) and so `Planned.anchor` and `ops::resolved` say
+  which view an anchor resolved in. `map_anchors` maps scoped anchors too, whichever view
+  the edit came through.
+- `Resolve::is_focused` (default `false`).
+- `Renderer::measure(data, avail)` is called once per candidate side with that side's real
+  room (below and above: the rows past the arrow's gap, at most the width cap; right and
+  left: the columns past the gap, at most the cap), so a renderer can return a narrow, tall
+  box for a narrow side. A side with no room isn't measured.
+
+### Changed (breaking within 0.1.0's development)
+
+- `Anchor` has a new variant, `In`: exhaustive matches need an arm. `Resolved` has a new
+  public field, `view`: struct literals need it (or use `Resolved::at` / `Resolved::off`).
+- `Chain` no longer takes the first answer: of its resolvers' answers it takes the focused
+  one's if its cells show, else the first whose cells show, else the focused one's
+  off-screen direction, else the first. A resolver that answered "off screen" no longer
+  hides a later one that shows the anchor.
+- Placement with an arrow picks the least-scoring box of every candidate, not of the first
+  few that route: the result no longer depends on how a first guess ranked them. Every
+  golden plan is unchanged. At 100×40 (release, best of runs on a loaded machine, against
+  the previous build run alternately): a box with its arrow 36.9 µs (was 33.8), a
+  spotlight with an arrow 46.2 µs (was 55.1), a box alone 6.4 µs (was 5.3; four measures).
+
+### Fixed
+
+- A docked box (its anchor off screen) now always touches its own edge chip: it sits next
+  to the chip and shares part of its edge, and `Planned.dock` names a cell of that shared
+  edge. It used to take any candidate along the edge (one at the area's far side won where
+  it covered less text, or one a few rows away), and `dock` was clamped to the box's
+  border, touching nothing. When no box can touch the chip, the layer is a strip.
+- `Planned.owner`'s documentation said a host must attribute agents' layers; attributing
+  them is recommended, and the host's choice.

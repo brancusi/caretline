@@ -173,6 +173,137 @@ fn a_docked_box_sits_against_its_chip_and_says_where() {
     assert_eq!(l.no_arrow, Some(NoArrow::Docked));
 }
 
+/// A docked box touches its chip: they share a stretch of edge, and `dock` names a cell of
+/// it, on the box's border next to the chip.
+fn docked_against_chip(l: &Planned) {
+    let (Some(d), Some(r), Some(chip)) = (l.dock, l.rect, l.chip) else {
+        assert!(
+            l.dock.is_none() || l.rect.is_some(),
+            "{}: dock without a box",
+            l.id
+        );
+        return;
+    };
+    let (x, y, touching) = match d.edge {
+        Edge::Top => (r.x + d.offset, r.y, r.y == chip.bottom()),
+        Edge::Bottom => (r.x + d.offset, r.bottom() - 1, r.bottom() == chip.y),
+        Edge::Left => (r.x, r.y + d.offset, r.x == chip.right()),
+        Edge::Right => (r.right() - 1, r.y + d.offset, r.right() == chip.x),
+    };
+    assert!(
+        touching,
+        "{}: box {r:?} isn't against its chip {chip:?}",
+        l.id
+    );
+    assert!(
+        r.contains(x, y),
+        "{}: dock {d:?} is off the box {r:?}",
+        l.id
+    );
+    let beside = match d.edge {
+        Edge::Top | Edge::Bottom => chip.contains(x, chip.y),
+        Edge::Left | Edge::Right => chip.contains(chip.x, y),
+    };
+    assert!(
+        beside,
+        "{}: dock {d:?} on {r:?} doesn't meet chip {chip:?}",
+        l.id
+    );
+}
+
+#[test]
+fn a_docked_box_follows_its_chip_where_the_text_is() {
+    // Found against a live host: the box went where it covered no text, at the area's left,
+    // while its chip stayed at the right; `dock` named a cell that touched nothing.
+    let mut grid = Grid::new(120, 30).with_area(Rect::new(0, 0, 120, 29));
+    for y in 1..10 {
+        grid.mark_text(40, y, &"words ".repeat(13));
+    }
+    let mut m = AnchorMap::new();
+    let a = off(&mut m, "r-103", Off::Above { x: Some(90) });
+    let b = off(&mut m, "r-114", Off::Above { x: Some(90) });
+    let renderers = Renderers::new().register("card", |_: &Value, avail: Size| {
+        Size::new(38.min(avail.w), 3)
+    });
+    let p = plan(
+        &all(vec![
+            Layer::new(a).with_content(card()),
+            Layer::new(b).with_content(card()),
+        ]),
+        &m,
+        &grid,
+        &renderers,
+    );
+    let first = &p.layers[0];
+    assert_eq!(first.chip, Some(Rect::new(90, 0, 8, 1)));
+    assert!(
+        first.dock.is_some(),
+        "the first box docks under its chip, over the text"
+    );
+    // The second chip slid along the edge, beside the first box's: its box can't touch it
+    // without covering the first, so it's a strip rather than a box that claims to dock.
+    let second = &p.layers[1];
+    assert!(second.dock.is_some() || second.mode == Some(Mode::Strip));
+    for l in &p.layers {
+        docked_against_chip(l);
+    }
+    apart(&p);
+}
+
+#[test]
+fn every_docked_box_touches_its_chip_where_dock_says() {
+    // Seeded: a failure names its seed.
+    let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n.max(1)
+    };
+    let mut docked = 0;
+    for case in 0..150 {
+        let (w, h) = (40 + next(100) as u16, 12 + next(30) as u16);
+        let mut grid = Grid::new(w, h).with_area(Rect::new(0, 0, w, h - 1));
+        for y in 0..h - 1 {
+            if next(2) == 0 {
+                let x = next(w as u64) as u16;
+                grid.mark_text(x, y, &"text ".repeat(next(12) as usize));
+            }
+        }
+        let mut m = AnchorMap::new();
+        let mut layers = Vec::new();
+        for k in 0..1 + next(4) {
+            let o = match next(4) {
+                0 => Off::Above {
+                    x: (next(3) > 0).then(|| next(w as u64) as u16),
+                },
+                1 => Off::Below {
+                    x: (next(3) > 0).then(|| next(w as u64) as u16),
+                },
+                2 => Off::Left {
+                    y: next(h as u64) as u16,
+                },
+                _ => Off::Right {
+                    y: next(h as u64) as u16,
+                },
+            };
+            let a = off(&mut m, &format!("k{k}"), o);
+            layers.push(Layer::new(a).with_content(card()));
+        }
+        let (bw, bh) = (6 + next(40) as u16, 3 + next(5) as u16);
+        let p = plan(&all(layers), &m, &grid, &sized(bw, bh));
+        for l in &p.layers {
+            assert!(l.chip.is_some() || l.dock.is_none(), "case {case}");
+            docked += usize::from(l.dock.is_some());
+            docked_against_chip(l);
+        }
+    }
+    assert!(
+        docked > 100,
+        "only {docked} docked boxes: the property says little"
+    );
+}
+
 #[test]
 fn every_arrow_at_an_anchor_on_screen_routes() {
     // Every char of the page as an anchor: a box placed beside it always gets its arrow, even

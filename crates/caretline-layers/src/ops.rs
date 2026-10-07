@@ -183,21 +183,26 @@ fn off_name(o: &Off) -> &'static str {
 }
 
 /// Where a layer landed in a plan: `{"rects": […]}`, `{"off": "below"}`, or `null` (with
-/// `reason: "not_found"` beside it in [`reply`]).
+/// `reason: "not_found"` beside it in [`reply`]); with `"in": "<view>"` when it resolved in a
+/// named view.
 pub fn resolved(plan: &Plan, layer: &str) -> Value {
-    match plan
+    let Some(r) = plan
         .layers
         .iter()
         .find(|l| l.id == layer)
         .and_then(|l| l.anchor.as_ref())
-    {
-        Some(r) if !r.rects.is_empty() => json!({"rects": r.rects}),
-        Some(r) => r
-            .off
-            .as_ref()
-            .map_or(Value::Null, |o| json!({"off": off_name(o)})),
-        None => Value::Null,
+    else {
+        return Value::Null;
+    };
+    let mut v = match (&r.rects, &r.off) {
+        (rects, _) if !rects.is_empty() => json!({"rects": rects}),
+        (_, Some(o)) => json!({"off": off_name(o)}),
+        _ => return Value::Null,
+    };
+    if let Some(view) = &r.view {
+        v["in"] = json!(view);
     }
+    v
 }
 
 /// The result of an applied op: the layer id, what it popped, and, given this frame's plan,

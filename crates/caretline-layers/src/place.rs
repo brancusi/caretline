@@ -158,11 +158,12 @@ pub struct Planned {
     pub z: i16,
     /// An agent's layer: the host styles it as one.
     pub agent: bool,
-    /// Whose layer it is. A host must attribute an agent's layers to it (`agent:<actor>`,
-    /// [`Owner::actor`]) in its own way, so they can't pass as the host's own: the crate draws
-    /// nothing and writes no attribution into the content.
+    /// Whose layer it is (`agent:<actor>` for an agent's, [`Owner::actor`]). The crate draws
+    /// nothing and writes no attribution into the content; attributing an agent's layers to
+    /// it, so they can't pass as the host's own, is recommended and the host's choice.
     pub owner: Owner,
-    /// Where its anchor resolved: cells, or which way it lies (`None` for a screen position).
+    /// Where its anchor resolved: cells, or which way it lies (`None` for a screen position),
+    /// and the view it resolved in (`Resolved::view`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anchor: Option<Resolved>,
     /// Its box (or strip) and how it was placed.
@@ -274,9 +275,6 @@ pub fn plan(layers: &Layers, anchors: &dyn Resolve, grid: &Grid, renderers: &Ren
     out
 }
 
-/// How many of the best boxes by cover are re-scored with their arrow's route.
-const ROUTED: usize = 6;
-
 /// The widest a box may be by default, borders included.
 pub const MAX_WIDTH: u16 = 52;
 
@@ -314,18 +312,18 @@ fn plan_one(
     };
     let (anchor, off) = match &t {
         Target::At(r) => (r.rects.clone(), None),
-        Target::Off(o, _) => (Vec::new(), Some(*o)),
+        Target::Off(o, _, _) => (Vec::new(), Some(*o)),
         Target::Screen(_) => (Vec::new(), None),
     };
     p.anchor = match &t {
         Target::At(r) => Some(r.clone()),
-        Target::Off(o, _) => Some(Resolved::off(*o)),
+        Target::Off(o, _, view) => Some(Resolved::off(*o).in_view(view.as_deref())),
         Target::Screen(_) => None,
     };
 
     // An off-screen anchor gets an edge chip; the box docks against it.
     let mut dock: Option<(Rect, Side)> = None;
-    if let (Some(o), Target::Off(_, which)) = (off, &t) {
+    if let (Some(o), Target::Off(_, which, _)) = (off, &t) {
         let w = match (renderer, data) {
             (Some(r), Some(d)) => r.chip(d, which, o).w,
             _ => 8,
@@ -351,11 +349,43 @@ fn plan_one(
         (renderer, data, off.is_some() && layer.hide_off_screen)
     {
         let max_w = layer.max_width.unwrap_or(MAX_WIDTH).min(area.w * 2 / 3);
-        let avail = Size::new(max_w, area.h);
-        let m = rend.measure(data, avail);
-        let size = (m.w.min(avail.w), m.h.min(avail.h));
-        let has_box = size.0 > 0 && size.1 > 0;
+        let whole = Size::new(max_w, area.h);
+        // What the renderer gives for `avail`, never over the whole room; zero: no box.
+        let measure = |avail: Size| {
+            let m = rend.measure(data, avail);
+            let s = (m.w.min(whole.w), m.h.min(whole.h));
+            (s.0 > 0 && s.1 > 0).then_some(s)
+        };
         let routed = layer.arrow && dock.is_none() && !anchor.is_empty();
+        // Each candidate side measured with the room it really has (design §2.4).
+        let sized = |beside: &[Rect], order: &[Side], flush: bool| -> Vec<(Side, (u16, u16))> {
+            order
+                .iter()
+                .filter_map(|&s| {
+                    let avail = room(beside, s, max_w, area, flush);
+                    if avail.w == 0 || avail.h == 0 {
+                        return None;
+                    }
+                    Some((s, measure(avail)?))
+                })
+                .collect()
+        };
+        let sides: Vec<(Side, (u16, u16))> = if narrow {
+            Vec::new()
+        } else {
+            match (&t, dock) {
+                (Target::Screen(_), _) => Vec::new(),
+                (_, Some((chip, side))) => sized(&[chip], &[side], true),
+                (Target::At(_), None) => sized(&anchor, &layer.sides(), false),
+                _ => Vec::new(),
+            }
+        };
+        let screen_size = match &t {
+            Target::Screen(_) if !narrow => measure(whole),
+            _ => None,
+        };
+        // Whether the content has a box at all (else nothing is drawn, not even a strip).
+        let has_box = !sides.is_empty() || screen_size.is_some() || measure(whole).is_some();
         // (box, side, its route if placement already routed it)
         let mut chosen: Option<(Rect, Option<Side>, Option<route::Path>)> = None;
         if !narrow && has_box {
@@ -366,24 +396,15 @@ fn plan_one(
                 taken.ensure_costs(grid);
             }
             chosen = match (&t, dock) {
-                (Target::Screen(pos), _) => {
-                    screen_box(*pos, size, area, grid, taken, agent).map(|r| (r, None, None))
+                (Target::Screen(pos), _) => screen_size
+                    .and_then(|size| screen_box(*pos, size, area, grid, taken, agent))
+                    .map(|r| (r, None, None)),
+                (_, Some((chip, _))) => place(&sides, &[chip], grid, taken, agent, false, true)
+                    .map(|(r, s, _)| (r, Some(s), None)),
+                (Target::At(_), None) => {
+                    place(&sides, &anchor, grid, taken, agent, layer.arrow, false)
+                        .map(|(r, s, path)| (r, Some(s), path))
                 }
-                (_, Some((chip, side))) => {
-                    place(size, &[chip], &[side], grid, taken, agent, false, true)
-                        .map(|(r, s, _)| (r, Some(s), None))
-                }
-                (Target::At(_), None) => place(
-                    size,
-                    &anchor,
-                    &layer.sides(),
-                    grid,
-                    taken,
-                    agent,
-                    layer.arrow,
-                    false,
-                )
-                .map(|(r, s, path)| (r, Some(s), path)),
                 _ => None,
             };
         }
@@ -421,10 +442,14 @@ fn plan_one(
                     });
                 }
                 if let (Some((chip, side)), Some(_)) = (dock, side) {
-                    // The box's edge facing its chip, at the chip's middle.
+                    // The box's edge facing its chip, at the chip's middle where they meet.
+                    let (lo, hi) = (r.x.max(chip.x), r.right().min(chip.right()));
+                    let x = (chip.x + chip.w / 2)
+                        .max(lo)
+                        .min(hi.saturating_sub(1).max(lo));
                     let (edge, x, y) = match side {
-                        Side::Above => (Edge::Bottom, chip.x + chip.w / 2, chip.y),
-                        Side::Below => (Edge::Top, chip.x + chip.w / 2, chip.y),
+                        Side::Above => (Edge::Bottom, x, chip.y),
+                        Side::Below => (Edge::Top, x, chip.y),
                         Side::Right => (Edge::Left, chip.x, chip.y),
                         Side::Left => (Edge::Right, chip.x, chip.y),
                     };
@@ -917,8 +942,8 @@ impl Field for CostField<'_> {
 /// Where a layer points this frame.
 enum Target {
     At(Resolved),
-    /// Which way it lies, and the anchor that does.
-    Off(Off, Anchor),
+    /// Which way it lies, the anchor that does, and the view it lies off.
+    Off(Off, Anchor, Option<String>),
     Screen(ScreenPos),
 }
 
@@ -938,10 +963,10 @@ fn target(layer: &Layer, anchors: &dyn Resolve, grid: &Grid) -> Option<Target> {
             .filter(|x| !x.is_empty())
             .collect();
         if !rects.is_empty() {
-            return Some(Target::At(Resolved::at(rects)));
+            return Some(Target::At(Resolved::at(rects).in_view(r.view.as_deref())));
         }
         if let Some(off) = r.off {
-            return Some(Target::Off(off, a.clone()));
+            return Some(Target::Off(off, a.clone(), r.view));
         }
     }
     None
@@ -999,17 +1024,40 @@ fn allowed(r: &Rect, grid: &Grid, taken: &Taken, anchor: &[Rect], agent: bool) -
     !(agent && grid.caret.is_some_and(|(x, y)| r.contains(x, y)))
 }
 
-/// Picks a box for a callout of `size` beside `anchor` (design §2.4): candidates on each side
-/// in order, shifted to fit, scored by the text they cover, dimmed cells, the caret and the
-/// distance (and, with an arrow, the arrow's route); ties go to the earlier side. Then the
-/// sliver rule. `None` if nothing fits. With an arrow, also the chosen box's route when the
-/// sliver rule left the box where it was routed. `flush`: against the anchor (a docked box
-/// against its chip), not a cell or more away for an arrow.
-#[allow(clippy::too_many_arguments)]
+/// The room on one side of `beside` for a box: the area's cells past the gap an arrow needs
+/// (none when `flush`), at most `max_w` wide. The renderer measures for it.
+fn room(beside: &[Rect], side: Side, max_w: u16, area: Rect, flush: bool) -> Size {
+    let a = Rect::bounds(beside);
+    let gap_v = u16::from(!flush);
+    let gap_h = if flush { 0 } else { 2 };
+    match side {
+        Side::Below => Size::new(
+            max_w,
+            area.bottom()
+                .saturating_sub(a.bottom().saturating_add(gap_v)),
+        ),
+        Side::Above => Size::new(max_w, a.y.saturating_sub(area.y.saturating_add(gap_v))),
+        Side::Right => Size::new(
+            max_w.min(area.right().saturating_sub(a.right().saturating_add(gap_h))),
+            area.h,
+        ),
+        Side::Left => Size::new(
+            max_w.min(a.x.saturating_sub(area.x.saturating_add(gap_h))),
+            area.h,
+        ),
+    }
+}
+
+/// Picks a box beside `anchor` (design §2.4) from each side in order, with the size the
+/// renderer measured for that side's room: candidates shifted along the side to fit, scored
+/// by the text they cover, dimmed cells, the caret and the distance (and, with an arrow, the
+/// arrow's route); ties go to the earlier side. Then the sliver rule. `None` if nothing fits.
+/// With an arrow, also the chosen box's route when the sliver rule left the box where it was
+/// routed. `flush`: a docked box against its chip, touching it (next to it, and sharing at
+/// least one cell of its edge), not a cell or more away for an arrow.
 fn place(
-    size: (u16, u16),
+    sides: &[(Side, (u16, u16))],
     anchor: &[Rect],
-    order: &[Side],
     grid: &Grid,
     taken: &Taken,
     agent: bool,
@@ -1017,35 +1065,49 @@ fn place(
     flush: bool,
 ) -> Option<(Rect, Side, Option<route::Path>)> {
     let area = grid.area;
-    let (bw, bh) = size;
-    if bw > area.w || bh > area.h || anchor.is_empty() {
+    if anchor.is_empty() {
         return None;
     }
     let a = Rect::bounds(anchor);
     let sums = taken.sums();
-    let clamp_x = |x: i32| x.clamp(area.x as i32, (area.right() - bw) as i32) as u16;
-    let clamp_y = |y: i32| y.clamp(area.y as i32, (area.bottom() - bh) as i32) as u16;
     // Where along the side: the junction over the anchor's middle, or the box at either edge.
     let mid = a.x as i32 + (a.w.min(16) as i32 - 1) / 2;
-    let xs = [
-        mid - 4,
-        area.x as i32,
-        (area.right() - bw) as i32,
-        mid - bw as i32 + 5,
-    ];
-    let ys = [
-        a.y as i32 - 1,
-        a.y as i32 - (bh as i32 - 2),
-        a.y as i32 - bh as i32 / 2,
-    ];
     let mut cands: Vec<(u32, usize, usize, Rect, Side, u32)> = Vec::new();
     let mut seq = 0;
-    for (si, &side) in order.iter().enumerate() {
+    for (si, &(side, (bw, bh))) in sides.iter().enumerate() {
+        if bw > area.w || bh > area.h {
+            continue;
+        }
+        let clamp_x = |x: i32| x.clamp(area.x as i32, (area.right() - bw) as i32) as u16;
+        let clamp_y = |y: i32| y.clamp(area.y as i32, (area.bottom() - bh) as i32) as u16;
+        let xs = [
+            mid - 4,
+            area.x as i32,
+            (area.right() - bw) as i32,
+            mid - bw as i32 + 5,
+            // Docked: the box's middle on the chip's, so they meet.
+            a.x as i32 + a.w as i32 / 2 - bw as i32 / 2,
+        ];
+        let xs = &xs[..if flush { 5 } else { 4 }];
+        let ys = [
+            a.y as i32 - 1,
+            a.y as i32 - (bh as i32 - 2),
+            a.y as i32 - bh as i32 / 2,
+        ];
         let mut add = |r: Rect, k: u16| {
             seq += 1;
             if (r.right() > area.right())
                 || (r.bottom() > area.bottom())
                 || !allowed(&r, grid, taken, anchor, agent)
+            {
+                return;
+            }
+            // A docked box shares an edge with its chip.
+            if flush
+                && match side {
+                    Side::Below | Side::Above => !(r.x < a.right() && a.x < r.right()),
+                    Side::Right | Side::Left => !(r.y < a.bottom() && a.y < r.bottom()),
+                }
             {
                 return;
             }
@@ -1092,7 +1154,7 @@ fn place(
         match side {
             Side::Below | Side::Above => {
                 let near = u16::from(!flush);
-                for k in near..=near + 3 {
+                for k in near..=near + if flush { 0 } else { 3 } {
                     let y = if side == Side::Below {
                         a.bottom() as i32 + k as i32
                     } else {
@@ -1102,7 +1164,7 @@ fn place(
                         continue;
                     }
                     let mut seen = Vec::new();
-                    for x in xs {
+                    for &x in xs {
                         let x = clamp_x(x);
                         if !seen.contains(&x) {
                             seen.push(x);
@@ -1113,7 +1175,7 @@ fn place(
             }
             Side::Right | Side::Left => {
                 let near = if flush { 0 } else { 2 };
-                for k in near..=near + 3 {
+                for k in near..=near + if flush { 0 } else { 3 } {
                     let x = if side == Side::Right {
                         a.right() as i32 + k as i32
                     } else {
@@ -1139,28 +1201,33 @@ fn place(
     }
     cands.sort_by_key(|c| (c.0, c.1, c.2));
     if arrow {
-        // The best few by box alone, re-scored with the arrow they'd need: a box whose arrow
-        // must cross words loses to one with a blank way, and any box whose arrow routes beats
-        // one whose arrow can't (when none of the few can, the next few are tried). The winner
-        // is the least (no route, score, side, order), whatever order they're routed in, so
-        // they go cheapest bound first and a box whose bound can't win isn't routed at all.
-        let mut best: Option<Scored> = None;
-        for batch in cands.chunks(ROUTED) {
-            route_batch(batch, anchor, grid, taken, &mut best);
-            if best.as_ref().is_some_and(|b| !b.miss) {
-                break;
-            }
-        }
-        let b = best?;
+        // Every box re-scored with the arrow it would need: a box whose arrow must cross words
+        // loses to one with a blank way, and any box whose arrow routes beats one whose arrow
+        // can't. The winner is the least of them all, whatever order they're routed in, so
+        // it doesn't depend on which boxes a first guess ranked together (`route_all`).
+        let b = route_all(&cands, anchor, grid, taken)?;
         let r = sliver(b.rect, b.side, sums, grid, taken, anchor, agent);
         return Some((r, b.side, b.path.filter(|_| r == b.rect)));
     }
     let c = cands[0];
-    Some((
-        sliver(c.3, c.4, sums, grid, taken, anchor, agent),
-        c.4,
-        None,
-    ))
+    let r = sliver(c.3, c.4, sums, grid, taken, anchor, agent);
+    // A docked box the sliver rule moved off its chip stays where it touched it.
+    let r = if flush && !touches(&r, &a, c.4) {
+        c.3
+    } else {
+        r
+    };
+    Some((r, c.4, None))
+}
+
+/// Whether a box on `side` of `a` is next to it and shares at least one cell of its edge.
+fn touches(r: &Rect, a: &Rect, side: Side) -> bool {
+    match side {
+        Side::Below => r.y == a.bottom() && r.x < a.right() && a.x < r.right(),
+        Side::Above => r.bottom() == a.y && r.x < a.right() && a.x < r.right(),
+        Side::Right => r.x == a.right() && r.y < a.bottom() && a.y < r.bottom(),
+        Side::Left => r.right() == a.x && r.y < a.bottom() && a.y < r.bottom(),
+    }
 }
 
 /// A candidate box: (score with a first guess at its arrow, side index, order, box, side,
@@ -1185,71 +1252,88 @@ impl Scored {
     }
 }
 
-/// Routes a batch of candidates into `best`.
-fn route_batch(
-    batch: &[Cand],
+/// Routes candidate boxes and returns the least by (no route, score, side, order), whatever
+/// order they come in: every box gets a lower bound on its arrow from one search back from
+/// the anchor per (side, anchor rect), over the cells any of that pair's routes may use, and
+/// they're routed cheapest bound first. A box whose bound can't win isn't routed, and a
+/// route's search stops once it can't win.
+fn route_all(cands: &[Cand], anchor: &[Rect], grid: &Grid, taken: &Taken) -> Option<Scored> {
+    let near: Vec<Rect> = cands.iter().map(|c| nearest(anchor, &c.3)).collect();
+    let mut best: Option<Scored> = None;
+    let all: Vec<usize> = (0..cands.len()).collect();
+    route_group(&all, cands, &near, anchor, grid, taken, &mut best);
+    best
+}
+
+/// Whether a box whose arrow costs at least `lb` in all could still beat `best`.
+fn can_win(lb: u32, c: &Cand, best: &Option<Scored>) -> bool {
+    best.as_ref()
+        .is_none_or(|b| (false, lb, c.1, c.2) < b.key())
+}
+
+/// Routes the candidates `group` (indices into `cands`) into `best` ([`route_all`]).
+fn route_group(
+    group: &[usize],
+    cands: &[Cand],
+    near: &[Rect],
     anchor: &[Rect],
     grid: &Grid,
     taken: &Taken,
     best: &mut Option<Scored>,
 ) {
-    let area = grid.area;
-    // The least each arrow can cost, from one search back from the anchor per (side, anchor
-    // rect), over the cells any of their routes may use.
-    let open = CostField::new(grid, taken, anchor, Rect::default());
-    let mut goals: Vec<(Side, Rect, route::ToGoal)> = Vec::new();
-    for c in batch {
-        let near = nearest(anchor, &c.3);
-        if goals.iter().any(|g| g.0 == c.4 && g.1 == near) {
-            continue;
-        }
-        let region = batch
-            .iter()
-            .filter(|o| o.4 == c.4 && nearest(anchor, &o.3) == near)
-            .map(|o| route::reach(o.3, o.4, near, area))
-            .fold(
-                Rect::default(),
-                |r, o| if r.is_empty() { o } else { r.union(&o) },
-            );
-        goals.push((c.4, near, route::ToGoal::new(&open, c.4, near, region)));
+    if group.is_empty() {
+        return;
     }
-    let goal_of = |c: &Cand| {
-        let near = nearest(anchor, &c.3);
-        &goals
-            .iter()
-            .find(|g| g.0 == c.4 && g.1 == near)
-            .expect("a search per side")
-            .2
-    };
+    let area = grid.area;
+    // (side, anchor rect, the region its routes may use), and each box's pair.
+    let mut keys: Vec<(Side, Rect, Rect)> = Vec::new();
+    let mut key: Vec<usize> = Vec::with_capacity(group.len());
+    for &i in group {
+        let c = &cands[i];
+        let reach = route::reach(c.3, c.4, near[i], area);
+        match keys.iter().position(|k| k.0 == c.4 && k.1 == near[i]) {
+            Some(k) => {
+                keys[k].2 = keys[k].2.union(&reach);
+                key.push(k);
+            }
+            None => {
+                key.push(keys.len());
+                keys.push((c.4, near[i], reach));
+            }
+        }
+    }
+    let open = CostField::new(grid, taken, anchor, Rect::default());
+    let goals: Vec<route::ToGoal> = keys
+        .iter()
+        .map(|&(side, n, region)| route::ToGoal::new(&open, side, n, region))
+        .collect();
     // A bound on each arrow's cost (at least one cell when the facing side is out of reach:
     // the arrow may still end on another side).
-    let mut few: Vec<(u32, &Cand)> = batch
+    let mut few: Vec<(u32, usize, usize)> = group
         .iter()
-        .map(|c| {
+        .zip(&key)
+        .map(|(&i, &k)| {
+            let c = &cands[i];
             let field = CostField::new(grid, taken, anchor, c.3);
-            let near = nearest(anchor, &c.3);
-            let lb = goal_of(c).bound(&field, c.3, c.4, near).unwrap_or(1) * 5;
-            (c.5 + lb, c)
+            let lb = goals[k].bound(&field, c.3, c.4, near[i]).unwrap_or(1) * 5;
+            (c.5 + lb, i, k)
         })
         .collect();
-    few.sort_by_key(|(lb, c)| (*lb, c.1, c.2));
-    for (lb, c) in few {
-        if best
-            .as_ref()
-            .is_some_and(|b| (false, lb, c.1, c.2) >= b.key())
-        {
+    few.sort_by_key(|&(lb, i, _)| (lb, cands[i].1, cands[i].2));
+    for (lb, i, k) in few {
+        let c = &cands[i];
+        if !can_win(lb, c, best) {
             continue;
         }
         // Against a box with a route, a route that would lose costs more than the room left.
-        let limit = match best {
-            Some(b) if !b.miss => (b.score - c.5) / 5,
+        let limit = match best.as_ref() {
+            Some(b) if !b.miss => b.score.saturating_sub(c.5) / 5,
             _ => u32::MAX,
         };
-        let near = nearest(anchor, &c.3);
         let field = CostField::new(grid, taken, anchor, c.3);
         // Crossing a word is worse than covering one: a box hides text, an arrow mangles it.
         let (miss, rc, path) =
-            match route::route(&field, c.3, c.4, near, area, limit, Some(goal_of(c))) {
+            match route::route(&field, c.3, c.4, near[i], area, limit, Some(&goals[k])) {
                 route::Routed::Over => continue,
                 route::Routed::NoWay => (true, 0, None),
                 route::Routed::Found(p) => (

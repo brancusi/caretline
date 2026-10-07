@@ -15,11 +15,20 @@ use crate::resolve::{Off, Resolve, Resolved};
 /// (`x`, `y`) on the host's screen. Only visible rows are read; nothing scans the document.
 /// With [`FrameResolver::with_doc`], a block or block-relative anchor that isn't on screen
 /// still says which way it lies.
+///
+/// One document shown in several views gets one resolver per view, each with its own
+/// [`id`](FrameResolver::id) (the host's names, such as `main` or `panel:2`), offset and
+/// [`clip`](FrameResolver::clip), in a [`Chain`](crate::Chain) with the focused one marked
+/// ([`focused`](FrameResolver::focused)). A scoped anchor ([`Anchor::In`]) resolves only in
+/// the view it names; every answer carries the resolver's id (`Resolved::view`).
 pub struct FrameResolver<'a> {
     frame: &'a Frame,
     x: u16,
     y: u16,
     doc: Option<&'a Document>,
+    id: Option<String>,
+    clip: Option<Rect>,
+    focused: bool,
 }
 
 impl<'a> FrameResolver<'a> {
@@ -29,6 +38,9 @@ impl<'a> FrameResolver<'a> {
             x: 0,
             y: 0,
             doc: None,
+            id: None,
+            clip: None,
+            focused: false,
         }
     }
 
@@ -43,6 +55,87 @@ impl<'a> FrameResolver<'a> {
     pub fn with_doc(mut self, doc: &'a Document) -> FrameResolver<'a> {
         self.doc = Some(doc);
         self
+    }
+
+    /// The view's stable id, as anchors name it in `in`. Without one, only unscoped anchors
+    /// resolve here.
+    pub fn id(mut self, id: &str) -> FrameResolver<'a> {
+        self.id = Some(id.into());
+        self
+    }
+
+    /// The screen cells the view shows (default: the whole frame at its offset). Cells
+    /// outside it don't count as visible: an anchor clipped away lies off screen, the way
+    /// its cells are.
+    pub fn clip(mut self, clip: Rect) -> FrameResolver<'a> {
+        self.clip = Some(clip);
+        self
+    }
+
+    /// Marks this the view the host has focused ([`Resolve::is_focused`]).
+    pub fn focused(mut self) -> FrameResolver<'a> {
+        self.focused = true;
+        self
+    }
+
+    /// The cells this view shows on the host's screen.
+    fn shown(&self) -> Rect {
+        let all = Rect::new(self.x, self.y, self.frame.width, self.frame.height);
+        self.clip.map_or(all, |c| c.intersection(&all))
+    }
+
+    /// Keeps the cells inside the clip. Cells that all fall outside it say which way they lie;
+    /// a direction from the frame is pulled inside the clip.
+    fn bound(&self, r: Resolved) -> Resolved {
+        let view = self.id.as_deref();
+        if self.clip.is_none() {
+            return r.in_view(view);
+        }
+        let clip = self.shown();
+        if r.rects.is_empty() {
+            let off = r.off.map(|o| match o {
+                Off::Above { x } => Off::Above {
+                    x: Some(x.unwrap_or(clip.x).clamp(clip.x, clip.right().max(1) - 1)),
+                },
+                Off::Below { x } => Off::Below {
+                    x: Some(x.unwrap_or(clip.x).clamp(clip.x, clip.right().max(1) - 1)),
+                },
+                Off::Left { y } => Off::Left {
+                    y: y.clamp(clip.y, clip.bottom().max(1) - 1),
+                },
+                Off::Right { y } => Off::Right {
+                    y: y.clamp(clip.y, clip.bottom().max(1) - 1),
+                },
+            });
+            return Resolved {
+                rects: Vec::new(),
+                off,
+                view: None,
+            }
+            .in_view(view);
+        }
+        let shown: Vec<Rect> = r
+            .rects
+            .iter()
+            .map(|c| c.intersection(&clip))
+            .filter(|c| !c.is_empty())
+            .collect();
+        if !shown.is_empty() {
+            return Resolved::at(shown).in_view(view);
+        }
+        let b = Rect::bounds(&r.rects);
+        let col = b.x.clamp(clip.x, clip.right().max(1) - 1);
+        let row = b.y.clamp(clip.y, clip.bottom().max(1) - 1);
+        let off = if b.bottom() <= clip.y {
+            Off::Above { x: Some(col) }
+        } else if b.y >= clip.bottom() {
+            Off::Below { x: Some(col) }
+        } else if b.right() <= clip.x {
+            Off::Left { y: row }
+        } else {
+            Off::Right { y: row }
+        };
+        Resolved::off(off).in_view(view)
     }
 
     fn text_rows(&self) -> impl Iterator<Item = (u16, &RowInfo)> + '_ {
@@ -179,6 +272,22 @@ impl<'a> FrameResolver<'a> {
 
 impl Resolve for FrameResolver<'_> {
     fn resolve(&self, anchor: &Anchor) -> Option<Resolved> {
+        let anchor = match anchor {
+            Anchor::In { view, anchor } if self.id.as_deref() == Some(view.as_str()) => anchor,
+            Anchor::In { .. } => return None,
+            a => a,
+        };
+        self.raw(anchor).map(|r| self.bound(r))
+    }
+
+    fn is_focused(&self) -> bool {
+        self.focused
+    }
+}
+
+impl FrameResolver<'_> {
+    /// An unscoped anchor's cells in the whole frame, before the clip.
+    fn raw(&self, anchor: &Anchor) -> Option<Resolved> {
         match anchor {
             Anchor::Text { from, to } => self.text(*from, *to),
             Anchor::BlockText { block, from, to } => {
@@ -190,7 +299,7 @@ impl Resolve for FrameResolver<'_> {
                 .frame
                 .cursor
                 .map(|(x, y)| Resolved::at(vec![self.rect(x, y, 1)])),
-            Anchor::Screen(_) | Anchor::Host { .. } => None,
+            Anchor::Screen(_) | Anchor::Host { .. } | Anchor::In { .. } => None,
         }
     }
 }
@@ -198,36 +307,43 @@ impl Resolve for FrameResolver<'_> {
 /// Maps every text anchor through an edit's changes: the start sticks after an insertion
 /// there, the end before one, and a range that collapses (its text deleted) is dropped, so
 /// the next fallback anchor takes over. A layer with no anchor left is removed. Block anchors
-/// need nothing: marks follow their blocks. Returns whether anything changed.
+/// need nothing: marks follow their blocks. A scoped anchor maps as its target does: every
+/// view shows the same document, so an edit made through any of them maps anchors in all.
+/// Returns whether anything changed.
 pub fn map_anchors(layers: &mut Layers, changes: &ChangeSet) -> bool {
-    let len = changes.len();
     let mut changed = false;
     for l in &mut layers.layers {
         let before = l.anchor.clone();
-        l.anchor.retain_mut(|a| match a {
-            Anchor::Text { from, to } => {
-                if *to > len || *from > *to {
-                    return false;
-                }
-                if from == to {
-                    let p = changes.map_pos(*from, Assoc::Before);
-                    *from = p;
-                    *to = p;
-                    return true;
-                }
-                let f = changes.map_pos(*from, Assoc::After);
-                let t = changes.map_pos(*to, Assoc::Before);
-                *from = f;
-                *to = t;
-                f < t
-            }
-            _ => true,
-        });
+        l.anchor.retain_mut(|a| map_anchor(a, changes));
         changed |= l.anchor != before;
     }
     let n = layers.layers.len();
     layers.layers.retain(|l| !l.anchor.is_empty());
     changed || layers.layers.len() != n
+}
+
+/// Maps one anchor through `changes`; `false` when it no longer points at anything.
+fn map_anchor(a: &mut Anchor, changes: &ChangeSet) -> bool {
+    match a {
+        Anchor::In { anchor, .. } => map_anchor(anchor, changes),
+        Anchor::Text { from, to } => {
+            if *to > changes.len() || *from > *to {
+                return false;
+            }
+            if from == to {
+                let p = changes.map_pos(*from, Assoc::Before);
+                *from = p;
+                *to = p;
+                return true;
+            }
+            let f = changes.map_pos(*from, Assoc::After);
+            let t = changes.map_pos(*to, Assoc::Before);
+            *from = f;
+            *to = t;
+            f < t
+        }
+        _ => true,
+    }
 }
 
 /// After every message: maps anchors through its changes (if it edited) and drops expired

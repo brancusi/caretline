@@ -167,15 +167,27 @@ fn narrow_areas_and_boxes_that_dont_fit_become_strips() {
         &sized(20, 4),
     );
     assert_eq!(p.layers[0].rect, Some(Rect::new(0, 14, 40, 1)));
+    // A box that keeps its size whatever room it's given fits on no side.
     let mid = at(&mut m, "mid", Rect::new(30, 6, 4, 1));
+    let fixed = Renderers::new().register("card", |_: &Value, _: Size| Size::new(50, 30));
+    let p = plan(
+        &one(Layer::new(mid.clone()).with_content(card())),
+        &m,
+        &Grid::new(80, 24),
+        &fixed,
+    );
+    assert_eq!(p.layers[0].mode, Some(Mode::Strip));
+    assert_eq!(p.regions[0].id, "L-1");
+    // One that narrows to the room it's given fits on the right (44 columns there).
     let p = plan(
         &one(Layer::new(mid).with_content(card())),
         &m,
         &Grid::new(80, 24),
         &sized(50, 30),
     );
-    assert_eq!(p.layers[0].mode, Some(Mode::Strip));
-    assert_eq!(p.regions[0].id, "L-1");
+    assert_eq!(p.layers[0].mode, Some(Mode::Box));
+    assert_eq!(p.layers[0].side, Some(Side::Right));
+    assert_eq!(p.layers[0].rect, Some(Rect::new(36, 0, 44, 24)));
 }
 
 #[test]
@@ -255,12 +267,25 @@ fn the_renderer_measures_and_unknown_kinds_get_no_box() {
     let mut m = AnchorMap::new();
     let a = at(&mut m, "a", Rect::new(10, 5, 6, 1));
     let layer = Layer::new(a).with_content(card()).with_ring();
-    let r = Renderers::new().register("card", |data: &Value, avail: Size| {
-        assert_eq!(avail, Size::new(52, 24));
+    let asked = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let seen = asked.clone();
+    let r = Renderers::new().register("card", move |data: &Value, avail: Size| {
+        seen.borrow_mut().push(avail);
         Size::new(data["text"].as_str().unwrap().len() as u16 + 4, 3)
     });
     let p = plan(&one(layer.clone()), &m, &grid, &r);
     assert_eq!(p.layers[0].rect.map(|r| (r.w, r.h)), Some((9, 3)));
+    // Once per side, in order, with that side's room: below (a row's gap for an arrow),
+    // above, right and left (two columns' gap), at most 52 wide.
+    assert_eq!(
+        *asked.borrow(),
+        vec![
+            Size::new(52, 17),
+            Size::new(52, 4),
+            Size::new(52, 24),
+            Size::new(8, 24)
+        ]
+    );
     assert_eq!(p.layers[0].ring, vec![Rect::new(10, 5, 6, 1)]);
     let p = plan(&one(layer), &m, &grid, &Renderers::new());
     assert!(p.layers[0].rect.is_none() && p.regions.is_empty());
