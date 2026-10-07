@@ -48,6 +48,10 @@ pub struct Tour {
     /// The steps, in order. Wire name `step` (TOML's `[[step]]`); `steps` is read too.
     #[serde(rename = "step", alias = "steps", default)]
     pub steps: Vec<Step>,
+    /// The host's own metadata about the walkthrough (author, dates, audience…). Opaque: the
+    /// tour carries it and never reads it, like a step's `host`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Value>,
 }
 
 impl Tour {

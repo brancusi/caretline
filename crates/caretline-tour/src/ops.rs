@@ -358,6 +358,7 @@ pub fn schema() -> Value {
                     "title": {"type": "string"},
                     "kind": {"type": "string"},
                     "reoffer": {"type": "boolean"},
+                    "meta": {},
                     "step": {"type": "array", "items": {"$ref": "#/$defs/step"}},
                     "steps": {"type": "array", "items": {"$ref": "#/$defs/step"}}
                 },

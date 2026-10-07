@@ -367,3 +367,30 @@ data = { nottext = 1 }
     assert!(check(&empty).iter().any(|p| p.code == "no_steps"));
     let _: Value = serde_json::to_value(check(&t)).unwrap();
 }
+
+#[test]
+fn meta_is_opaque_and_round_trips() {
+    let toml = r#"
+id = "m"
+title = "M"
+meta = { author = "someone", created = "2026-10-08", record = 4, audience = "lay" }
+
+[[step]]
+id = "a"
+narration = { text = "Hi." }
+"#;
+    let t = parse_toml(toml).unwrap();
+    assert_eq!(
+        t.meta,
+        Some(json!({"author": "someone", "created": "2026-10-08", "record": 4, "audience": "lay"}))
+    );
+    let back: Tour = serde_json::from_value(serde_json::to_value(&t).unwrap()).unwrap();
+    assert_eq!(back, t);
+    let j = parse_json(r#"{"id":"m","meta":{"any":["shape",1]},"step":[{"id":"a"}]}"#).unwrap();
+    assert_eq!(j.meta, Some(json!({"any": ["shape", 1]})));
+    // Without meta, nothing is written.
+    let plain = parse_json(r#"{"id":"p","step":[{"id":"a"}]}"#).unwrap();
+    assert!(serde_json::to_value(&plain).unwrap().get("meta").is_none());
+    // Other unknown top-level fields are still refused.
+    assert!(parse_json(r#"{"id":"m","author":"x","step":[{"id":"a"}]}"#).is_err());
+}

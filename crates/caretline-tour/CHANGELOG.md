@@ -4,9 +4,12 @@
 
 ### Added
 
+- `Tour.meta`: the host's own metadata about a walkthrough (author, dates, audience…),
+  opaque like a step's `host`; left out when absent. Other unknown top-level fields are
+  still refused.
 - The crate: walkthroughs over a caretline host's screen, as data. Pure: no clock,
   randomness, I/O, terminal or async.
-- The format: `Tour { id, version, title, kind, reoffer, steps }` (wire `step`, TOML's
+- The format: `Tour { id, version, title, kind, reoffer, steps, meta }` (wire `step`, TOML's
   `[[step]]`), `Step { id, layers, narration, host, advance, skip_if, nudge, next }`,
   `StepLayer { id, anchor, kind, data, place, capture }`, `Narration { title?, text }`,
   `Branch { if?, goto }`, `Nudge { after_ms, data }`, `Place`. `parse_toml` and `parse_json`
