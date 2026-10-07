@@ -33,6 +33,8 @@ keeps the state and draws.
 
 [`examples/tour.toml`](examples/tour.toml) is a four-step walkthrough over a table and an
 editor.
+The guide, with the format, the reducer's effects, predicates, `plan_steps` and the ops, is
+[docs/tour.md](../../docs/tour.md).
 
 Pure: no clock, randomness, I/O, terminal or async. Depends on serde, serde_json, toml and
 caretline-layers (and caretline with the `caretline` feature).

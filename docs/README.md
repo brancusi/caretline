@@ -120,6 +120,7 @@ caretline is published on crates.io as [`caretline`](https://crates.io/crates/ca
 | [`caretline-cli`](../crates/caretline-cli) | The `caretline` binary: the interactive editor and the headless tools | |
 | [`caretline-mcp`](../crates/caretline-mcp) | The `caretline-mcp` binary: an [MCP server](mcp.md) for agents | |
 | [`caretline-layers`](../crates/caretline-layers) | New, not released yet: placement, tracking and lifecycle for hints, arrows and spotlights over a host's screen; the host draws them. See [layers.md](layers.md) | |
+| [`caretline-tour`](../crates/caretline-tour) | New, not released yet: walkthroughs as data (steps of layers, narration and the host's own scene), a pure reducer, predicates the host answers, and protocol ops. See [tour.md](tour.md) | |
 
 thc's TUI is one host: it opens each of its documents as one caretline document of blocks,
 keys its own per-block data by mark, sends changes from its own store as `external` changes, and
@@ -140,6 +141,7 @@ builds its own concepts on top with host commands and decorations ([a case study
 | Let an agent edit alongside you (MCP) | [mcp.md](mcp.md) |
 | Put it inside your own app | [embedding.md](embedding.md) |
 | Point at things on your app's screen: hints, arrows, spotlights (new, unreleased) | [layers.md](layers.md) |
+| Show someone round your app with a step-by-step walkthrough (new, unreleased) | [tour.md](tour.md) |
 | Write or debug a test | [testing.md](testing.md) |
 | Know how fast it is, and its limits | [performance.md](performance.md) |
 

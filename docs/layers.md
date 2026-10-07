@@ -4,8 +4,8 @@
 > repository but not yet on crates.io, and its API may change before its first release. This
 > page covers what is built (steps 1a and 1b of the [design](../docs/design/layers.md):
 > placement, views, and the kitty plumbing for pixels in Ghostty); the next steps (engine hooks,
-> in-frame mode, walkthroughs, protocol and MCP tools in caretline itself) are listed in the
-> design's section 9.
+> in-frame mode, protocol and MCP tools in caretline itself) are listed in the design's
+> section 9. Walkthroughs built on it are [`caretline-tour`](tour.md).
 
 `caretline-layers` puts things **over** a host's screen: a hint box beside a word, an arrow
 to a table row, a ring round a block, a spotlight that dims everything else. It decides where
@@ -62,7 +62,7 @@ A **layer** is serializable data:
 | `arrow` | An arrow from the box to the anchor |
 | `ring` | Mark the anchor's cells (`{"pulse": {"period_ms", "cycles"}}` for a host with a frame clock) |
 | `spotlight` | Dim everything but the holes (`{"holes": ["anchor", "box"]}` by default) |
-| `capture` | A modal step, for walkthroughs (a host may refuse it to agents: `no_agent_capture`) |
+| `capture` | A modal step, for [walkthroughs](tour.md) (a host may refuse it to agents: `no_agent_capture`) |
 | `hide_off_screen` | With the anchor off screen, show only the edge chip |
 | `place` | The sides to try for the box (default below, above, right, left) |
 | `max_width` | The widest the box may be (default 52, never over two-thirds of the area) |
@@ -616,7 +616,7 @@ frame nothing.
 
 These are designed but not built ([design, section 9](../docs/design/layers.md)): the engine
 hooks for drawing layers inside a caretline frame (in-frame mode), the cell size as an editor
-message, `caretline-tour` walkthroughs, `hint.*` and `layer.*` in caretline's own protocol, and
-MCP tools for agents. Until then a host uses the screen-level mode on this page. The editor
-(`caretline FILE`) and `caretline-mcp` show no layers; `caretline demo layers` is the one
-place the CLI does.
+message, `hint.*` and `layer.*` in caretline's own protocol, and MCP tools for agents.
+Until then a host uses the screen-level mode on this page. The editor (`caretline FILE`) and
+`caretline-mcp` show no layers; `caretline demo layers` is the one place the CLI does.
+Walkthroughs are built, as a reducer whose state the host keeps: see [tour.md](tour.md).

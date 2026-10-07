@@ -535,11 +535,12 @@ next = [{ if = { ext = { key = "agent", present = true } }, goto = "agent" }, { 
   the person hesitates);
 - `next` (branching: the first matching `if` wins; `goto` names a step id or `end`).
 
-The tour adds `at` and `of` to each layer's data, so a renderer can draw step dots.
+The tour adds `at` and `of` to the data of each layer whose kind isn't `hint`, so a renderer
+can draw step dots (a `hint`'s data stays `{title?, text}`).
 
 So a host authors a walkthrough as **view state + layers + narration**: `host` sets the
-scene, `layers` point at things in it, `narration` says what the step is about. A future
-`caretline-tour` reads all three. A step with two layers, one in each view of a document
+scene, `layers` point at things in it, `narration` says what the step is about.
+`caretline-tour` reads all three (12.4). A step with two layers, one in each view of a document
 (view-scoped anchors, 2.3):
 
 ```toml
@@ -1522,16 +1523,16 @@ single-layer shorthand; `narration`; the opaque `host`). Where it differs from 6
   the 6.3 policy for a host's prompt; an explicit start is never refused for it.
 - **Moving.** Going forward (start, restart, `next`, `advance`) follows `next` branches and
   passes over steps whose `skip_if` holds; `to` and `back` enter their step exactly. `back`
-  returns to the step left last (skipped steps aren't in the history). A nudge is given once
-  per visit.
+  returns to the step left last (skipped steps aren't in the history). `to` also works after a
+  walkthrough ended, entering that step of the last one. A nudge is given once per visit.
 - **Ops.** `tour.start {tour}` takes the whole tour or the id of one in the host's library
   (`id` is the host's request id); `tour.step {to: id | "next" | "back"}`, `tour.restart`,
   `tour.stop`, `tour.list`, and `ops::schema()`. Step ids `next`, `back` and `end` are
   reserved.
 - **Checking at several sizes.** `plan_steps(&tour, sizes, &renderers, scene)` plans every
   step with the host's scene per size (its grid and anchor resolver), and reports anchors
-  found nowhere, kinds with no renderer, arrows with no way, anchors off screen and `find`s
-  never resolved.
+  found nowhere, kinds with no renderer, arrows with no way, anchors off screen, `find`s
+  never resolved and layers the model refuses.
 - **Approximations in `Editor`.** A block runs from its mark to the next. A started tour's
   text anchors aren't mapped through edits (the pushed layers are, by `caretline-layers`'
   `observe`); block anchors need nothing.
