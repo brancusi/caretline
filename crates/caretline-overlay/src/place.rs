@@ -183,22 +183,22 @@ fn plan_one(
 
     // An off-screen anchor gets an edge chip; the box docks beside it.
     let mut dock: Option<(Rect, Side)> = None;
-    if let Some(o) = off {
-        if let Some(r) = chip_rect(&o, measure.chip(layer, &o), area) {
-            let side = match o {
-                Off::Above { .. } => Side::Below,
-                Off::Below { .. } => Side::Above,
-                Off::Left { .. } => Side::Right,
-                Off::Right { .. } => Side::Left,
-            };
-            dock = Some((r, side));
-            out.regions.push(Region {
-                rect: r,
-                id: format!("{}/reveal", layer.id),
-            });
-            taken.panels.push(r);
-            p.chip = Some(r);
-        }
+    if let Some(o) = off
+        && let Some(r) = chip_rect(&o, measure.chip(layer, &o), area)
+    {
+        let side = match o {
+            Off::Above { .. } => Side::Below,
+            Off::Below { .. } => Side::Above,
+            Off::Left { .. } => Side::Right,
+            Off::Right { .. } => Side::Left,
+        };
+        dock = Some((r, side));
+        out.regions.push(Region {
+            rect: r,
+            id: format!("{}/reveal", layer.id),
+        });
+        taken.panels.push(r);
+        p.chip = Some(r);
     }
 
     if layer.has_box() && !(off.is_some() && layer.hide_off_screen) {

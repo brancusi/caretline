@@ -1,3 +1,4 @@
+#![cfg(feature = "caretline")]
 //! Anchors: resolving from a caretline frame and a host's anchor map, mapping through edits,
 //! the wire forms, and click regions.
 

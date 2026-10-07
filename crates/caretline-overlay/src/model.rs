@@ -737,13 +737,13 @@ fn push(
                 "an actor's name is 1 to 32 printable chars",
             );
         }
-        if let Some(i) = existing {
-            if layers.layers[i].owner != me {
-                return refuse(
-                    Reason::NotAllowed,
-                    format!("layer {:?} isn't this actor's", layer.id),
-                );
-            }
+        if let Some(i) = existing
+            && layers.layers[i].owner != me
+        {
+            return refuse(
+                Reason::NotAllowed,
+                format!("layer {:?} isn't this actor's", layer.id),
+            );
         }
         if layer.capture {
             return refuse(Reason::CaptureNotAllowed, "agents can't capture input");
@@ -755,16 +755,15 @@ fn push(
             );
         }
         for i in &layer.items {
-            if let Item::Content { kind, data } = i {
-                if kind.chars().count() > limits.title_chars
+            if let Item::Content { kind, data } = i
+                && (kind.chars().count() > limits.title_chars
                     || serde_json::to_string(data).map_or(usize::MAX, |j| j.len())
-                        > limits.content_bytes
-                {
-                    return refuse(
-                        Reason::TooLong,
-                        format!("content is at most {} bytes of JSON", limits.content_bytes),
-                    );
-                }
+                        > limits.content_bytes)
+            {
+                return refuse(
+                    Reason::TooLong,
+                    format!("content is at most {} bytes of JSON", limits.content_bytes),
+                );
             }
         }
         if let Some(c) = layer.callout() {

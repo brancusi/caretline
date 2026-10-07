@@ -1,3 +1,4 @@
+#![cfg(feature = "caretline")]
 //! Golden frames: overlays composed over a caretline frame, as text and as a role and flag map
 //! (`#` callout, `>` arrow, `k` key badge, `o` dots, `=` strip, `c` chip, `@` an agent's
 //! callout, `*` ringed, `.` dimmed, `s` status). Each at 80x24 and 44x16, in rounded and ASCII

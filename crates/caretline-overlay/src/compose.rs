@@ -154,24 +154,25 @@ pub fn compose(scene: &Scene, grid: &mut (impl CellGrid + ?Sized)) {
                     put(grid, x, y, " ", &p.fill);
                 }
             }
-            if let (PanelKind::Callout, Some(b)) = (p.kind, &p.border) {
-                if r.w >= 2 && r.h >= 2 {
-                    let (x1, y1) = (r.right() - 1, r.bottom() - 1);
-                    for x in r.x + 1..x1 {
-                        put(grid, x, r.y, hz, b);
-                        put(grid, x, y1, hz, b);
-                    }
-                    for y in r.y + 1..y1 {
-                        put(grid, r.x, y, vt, b);
-                        put(grid, x1, y, vt, b);
-                    }
-                    put(grid, r.x, r.y, tl, b);
-                    put(grid, x1, r.y, tr, b);
-                    put(grid, r.x, y1, bl, b);
-                    put(grid, x1, y1, br, b);
-                    if let Some((jx, jy, g)) = &p.junction {
-                        put(grid, *jx, *jy, g, b);
-                    }
+            if let (PanelKind::Callout, Some(b)) = (p.kind, &p.border)
+                && r.w >= 2
+                && r.h >= 2
+            {
+                let (x1, y1) = (r.right() - 1, r.bottom() - 1);
+                for x in r.x + 1..x1 {
+                    put(grid, x, r.y, hz, b);
+                    put(grid, x, y1, hz, b);
+                }
+                for y in r.y + 1..y1 {
+                    put(grid, r.x, y, vt, b);
+                    put(grid, x1, y, vt, b);
+                }
+                put(grid, r.x, r.y, tl, b);
+                put(grid, x1, r.y, tr, b);
+                put(grid, r.x, y1, bl, b);
+                put(grid, x1, y1, br, b);
+                if let Some((jx, jy, g)) = &p.junction {
+                    put(grid, *jx, *jy, g, b);
                 }
             }
             // Text stays inside the panel (inside the border for a callout).

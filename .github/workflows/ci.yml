@@ -51,6 +51,22 @@ jobs:
             echo "caretline (the engine) must not depend on a host, terminal or async crate" >&2; exit 1
           fi
 
+      - name: The overlay depends on no host, terminal or async crate (ratatui only behind its feature)
+        run: |
+          deps="$(cargo tree -p caretline-overlay --prefix none -e normal --locked)"
+          if echo "$deps" | grep -E '^(thc|ratatui|crossterm|tokio)'; then
+            echo "caretline-overlay (default features) must not depend on a host, terminal or async crate" >&2; exit 1
+          fi
+          deps="$(cargo tree -p caretline-overlay --features ratatui --prefix none -e normal --locked)"
+          if echo "$deps" | grep -E '^(thc|crossterm|termion|termwiz|tokio)'; then
+            echo "caretline-overlay's ratatui feature must not pull a terminal backend or async runtime" >&2; exit 1
+          fi
+
+      - name: Overlay with the ratatui feature (example, clippy)
+        run: |
+          cargo test -p caretline-overlay --features ratatui --locked
+          cargo clippy -p caretline-overlay --features ratatui --all-targets --locked
+
       - name: Format (report only until the one-time reformat lands)
         continue-on-error: true
         run: cargo fmt --all --check

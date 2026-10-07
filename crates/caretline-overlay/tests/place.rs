@@ -1,3 +1,4 @@
+#![cfg(feature = "caretline")]
 //! Placement and tracking with sizes the host gives: sides, flip, shift, clamp, collisions,
 //! strips, edge chips, routes, holes and regions, on synthetic screens.
 

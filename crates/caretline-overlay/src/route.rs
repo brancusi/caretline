@@ -90,7 +90,8 @@ pub(crate) fn route(
     let jx = anchor.x + anchor.w.saturating_sub(1) / 2;
     let jy = anchor.y;
     // Each start: the first cell outside the box, its junction on the border, the extra cost.
-    let mut starts: Vec<((u16, u16), (u16, u16), u32)> = Vec::new();
+    type Cell = (u16, u16);
+    let mut starts: Vec<(Cell, Cell, u32)> = Vec::new();
     let dir = match side {
         Side::Above => Dir::Down,
         Side::Below => Dir::Up,

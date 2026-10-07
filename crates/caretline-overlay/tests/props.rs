@@ -1,3 +1,4 @@
+#![cfg(feature = "caretline")]
 //! Properties over random sizes, anchors and layers (a seeded PRNG, so a failure names its
 //! seed and replays): a box never covers its anchor, another layer's hole or the status row;
 //! an agent's box never covers the caret; nothing splits a wide grapheme; layout is the same
@@ -159,13 +160,13 @@ fn random_layouts_keep_every_invariant() {
                             "seed {seed}: callout {r:?} covers a hole {hl:?}"
                         );
                     }
-                    if p.agent {
-                        if let Some((cx, cy)) = grid.caret {
-                            assert!(
-                                !r.contains(cx, cy),
-                                "seed {seed}: an agent's callout covers the caret"
-                            );
-                        }
+                    if p.agent
+                        && let Some((cx, cy)) = grid.caret
+                    {
+                        assert!(
+                            !r.contains(cx, cy),
+                            "seed {seed}: an agent's callout covers the caret"
+                        );
                     }
                 }
             }
