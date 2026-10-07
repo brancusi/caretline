@@ -32,9 +32,10 @@
   agents) the caret, never splitting a wide grapheme; a one-row strip on narrow areas or when
   nothing fits; edge chips for off-screen anchors; arrow routes as cells (A*, round words);
   ring cells; spotlight holes; click regions and `Plan::hit`. Pure and serializable.
-  At 100×40 (release), a box costs about 4 µs, a box with its arrow about 27 µs, and a
-  spotlight with an arrow about 44 µs: routing costs are built once per plan, candidate boxes
-  are routed only when a lower bound says they can win, and the winner's route is reused.
+  At 100×40 (release), a box costs about 6 µs, a box with its arrow about 27 µs, and a
+  spotlight with an arrow about 37 µs (with per-side measuring, below): routing costs are
+  built once per plan, candidate boxes are routed only when a lower bound says they can win,
+  and the winner's route is reused.
 - Layers placed together keep apart: no box, chip or strip covers another layer's box, chip,
   anchor or arrow (every layer's anchor is known before any box is placed), and no arrow
   runs under a box; chips on one edge slide along it to a free place.

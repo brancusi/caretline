@@ -81,8 +81,7 @@ jobs:
           cargo clippy -p caretline-layers --no-default-features --all-targets --locked
           cargo clippy -p caretline-layers --no-default-features --features kitty --all-targets --locked
 
-      - name: Format (report only until the one-time reformat lands)
-        continue-on-error: true
+      - name: Format
         run: cargo fmt --all --check
 
       - name: Clippy
