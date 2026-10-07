@@ -33,9 +33,37 @@ fn scratch(name: &str) -> PathBuf {
 #[test]
 fn demo_help_lists_the_demos() {
     let help = run(&["demo", "--help"]);
-    for d in ["tour", "scenes", "agent"] {
+    for d in ["tour", "scenes", "agent", "layers"] {
         assert!(help.contains(&format!("  {d} ")), "{d} missing:\n{help}");
     }
+}
+
+/// Compares with `tests/goldens/<name>`; `CARETLINE_GOLDENS=update` rewrites it.
+fn golden(name: &str, actual: &str) {
+    let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/goldens").join(name);
+    if std::env::var("CARETLINE_GOLDENS").as_deref() == Ok("update") {
+        std::fs::write(&p, actual).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&p).unwrap_or_else(|_| panic!("no golden {name}: run with CARETLINE_GOLDENS=update and review it"));
+    assert!(want == actual, "golden {name} differs.\n--- want\n{want}\n--- got\n{actual}");
+}
+
+#[test]
+fn the_layers_demo_draws_in_cells_headless() {
+    let cases: &[(&str, &[&str])] = &[
+        ("demo-layers.80x24.txt", &["--snapshot", "80x24"]),
+        ("demo-layers.44x16.txt", &["--snapshot", "44x16"]),
+        // Scrolled twelve rows with the spotlight off: the hint follows its word.
+        ("demo-layers.scrolled.60x20.txt", &["--snapshot", "60x20", "--keys", "<down><down><down><down><down><down><down><down><down><down><down><down>s"]),
+    ];
+    for (name, args) in cases {
+        let mut all = vec!["demo", "layers"];
+        all.extend_from_slice(args);
+        golden(name, &run(&all));
+    }
+    let ansi = run(&["demo", "layers", "--snapshot", "80x24", "--format", "ansi"]);
+    assert!(ansi.contains("Jump by word") && ansi.contains("\x1b["));
 }
 
 #[test]

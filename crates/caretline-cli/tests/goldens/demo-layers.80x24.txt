@@ -1,0 +1,24 @@
+  #   Welcome to caretline
+
+      A terminal editor where the whole editor is one value you can save, send
+      and replay. Work down this page with ↓: the status bar names the keys
+      for the section the caret is in.
+                    ╭──────────────────────────────────────────────╮
+  ##  1 · Type      │ Jump by word                                 │
+                    │ ⌥← and ⌥→ move the caret one word at a time. │
+      The caret is a│ This box, its arrow, the ring and the        │rt typing,
+      and keep going│ spotlight are layers: placed by              │
+                    │ caretline-layers, drawn by the CLI.          │
+  ##  2 · Move      ╰──┬───────────────────────────────────────────╯
+                       ▼
+      ⌥← and ⌥→ jump a word at a time. ↑ and ↓ move by the rows you see, not
+      by lines, and keep their column: go down through this paragraph and
+      watch the caret hold its place across wrapped rows and short ones.
+      Short row.
+      And a long row again, so the column has somewhere to come back to as you
+      keep going down past the short one.
+
+  ##  3 · Select
+
+      Hold ⇧ with any arrow to select, and ⇧⌥ to select by words. As in a
+ layers · cells (snapshot) · ↑↓ scroll · s spotlight off · q quit

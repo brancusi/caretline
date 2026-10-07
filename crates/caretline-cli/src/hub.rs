@@ -27,6 +27,8 @@ pub enum Input {
     Disconnect { client: ClientId },
     /// A terminal event (the interactive editor only).
     Terminal(crossterm::event::Event),
+    /// A terminal's reply to a query (the pixel probe, the cell size), read mid-session.
+    Reply(caretline_layers::probe::Reply),
 }
 
 struct Client {
@@ -343,7 +345,7 @@ pub fn serve(mut hub: Hub, rx: Receiver<Input>, exit_when_idle: bool) {
                     break;
                 }
             }
-            Input::Terminal(_) => {}
+            Input::Terminal(_) | Input::Reply(_) => {}
         }
     }
 }

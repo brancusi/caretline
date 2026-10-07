@@ -50,3 +50,21 @@
   anchor, off)` sizes the edge chip knowing which anchor lies off screen and which way.
 - `ops`: protocol-neutral `hint.show`, `hint.hide`, `layer.push`, `layer.update`,
   `layer.pop` and `layer.list` requests (`parse`) and replies (`reply`, `list`, `error`).
+- Feature `kitty` (off by default; adds only `miniz_oxide`): pixel plumbing for the kitty
+  graphics protocol. The host rasterises one straight-alpha RGBA `Image` per layer part and
+  hands over `Picture`s (layer, part, shape key, `Z::Below` or `Z::Above` the text, the cells
+  it covers, an optional clip); `KittyState::frame(&plan, &pictures, cell_px, files)` returns
+  the APC bytes to write after the text frame inside the same synchronized update: it
+  transmits what the terminal lacks (`t=d`, zlib level 6, base64 in 4096-byte chunks; or
+  `t=t` through the host's `TempFiles` writer), re-places what moved with the same ids,
+  places a changed part before deleting its old image (`a=d,d=I`), deletes what's gone by id
+  (never `d=A`), and crops a picture that reaches past the screen or its clip with a source
+  rect. Image ids hash the shape key and the cell size, placement ids the (layer, part),
+  never counters: the same frames give the same bytes. `KittyState` is a renderer cache,
+  never layer state: `holds` says which pictures need no pixels, `clear` deletes everything
+  placed, `reset` forgets it (one full re-send). The cell size is a value the host passes; the
+  crate never asks the terminal.
+- `probe` (feature `kitty`): the probe's bytes (`request`: a graphics query, XTVERSION,
+  `CSI 16 t`, DA1 as the fence; `cell_size_request`) and a pure parser for the replies
+  (`scan` → `Reply::{Graphics, Version, CellSize, WindowSize, Da1}`, or `Partial`, or `No`
+  for keys), so a runtime turns them into messages instead of keys. `Probe` gathers them.

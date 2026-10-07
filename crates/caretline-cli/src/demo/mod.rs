@@ -5,8 +5,10 @@
 //!   naming the next step, ⌃D to dump the whole editor as JSON and ⌃P to replay the session.
 //! - `scenes`: ASCII animations pushed into the editor with the protocol's `frame` op.
 //! - `agent`: a scripted agent co-editing over the editor's socket, in its own view.
+//! - `layers`: a hint, an arrow and a spotlight over the tour, in pixels (Ghostty) or cells.
 
 mod agent;
+mod layers;
 mod replay;
 mod scenes;
 
@@ -31,11 +33,11 @@ const AGENT_DOC: &str = include_str!("agent.md");
 #[command(
     name = "caretline demo",
     about = "Built-in demos: no files needed (they write theirs to a temporary directory)",
-    after_help = "Demos:\n  tour     a guided tour of the editor, learned by doing (the default)\n  scenes   ASCII animations (warp, donut, cube, tunnel, plasma, fire) running in the editor\n  agent    co-editing: a scripted agent types beside you over the editor's socket\n\nExamples:\n  caretline demo\n  caretline demo scenes\n  caretline demo agent\n  caretline demo --snapshot 80x24          the tour's first frame, headless\n  caretline demo scenes --bench            measure frame rates against a live editor"
+    after_help = "Demos:\n  tour     a guided tour of the editor, learned by doing (the default)\n  scenes   ASCII animations (warp, donut, cube, tunnel, plasma, fire) running in the editor\n  agent    co-editing: a scripted agent types beside you over the editor's socket\n  layers   a hint, an arrow and a spotlight over the tour: pixels in Ghostty, cells elsewhere\n\nExamples:\n  caretline demo\n  caretline demo scenes\n  caretline demo agent\n  caretline demo layers\n  caretline demo --snapshot 80x24          the tour's first frame, headless\n  caretline demo scenes --bench            measure frame rates against a live editor"
 )]
 pub struct DemoArgs {
     /// Which demo.
-    #[arg(default_value = "tour", value_parser = ["tour", "scenes", "agent"])]
+    #[arg(default_value = "tour", value_parser = ["tour", "scenes", "agent", "layers"])]
     demo: String,
 
     /// Print the demo's first frame at WIDTHxHEIGHT and exit (headless).
@@ -100,6 +102,7 @@ pub fn main(argv: &[String]) -> Result<(), String> {
         "scenes" => scenes::main(&args),
         "agent" if args.headless => agent::headless(),
         "agent" => editor_demo(&args, Kind::Agent),
+        "layers" => layers_demo(&args),
         _ => editor_demo(&args, Kind::Tour),
     }
 }
@@ -479,6 +482,64 @@ fn editor_demo(args: &DemoArgs, kind: Kind) -> Result<(), String> {
     );
     eprintln!("caretline demo: the files are in {}", dir.display());
     result
+}
+
+/// The layers demo's state: the tour, the caret at its start.
+fn layers_state(path: Option<String>, viewport: Viewport) -> State {
+    let mut state = initial_state(Kind::Tour, path, viewport);
+    state.view.selection = Selection::point(0);
+    state
+}
+
+/// `caretline demo layers`: interactive, or `--snapshot` (cells, as any terminal without
+/// pixels draws them).
+fn layers_demo(args: &DemoArgs) -> Result<(), String> {
+    if let Some(size) = &args.snapshot {
+        let (w, h) = crate::parse_size(size)?;
+        let frame = layers_snapshot(w, h, args.keys.as_deref())?;
+        print!("{}", if args.format == "ansi" { frame.to_ansi() } else { frame.to_text() });
+        return Ok(());
+    }
+    let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
+    let state = layers_state(Some("tour.md".into()), Viewport { width, height });
+    runtime::run_interactive(
+        state,
+        runtime::Interactive {
+            trace: None,
+            mouse: !args.no_mouse,
+            listen: None,
+            file: None,
+            trace_limit: caretline::session::DEFAULT_TRACE_LIMIT,
+            max_fps: 120,
+            frame_clock: 0,
+            stats: false,
+            demo: Some(Box::new(layers::LayersDemo::new())),
+        },
+    )
+}
+
+/// The layers demo's frame at `w`x`h` after `keys`, in cells.
+pub(crate) fn layers_snapshot(w: u16, h: u16, keys: Option<&str>) -> Result<Frame, String> {
+    let mut demo = layers::LayersDemo::new();
+    let mut hub = Hub::new(Session::new(layers_state(Some("tour.md".into()), Viewport { width: w, height: h })), None);
+    for item in caretline::parse_keys(keys.unwrap_or(""))? {
+        if let caretline::keymap::ScriptItem::Key(key) = item {
+            match demo.key(&mut hub, &key) {
+                KeyAction::Pass => {
+                    let outline = hub.session.state().doc.outline.is_some();
+                    if let Some(msg) = caretline::keymap_for(outline, &key) {
+                        dispatch_demo(&mut hub, vec![msg]);
+                    }
+                }
+                KeyAction::Quit => break,
+                KeyAction::Consumed => {}
+            }
+        }
+    }
+    let mut frame = runtime::compose(&hub, 0);
+    let gfx = runtime::Gfx { why: "snapshot".into(), ..Default::default() };
+    demo.decorate(&hub, &mut frame, &gfx);
+    Ok(frame)
 }
 
 /// The demo's frame at `w`x`h`, as the editor draws it after `keys` (its first frame

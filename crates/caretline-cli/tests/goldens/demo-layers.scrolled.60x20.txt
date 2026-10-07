@@ -1,0 +1,20 @@
+
+  ##  2 · Move
+
+      ⌥← and ⌥→ jump a word at a time. ↑ and ↓ move by the
+      rows you see, not▲by lines, and keep their column: go
+      down through this│paragraph and watch the caret hold
+      its place acro╭──┴───────────────────────────────────╮
+      Short row.    │ Jump by word                         │
+      And a long row│ ⌥← and ⌥→ move the caret one word at │
+      come back to a│ a time. This box, its arrow, the     │
+      one.          │ ring and the spotlight are layers:   │
+                    │ placed by caretline-layers, drawn by │
+  ##  3 · Select    │ the CLI.                             │
+                    ╰──────────────────────────────────────╯
+      Hold ⇧ with any arrow to select, and ⇧⌥ to select by
+      words. As in a macOS text field, ← on a selection
+      goes to its start, → to its end, and Esc collapses it.
+
+
+ layers · cells (snapshot) · ↑↓ scroll · s spotlight · q qui
