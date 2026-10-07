@@ -412,7 +412,8 @@ impl Session {
     /// config and status (`status` replaces the status when given), the document keeps its
     /// path and config, and the history starts fresh and clean. The primary caret is at
     /// `caret` when given, else at the end of the first highlight (a caret at 0 without
-    /// highlights). Recorded like a replacement: a new trace segment. Returns the new rev.
+    /// highlights). The view's host values ([`View::ext`]) stay. Recorded like a replacement:
+    /// a new trace segment. Returns the new rev.
     pub fn push_frame(
         &mut self,
         text: &str,
@@ -436,6 +437,7 @@ impl Session {
         view.focused = old.view.focused;
         view.read_only = old.view.read_only;
         view.frame_clock = old.view.frame_clock;
+        view.ext = old.view.ext.clone();
         view.status = status.or_else(|| old.view.status.clone());
         let mut ranges: Vec<Range> = Vec::with_capacity(highlights.len() + 1);
         if let Some(c) = caret {

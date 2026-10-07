@@ -836,6 +836,8 @@ impl Session {
                 _ => {
                     let mut view = self.state().view.clone();
                     view.status = None;
+                    // The host's values are the person's view's (what it shows them).
+                    view.ext.clear();
                     let v = self.open_view(view);
                     *own = Some(v);
                     v

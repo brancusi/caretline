@@ -28,8 +28,29 @@
 - `with_` setters on `Config`, `ViewConfig`, `OutlineConfig` and `OutlineLayout`, one per field
   (`OutlineLayout::default().with_hang_glyphs(true)`).
 - `History::transactions`: every revision's transaction and inversion.
+- **View values** (`View::ext: BTreeMap<String, serde_json::Value>`): a host's own state per
+  view, by key, the view-level twin of a mark's payload. Serialized at the state's top level
+  as `"ext"` (left out when empty), so it goes through `state.get`/`state.set`, `view.open`,
+  traces' `state` and `view_open` lines and replay. The engine never reads it.
+- **Ext reducers**: `Host::ext(key, ExtFns::new(apply).with_observe(observe))` and
+  `Msg::Ext { key, op }` (`{"msg":"ext","key":"…","op":…}`). `apply(ctx, current, op) ->
+  Result<ExtOut, String>` runs for `Msg::Ext` on the acting view; `observe(ctx, value,
+  &Observed { msg, effects, changes, acting }) -> Option<ExtOut>` runs after every message on
+  each view whose `ext` holds the key, with the message's composed `ChangeSet` (the one
+  `update_with_changes` returns). `ExtOut` (`value`, `effects`, `status`, `frame_clock`;
+  `ExtOut::value(v)`, `ExtOut::remove()` and `with_` setters) sets or removes the value, emits
+  `Effect::Host`s, sets the status and the frame clock. `Msg::Ext` is passive (it doesn't end
+  a typing run or clear the status) and is accepted on read-only views; with no reducer for
+  the key the status says so. Traces record it like any message and replay it with
+  `trace::replay_trace_with(input, &host)`. `Host::ext_keys` lists the keys.
 
 ### Breaking
+
+- `Msg` is `#[non_exhaustive]` (as `Effect` is): a `match` on it outside the crate needs a
+  wildcard arm, and new kinds of message are no longer breaking. Its variants' fields are not,
+  so hosts still build messages with struct literals; a field added to a variant stays a
+  breaking change (with `#[serde(default)]`, so recorded JSON still parses). This release
+  adds `Msg::Ext`.
 
 - `Config`, `ConfigInput`, `ViewConfig`, `OutlineConfig` and `OutlineLayout` are
   `#[non_exhaustive]`, so adding a setting is no longer a breaking change. Outside the crate

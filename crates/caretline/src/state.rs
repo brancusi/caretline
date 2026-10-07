@@ -3,7 +3,7 @@
 //! one document ([`crate::update_doc`]); [`State`] is one document seen through one view, the
 //! single-view editor the protocol, traces and the `caretline` binary use.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -229,7 +229,7 @@ pub struct Document {
     /// The open edit run, if any.
     pub run: Option<EditRun>,
     /// Block marks: numeric ids at line starts, mapped through every edit
-    /// ([`crate::marks`]). Empty unless a host or the outline layer adds some.
+    /// ([`crate::marks`]). Empty unless a host or the outline adds some.
     #[serde(skip_serializing_if = "Marks::is_unused")]
     pub marks: Marks,
     /// What each history revision did to the marks, indexed by revision (so undo and redo
@@ -310,6 +310,12 @@ pub struct View {
     /// at this rate while it is set. See [`View::frame_rate`].
     #[serde(skip_serializing_if = "is_zero_u16")]
     pub frame_clock: u16,
+    /// The host's own per-view values, by key: the view-level twin of a mark's payload. The
+    /// engine stores, serializes, traces and replays them and never reads them; a host
+    /// changes them with [`crate::Msg::Ext`] through the reducer it registered for the key
+    /// ([`crate::Host::ext`]). Left out of the JSON when empty.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub ext: BTreeMap<String, serde_json::Value>,
     /// Where long lines' rows start: a layout memo, not part of the view's value.
     #[serde(skip)]
     pub(crate) wrap: WrapCache,
@@ -344,6 +350,7 @@ impl View {
             free: false,
             layout: None,
             frame_clock: 0,
+            ext: BTreeMap::new(),
             wrap: WrapCache::default(),
         }
     }
@@ -644,6 +651,8 @@ pub struct StateInput {
     pub layout: Option<OutlineLayout>,
     #[serde(default)]
     pub frame_clock: u16,
+    #[serde(default)]
+    pub ext: BTreeMap<String, serde_json::Value>,
 }
 
 /// The deserialized form of the `config` inside a [`StateInput`]: the document's and the
@@ -753,6 +762,7 @@ impl From<StateInput> for State {
             free: input.free,
             layout: input.layout,
             frame_clock: input.frame_clock,
+            ext: input.ext,
             wrap: WrapCache::default(),
         };
         let mut state = State { doc, view };
@@ -820,6 +830,8 @@ struct StateOut<'a> {
     layout: &'a Option<OutlineLayout>,
     #[serde(skip_serializing_if = "is_zero_u16")]
     frame_clock: u16,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    ext: &'a BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -937,6 +949,7 @@ impl State {
             free: v.free,
             layout: &v.layout,
             frame_clock: v.frame_clock,
+            ext: &v.ext,
         }
     }
 }

@@ -1,7 +1,7 @@
 //! Block marks: numeric ids pinned to line starts, mapped through every edit.
 //!
 //! A mark is a [`MarkId`] at a char position that is always the start of a line. Hosts use
-//! marks as block identity: the outline layer ([`crate::outline`]) puts one on the first line
+//! marks as block identity: the outline ([`crate::outline`]) puts one on the first line
 //! of every block, and an embedder keys its own data (a database row, a node id) by them.
 //! The engine only ever hands out plain numbers (`MarkId(n)`, from a counter in [`Marks`]);
 //! anything richer is the host's.

@@ -1,4 +1,4 @@
-//! A tour of the caretline API: build a state, drive it with messages and keys,
+//! A walk through the caretline API: build a state, drive it with messages and keys,
 //! read the text and selection, handle effects, render a frame, and save and reload the
 //! state.
 //!

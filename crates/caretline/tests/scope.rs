@@ -19,6 +19,20 @@ const WORDS: &[&str] = &[
     "due",
     "note",
     "notes",
+    // What a host draws over the text, and walks a person through, is the host's too: it
+    // builds them on the generic hooks (`View::ext`, `Msg::Ext`, frame passes, `locate`).
+    "overlay",
+    "overlays",
+    "layer",
+    "layers",
+    "tour",
+    "tours",
+    "callout",
+    "callouts",
+    "spotlight",
+    "spotlights",
+    "walkthrough",
+    "walkthroughs",
 ];
 
 fn files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
