@@ -24,7 +24,8 @@ caretline = { path = "../caretline", version = "0.3", optional = true }
 
 [features]
 default = ["caretline"]
-# Resolve anchors from a caretline `Frame` and map text anchors through a `ChangeSet`.
+# Resolve anchors from a caretline `Frame` and map text anchors through the `ChangeSet` each
+# editor message returns (`caretline::update_with_changes`).
 caretline = ["dep:caretline"]
 
 [dev-dependencies]

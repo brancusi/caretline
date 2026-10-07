@@ -12,7 +12,8 @@
 //! - **Anchors** ([`Anchor`]): stable keys (chars, mark ids, host keys; never screen
 //!   positions), resolved to cells every frame by a [`Resolve`]: the host's [`AnchorMap`], a
 //!   caretline [`FrameResolver`] (feature `caretline`), or both with [`Chain`]. Text anchors
-//!   follow edits through a `ChangeSet` ([`map_anchors`]).
+//!   follow edits through the `ChangeSet` each editor message returns
+//!   (`caretline::update_with_changes`; [`observe`], [`map_anchors`]).
 //! - **Placement** ([`plan`]): a pure function of the layers, the resolved anchors, the
 //!   [`Grid`] and the measured sizes. It returns a serializable [`Plan`]: each layer's box or
 //!   strip, the edge chip of an off-screen anchor, the arrow's route as cells, ring cells,
@@ -39,7 +40,7 @@ mod resolve;
 mod route;
 
 #[cfg(feature = "caretline")]
-pub use frame::{FrameResolver, changes_between, map_anchors, observe};
+pub use frame::{FrameResolver, map_anchors, observe};
 pub use geom::{Rect, Side};
 pub use model::{
     AgentDim, Anchor, Applied, BlockId, Content, HINT, Hint, Layer, LayerOp, Layers, Limits, Owner,

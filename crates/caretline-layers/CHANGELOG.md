@@ -18,8 +18,9 @@
 - Anchors: text ranges, text within a block, blocks, the caret, a screen position and host
   kinds (`{"host": {"kind": "row", "key": "…"}}`); never screen cells. `AnchorMap` for a
   host's own anchors, `FrameResolver` for a caretline frame (feature `caretline`, default),
-  `Chain` for both. `map_anchors` and `observe` move text anchors through a `ChangeSet`;
-  `changes_between` builds one from two texts.
+  `Chain` for both. `map_anchors` and `observe` move text anchors through the `ChangeSet` an
+  editor message made, as caretline's `update_with_changes` (and `update_doc_with_changes`,
+  `Session::apply_with_changes`) returns it. Needs the caretline release that adds them.
 - `plan(layers, anchors, grid, renderers) -> Plan`: boxes placed by side order with flip,
   shift, the sliver rule and clamp, around other layers, holes, protected cells and (for
   agents) the caret, never splitting a wide grapheme; a one-row strip on narrow areas or when
