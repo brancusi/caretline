@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::msg::Msg;
 use crate::state::{State, View};
-use crate::update::update;
-use crate::views::update_doc;
+use crate::views::update_doc_with_changes;
+use crate::helix::ChangeSet;
+use crate::update_with_changes;
 
 /// One line of a trace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,25 +129,36 @@ pub fn replay_trace_with(input: &str, host: &crate::host::Host) -> Result<Replay
 /// Applies `msg` through view `id` (0: the state's own) of a state with other views open,
 /// rebasing the rest. Returns its effects, or nothing when there is no such view.
 pub fn apply_with_views(state: &mut State, views: &mut [(u32, View)], id: u32, msg: Msg) -> Vec<crate::msg::Effect> {
+    apply_with_views_changes(state, views, id, msg).0
+}
+
+/// [`apply_with_views`], also returning the message's text changes
+/// ([`crate::update_doc_with_changes`]).
+pub(crate) fn apply_with_views_changes(
+    state: &mut State,
+    views: &mut [(u32, View)],
+    id: u32,
+    msg: Msg,
+) -> (Vec<crate::msg::Effect>, Option<ChangeSet>) {
     if views.is_empty() && id == 0 {
-        return update(state, msg);
+        return update_with_changes(state, msg);
     }
     let acting = if id == 0 {
         0
     } else {
         match views.iter().position(|(k, _)| *k == id) {
             Some(i) => i + 1,
-            None => return Vec::new(),
+            None => return (Vec::new(), None),
         }
     };
     let mut all: Vec<View> = Vec::with_capacity(views.len() + 1);
     all.push(std::mem::take(&mut state.view));
     all.extend(views.iter_mut().map(|(_, v)| std::mem::take(v)));
-    let effects = update_doc(&mut state.doc, &mut all, acting, msg);
+    let out = update_doc_with_changes(&mut state.doc, &mut all, acting, msg);
     let mut it = all.into_iter();
     state.view = it.next().expect("the state's view");
     for ((_, v), back) in views.iter_mut().zip(it) {
         *v = back;
     }
-    effects
+    out
 }

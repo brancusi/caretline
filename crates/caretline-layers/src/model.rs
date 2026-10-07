@@ -43,6 +43,14 @@ impl Owner {
         matches!(self, Owner::Agent(_))
     }
 
+    /// The agent's name, for a host to attribute its layers by.
+    pub fn actor(&self) -> Option<&str> {
+        match self {
+            Owner::Agent(a) => Some(a),
+            _ => None,
+        }
+    }
+
     fn wire(&self) -> String {
         match self {
             Owner::Person => "person".into(),
@@ -296,7 +304,8 @@ pub struct Layer {
     /// Set by [`apply`] to the push's `now_ms`.
     #[serde(default)]
     pub since_ms: u64,
-    /// How long it lasts from `since_ms`; `None` until popped (never for agents).
+    /// How long it lasts from `since_ms`; `None` until popped (a host policy may give agent
+    /// layers a default and bounds: [`Limits`]).
     #[serde(default)]
     pub ttl_ms: Option<u64>,
     /// Fallbacks, in order: the first that resolves is used.
@@ -448,53 +457,71 @@ pub enum LayerOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentDim {
-    #[default]
     Never,
+    #[default]
     Always,
 }
 
-/// The policy for agent layers. The defaults are the design's; a host may tighten them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The host's policy for agent layers. The crate imposes none: [`Limits::default`] lets
+/// agents do anything the person and the host can (any number of layers, any size, no rate
+/// limit or forced expiry, spotlights and capture, touching any layer), and [`apply`] then
+/// refuses only malformed input. A host that wants a policy sets one, field by field, or
+/// starts from [`Limits::agent_defaults`]. Each limit is `None` (or the permissive value) when
+/// off; a missing field reads as off.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Limits {
-    /// Agent layers per view (at most [`Limits::MAX_AGENT_LAYERS`]).
-    pub agent_layers: u8,
-    pub ttl_default_ms: u64,
-    pub ttl_min_ms: u64,
-    pub ttl_max_ms: u64,
-    /// Pushes (and updates) per actor per second.
-    pub per_second: u8,
-    pub body_chars: usize,
-    pub body_lines: usize,
-    pub title_chars: usize,
-    /// The largest host content payload an agent may send, as JSON bytes.
-    pub content_bytes: usize,
+    /// Agent layers per view: at the cap, an agent's push replaces its own oldest, and is
+    /// refused when it has none ([`Reason::TooMany`]).
+    pub agent_layers: Option<u8>,
+    /// The lifetime an agent layer pushed without one gets.
+    pub ttl_default_ms: Option<u64>,
+    /// The least and most lifetime an agent layer may have (clamped).
+    pub ttl_min_ms: Option<u64>,
+    pub ttl_max_ms: Option<u64>,
+    /// Pushes (and updates) per actor per second ([`Reason::RateLimited`]).
+    pub per_second: Option<u8>,
+    /// A hint's text, chars and lines, and a title's (or a content kind's) chars
+    /// ([`Reason::TooLong`]).
+    pub body_chars: Option<usize>,
+    pub body_lines: Option<usize>,
+    pub title_chars: Option<usize>,
+    /// The largest content payload an agent may send, as JSON bytes.
+    pub content_bytes: Option<usize>,
+    /// Whether agents may spotlight (dim) the screen ([`Reason::DimNotAllowed`]).
     pub agent_dim: AgentDim,
+    /// Agents may not make modal layers ([`Reason::CaptureNotAllowed`]).
+    pub no_agent_capture: bool,
+    /// Agents touch only their own layers, and dismissing, hiding and clearing are the
+    /// person's ([`Reason::NotAllowed`]).
+    pub own_layers_only: bool,
 }
 
 impl Limits {
-    /// The most agent layers a host may allow.
-    pub const MAX_AGENT_LAYERS: u8 = 8;
-
-    /// The cap on agent layers, clamped to 1..=8.
-    pub fn agent_cap(&self) -> usize {
-        self.agent_layers.clamp(1, Self::MAX_AGENT_LAYERS) as usize
+    /// No policy: the default.
+    pub fn none() -> Limits {
+        Limits::default()
     }
-}
 
-impl Default for Limits {
-    fn default() -> Limits {
+    /// An opt-in policy for agents a host doesn't otherwise trust, with the values the design
+    /// started from: 3 agent layers per view (a push past them replaces the actor's oldest),
+    /// 8 s lifetimes clamped to 1–60 s, 2 pushes a second per actor, hints of at most 280 chars
+    /// and 6 lines with titles of 40, 1 KB of other content, no spotlight, no capture, and only
+    /// their own layers.
+    pub fn agent_defaults() -> Limits {
         Limits {
-            agent_layers: 3,
-            ttl_default_ms: 8_000,
-            ttl_min_ms: 1_000,
-            ttl_max_ms: 60_000,
-            per_second: 2,
-            body_chars: 280,
-            body_lines: 6,
-            title_chars: 40,
-            content_bytes: 1_024,
+            agent_layers: Some(3),
+            ttl_default_ms: Some(8_000),
+            ttl_min_ms: Some(1_000),
+            ttl_max_ms: Some(60_000),
+            per_second: Some(2),
+            body_chars: Some(280),
+            body_lines: Some(6),
+            title_chars: Some(40),
+            content_bytes: Some(1_024),
             agent_dim: AgentDim::Never,
+            no_agent_capture: true,
+            own_layers_only: true,
         }
     }
 }
@@ -563,8 +590,9 @@ pub struct Applied {
 }
 
 /// Applies an op. `actor` is `None` for the person or the host (local input), `Some(name)` for
-/// an agent: then the policy in [`Limits`] holds and the layer is the agent's whatever it
-/// claims. Pure: `now_ms` is the only time.
+/// an agent: the layer is then the agent's whatever owner it claims, and the host's policy in
+/// [`Limits`] holds (none by default: only malformed input is refused). Pure: `now_ms` is the
+/// only time.
 pub fn apply(
     layers: &mut Layers,
     op: LayerOp,
@@ -581,7 +609,8 @@ pub fn apply(
         LayerOp::Push(layer) => push(layers, layer, actor, now_ms, limits, false),
         LayerOp::Update(layer) => push(layers, layer, actor, now_ms, limits, true),
         LayerOp::Pop(sel) => {
-            let may = |l: &Layer| match actor {
+            let own_only = actor.filter(|_| limits.own_layers_only);
+            let may = |l: &Layer| match own_only {
                 None => true,
                 Some(a) => l.owner == Owner::Agent(a.to_string()),
             };
@@ -599,7 +628,7 @@ pub fn apply(
                     vec![id.clone()]
                 }
                 Selector::Owner(o) => {
-                    if actor.is_some_and(|a| *o != Owner::Agent(a.to_string())) {
+                    if own_only.is_some_and(|a| *o != Owner::Agent(a.to_string())) {
                         return refuse(Reason::NotAllowed, "an agent removes only its own layers");
                     }
                     layers
@@ -622,10 +651,14 @@ pub fn apply(
                 popped: picked,
             })
         }
-        LayerOp::PopNewest | LayerOp::Toggle | LayerOp::Clear if actor.is_some() => refuse(
-            Reason::NotAllowed,
-            "dismissing, hiding and clearing are the person's",
-        ),
+        LayerOp::PopNewest | LayerOp::Toggle | LayerOp::Clear
+            if actor.is_some() && limits.own_layers_only =>
+        {
+            refuse(
+                Reason::NotAllowed,
+                "dismissing, hiding and clearing are the person's",
+            )
+        }
         LayerOp::PopNewest => {
             // Newest by when it was pushed; on a tie, the later in the list.
             let i = (0..layers.layers.len()).max_by_key(|&i| (layers.layers[i].since_ms, i));
@@ -703,6 +736,7 @@ fn push(
             );
         }
         if let Some(i) = existing
+            && limits.own_layers_only
             && layers.layers[i].owner != me
         {
             return refuse(
@@ -710,7 +744,7 @@ fn push(
                 format!("layer {:?} isn't this actor's", layer.id),
             );
         }
-        if layer.capture {
+        if layer.capture && limits.no_agent_capture {
             return refuse(Reason::CaptureNotAllowed, "agents can't capture input");
         }
         if layer.spotlight.is_some() && limits.agent_dim != AgentDim::Always {
@@ -719,51 +753,60 @@ fn push(
                 "agents can't dim the screen unless the person allows it",
             );
         }
+        let over = |n: usize, max: Option<usize>| max.is_some_and(|m| n > m);
         if let Some(c) = &layer.content {
-            if c.kind.chars().count() > limits.title_chars
-                || serde_json::to_string(&c.data).map_or(usize::MAX, |j| j.len())
-                    > limits.content_bytes
+            if over(c.kind.chars().count(), limits.title_chars)
+                || over(
+                    serde_json::to_string(&c.data).map_or(usize::MAX, |j| j.len()),
+                    limits.content_bytes,
+                )
             {
                 return refuse(
                     Reason::TooLong,
-                    format!("content is at most {} bytes of JSON", limits.content_bytes),
+                    format!(
+                        "content is at most {} bytes of JSON",
+                        limits.content_bytes.unwrap_or(usize::MAX)
+                    ),
                 );
             }
             if let Some(h) = c.as_hint() {
-                if h.text.chars().count() > limits.body_chars
-                    || h.text.split('\n').count() > limits.body_lines
+                if over(h.text.chars().count(), limits.body_chars)
+                    || over(h.text.split('\n').count(), limits.body_lines)
                 {
                     return refuse(
                         Reason::TooLong,
                         format!(
                             "a hint's text is at most {} chars and {} lines",
-                            limits.body_chars, limits.body_lines
+                            limits.body_chars.unwrap_or(usize::MAX),
+                            limits.body_lines.unwrap_or(usize::MAX)
                         ),
                     );
                 }
                 if h.title
                     .as_ref()
-                    .is_some_and(|t| t.chars().count() > limits.title_chars)
+                    .is_some_and(|t| over(t.chars().count(), limits.title_chars))
                 {
                     return refuse(
                         Reason::TooLong,
-                        format!("a title is at most {} chars", limits.title_chars),
+                        format!(
+                            "a title is at most {} chars",
+                            limits.title_chars.unwrap_or(usize::MAX)
+                        ),
                     );
                 }
             }
         }
-        let recent = layers.recent.get(a).map_or(0, Vec::len);
-        if recent >= limits.per_second as usize {
-            return refuse(
-                Reason::RateLimited,
-                format!("at most {} pushes a second", limits.per_second),
-            );
+        if let Some(n) = limits.per_second
+            && layers.recent.get(a).map_or(0, Vec::len) >= n as usize
+        {
+            return refuse(Reason::RateLimited, format!("at most {n} pushes a second"));
         }
-        if existing.is_none() {
+        if let (None, Some(cap)) = (existing, limits.agent_layers) {
+            let cap = cap as usize;
             let agents: Vec<usize> = (0..layers.layers.len())
                 .filter(|&i| layers.layers[i].owner.is_agent())
                 .collect();
-            if agents.len() >= limits.agent_cap() {
+            if agents.len() >= cap {
                 // Replace this actor's oldest; never another agent's.
                 let oldest = agents
                     .iter()
@@ -773,27 +816,23 @@ fn push(
                 match oldest {
                     Some(i) => popped.push(layers.layers.remove(i).id),
                     None => {
-                        return refuse(
-                            Reason::TooMany,
-                            format!("at most {} agent layers", limits.agent_cap()),
-                        );
+                        return refuse(Reason::TooMany, format!("at most {cap} agent layers"));
                     }
                 }
             }
         }
         layer.owner = me;
-        let ttl = layer.ttl_ms.unwrap_or(limits.ttl_default_ms);
-        layer.ttl_ms = Some(ttl.clamp(limits.ttl_min_ms, limits.ttl_max_ms));
-        // Attribution: an agent's hint is titled with its name.
-        if let Some(c) = &mut layer.content
-            && let Some(mut h) = c.as_hint()
-        {
-            h.title = Some(match h.title.take().filter(|t| !t.trim().is_empty()) {
-                Some(t) => format!("◆ {a} · {t}"),
-                None => format!("◆ {a}"),
-            });
-            c.data = serde_json::to_value(h).unwrap_or_default();
-        }
+        layer.ttl_ms = layer.ttl_ms.or(limits.ttl_default_ms).map(|t| {
+            t.clamp(
+                limits.ttl_min_ms.unwrap_or(0),
+                limits
+                    .ttl_max_ms
+                    .unwrap_or(u64::MAX)
+                    .max(limits.ttl_min_ms.unwrap_or(0)),
+            )
+        });
+        // Attribution is the host's to draw, its own way: the layer keeps its owner
+        // (`agent:<actor>`), and each `Planned` carries it.
         layers.recent.entry(a.to_string()).or_default().push(now_ms);
     }
     let (lo, hi) = layer.owner.band();

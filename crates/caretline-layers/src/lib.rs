@@ -2,9 +2,14 @@
 //! host's screen (hints, callouts, arrows, rings, spotlights). The host draws them.
 //!
 //! - **Model** ([`Layers`], [`Layer`], [`LayerOp`]): serializable data, changed only by
-//!   [`apply`] (an op, the actor, `now_ms`, the [`Limits`] agents are held to) and
-//!   [`expire`] / [`observe`] (time, edits). No clock, randomness or I/O: a recorded op
-//!   sequence replays to the same layers.
+//!   [`apply`] (an op, the actor, `now_ms`, and the host's policy for agents, [`Limits`]:
+//!   none by default) and [`expire`] / [`observe`] (time, edits). No clock, randomness or
+//!   I/O: a recorded op sequence replays to the same layers.
+//! - **Policy is the host's.** The crate restricts nothing: with [`Limits::default`] agents
+//!   may do what the person and the host can, and only malformed input is refused. A host
+//!   that wants limits passes its own, or [`Limits::agent_defaults`]. Attribution is the
+//!   host's too: each [`Planned`] carries its [`Owner`] ([`Owner::actor`]), and drawing an
+//!   agent's layers so they can't pass as the host's own is recommended.
 //! - **Content** ([`Content`]): opaque `{kind, data}`, as mark payloads are to the engine.
 //!   The host registers a [`Renderer`] per kind, which measures it; drawing is the host's.
 //!   One conventional kind, [`HINT`] (`{"title"?, "text"}`), is the one every host should
@@ -12,7 +17,8 @@
 //! - **Anchors** ([`Anchor`]): stable keys (chars, mark ids, host keys; never screen
 //!   positions), resolved to cells every frame by a [`Resolve`]: the host's [`AnchorMap`], a
 //!   caretline [`FrameResolver`] (feature `caretline`), or both with [`Chain`]. Text anchors
-//!   follow edits through a `ChangeSet` ([`map_anchors`]).
+//!   follow edits through the `ChangeSet` each editor message returns
+//!   (`caretline::update_with_changes`; [`observe`], [`map_anchors`]).
 //! - **Placement** ([`plan`]): a pure function of the layers, the resolved anchors, the
 //!   [`Grid`] and the measured sizes. It returns a serializable [`Plan`]: each layer's box or
 //!   strip, the edge chip of an off-screen anchor, the arrow's route as cells, ring cells,
@@ -39,15 +45,15 @@ mod resolve;
 mod route;
 
 #[cfg(feature = "caretline")]
-pub use frame::{FrameResolver, changes_between, map_anchors, observe};
+pub use frame::{FrameResolver, map_anchors, observe};
 pub use geom::{Rect, Side};
 pub use model::{
     AgentDim, Anchor, Applied, BlockId, Content, HINT, Hint, Layer, LayerOp, Layers, Limits, Owner,
     Part, Pulse, Reason, Refusal, Ring, ScreenPos, Selector, Spotlight, apply, expire,
 };
 pub use place::{
-    CellKind, Grid, MAX_WIDTH, Mode, NARROW_COLS, NARROW_ROWS, Plan, Planned, Region, Renderer,
-    Renderers, Route, Size, Spot, Step, hit_regions, plan, width,
+    Attach, CellKind, Edge, Grid, MAX_WIDTH, Mode, NARROW_COLS, NARROW_ROWS, NoArrow, Plan,
+    Planned, Region, Renderer, Renderers, Route, Size, Spot, Step, hit_regions, plan, width,
 };
 pub use resolve::{AnchorKey, AnchorMap, Chain, Off, Resolve, Resolved};
 pub use route::Dir;

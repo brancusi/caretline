@@ -6,6 +6,7 @@
       "id": "L-1",
       "z": 20,
       "agent": true,
+      "owner": "agent:helper",
       "anchor": {
         "rects": [
           {
@@ -29,6 +30,10 @@
           15,
           19
         ],
+        "attach": {
+          "edge": "top",
+          "offset": 15
+        },
         "steps": [
           {
             "x": 15,

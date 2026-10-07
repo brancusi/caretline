@@ -1,6 +1,7 @@
 #![cfg(feature = "caretline")]
-//! Timings at 100x40 (design §3.6):
-//! `cargo test -p caretline-layers --release --test bench -- --ignored --nocapture`.
+//! Timings at 100x40 (design §3.5, §12):
+//! `cargo test -p caretline-layers --release --test bench -- --ignored --nocapture`
+//! (`BENCH_N` plans per case, default 5,000; more gives steadier numbers).
 
 mod common;
 
@@ -16,7 +17,10 @@ fn time(name: &str, layers: &Layers) {
     let res = FrameResolver::new(&frame);
     let grid = Grid::from_frame(&frame);
     let r = renderers();
-    let n = 5_000;
+    let n: usize = std::env::var("BENCH_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5_000);
     let t = Instant::now();
     for _ in 0..n {
         std::hint::black_box(plan(layers, &res, &grid, &r));

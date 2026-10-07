@@ -6,6 +6,7 @@
       "id": "L-1",
       "z": 20,
       "agent": true,
+      "owner": "agent:helper",
       "anchor": {
         "off": {
           "below": {
@@ -25,7 +26,8 @@
         "y": 14,
         "w": 8,
         "h": 1
-      }
+      },
+      "no_arrow": "no_box"
     }
   ],
   "spots": [],

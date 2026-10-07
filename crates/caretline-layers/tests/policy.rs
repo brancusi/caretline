@@ -1,6 +1,8 @@
-//! The layer lifecycle and the agent policy `apply` enforces: one test per refusal, the
-//! limits that rewrite rather than refuse (cap, ttl, attribution, bands), and the Elm
-//! promises: state changes only through ops, and a recorded op sequence replays exactly.
+//! The layer lifecycle; the opt-in agent policy a host may give `apply`
+//! (`Limits::agent_defaults`): one test per refusal, and the limits that rewrite rather than
+//! refuse (cap, ttl); with no policy (the default), agents are refused only malformed input;
+//! owners and bands; and the Elm promises: state changes only through ops, and a recorded op
+//! sequence replays exactly.
 
 use caretline_layers::*;
 use serde_json::json;
@@ -15,7 +17,7 @@ fn agent(layers: &mut Layers, layer: Layer, now: u64) -> Result<Applied, Refusal
         LayerOp::Push(layer),
         Some("helper"),
         now,
-        &Limits::default(),
+        &Limits::agent_defaults(),
     )
 }
 
@@ -35,7 +37,7 @@ fn rate_limited_past_two_pushes_a_second_per_actor() {
         LayerOp::Push(hint("d")),
         Some("other"),
         1_900,
-        &Limits::default(),
+        &Limits::agent_defaults(),
     )
     .unwrap();
     agent(&mut l, hint("e"), 2_000).unwrap();
@@ -46,7 +48,7 @@ fn rate_limited_past_two_pushes_a_second_per_actor() {
             LayerOp::Push(hint("p")),
             None,
             2_000 + t,
-            &Limits::default(),
+            &Limits::agent_defaults(),
         )
         .unwrap();
     }
@@ -62,7 +64,7 @@ fn dim_not_allowed_for_agents_without_consent() {
     );
     let allow = Limits {
         agent_dim: AgentDim::Always,
-        ..Limits::default()
+        ..Limits::agent_defaults()
     };
     apply(&mut l, LayerOp::Push(spot), Some("helper"), 0, &allow).unwrap();
 }
@@ -76,7 +78,7 @@ fn capture_not_allowed_for_agents() {
         reason(agent(&mut l, c.clone(), 0)),
         Reason::CaptureNotAllowed
     );
-    apply(&mut l, LayerOp::Push(c), None, 0, &Limits::default()).unwrap();
+    apply(&mut l, LayerOp::Push(c), None, 0, &Limits::agent_defaults()).unwrap();
 }
 
 #[test]
@@ -102,7 +104,7 @@ fn too_long_hints_titles_and_content() {
 #[test]
 fn not_found_for_unknown_layers() {
     let mut l = Layers::default();
-    let lim = Limits::default();
+    let lim = Limits::agent_defaults();
     assert_eq!(
         reason(apply(
             &mut l,
@@ -124,7 +126,7 @@ fn not_found_for_unknown_layers() {
 #[test]
 fn not_allowed_to_touch_others_layers_or_the_persons_controls() {
     let mut l = Layers::default();
-    let lim = Limits::default();
+    let lim = Limits::agent_defaults();
     let mine = apply(&mut l, LayerOp::Push(hint("host")), None, 0, &lim)
         .unwrap()
         .layer
@@ -173,7 +175,7 @@ fn not_allowed_to_touch_others_layers_or_the_persons_controls() {
 #[test]
 fn too_many_when_other_agents_fill_the_cap() {
     let mut l = Layers::default();
-    let lim = Limits::default();
+    let lim = Limits::agent_defaults();
     for (k, a) in ["a", "b", "c"].iter().enumerate() {
         apply(&mut l, LayerOp::Push(hint("x")), Some(a), k as u64, &lim).unwrap();
     }
@@ -183,7 +185,7 @@ fn too_many_when_other_agents_fill_the_cap() {
 #[test]
 fn invalid_layers() {
     let mut l = Layers::default();
-    let lim = Limits::default();
+    let lim = Limits::agent_defaults();
     let mut push = |layer: Layer| reason(apply(&mut l, LayerOp::Push(layer), None, 0, &lim));
     let mut none = hint("x");
     none.anchor.clear();
@@ -222,30 +224,80 @@ fn invalid_layers() {
 #[test]
 fn a_fourth_agent_hint_replaces_that_actors_oldest() {
     let mut l = Layers::default();
-    let lim = Limits::default();
+    let lim = Limits::agent_defaults();
     let first = agent(&mut l, hint("1"), 0).unwrap().layer.unwrap();
     agent(&mut l, hint("2"), 600).unwrap();
     agent(&mut l, hint("3"), 1_200).unwrap();
     let r = agent(&mut l, hint("4"), 1_800).unwrap();
     assert_eq!(r.popped, vec![first]);
     assert_eq!(l.layers.len(), 3);
-    // A host may lower the cap, never raise it past 8.
+    // The cap is the host's: one, here.
+    let one = Limits {
+        agent_layers: Some(1),
+        ..lim
+    };
+    let mut l = Layers::default();
+    let a = apply(&mut l, LayerOp::Push(hint("a")), Some("x"), 0, &one).unwrap();
+    let b = apply(&mut l, LayerOp::Push(hint("b")), Some("x"), 5_000, &one).unwrap();
+    assert_eq!(b.popped, vec![a.layer.unwrap()]);
+}
+
+#[test]
+fn with_no_policy_agents_are_refused_only_malformed_input() {
+    let none = Limits::default();
+    assert_eq!(none, Limits::none());
+    let mut l = Layers::default();
+    let mine = apply(&mut l, LayerOp::Push(hint("host")), None, 0, &none)
+        .unwrap()
+        .layer
+        .unwrap();
+    let as_agent = |l: &mut Layers, op, now| apply(l, op, Some("helper"), now, &none);
+    // Many, large, fast, dimming, modal, and with no lifetime forced on them.
+    for k in 0..20u64 {
+        let mut big = hint(&"x\n".repeat(50)).with_spotlight();
+        big.capture = k % 2 == 0;
+        as_agent(&mut l, LayerOp::Push(big), 1_000).unwrap();
+    }
+    let titled = Layer::new(Anchor::Caret).with_content(Content::hint(Some(&"t".repeat(400)), "x"));
+    let id = as_agent(&mut l, LayerOp::Push(titled), 1_000)
+        .unwrap()
+        .layer
+        .unwrap();
+    assert_eq!(l.get(&id).unwrap().ttl_ms, None);
+    assert_eq!(l.layers.iter().filter(|x| x.owner.is_agent()).count(), 21);
+    // Another's layer, and the person's controls.
+    let mut u = hint("rewritten");
+    u.id = mine.clone();
+    as_agent(&mut l, LayerOp::Update(u), 1_000).unwrap();
+    as_agent(&mut l, LayerOp::Toggle, 1_000).unwrap();
+    as_agent(&mut l, LayerOp::Pop(Selector::Layer(mine)), 1_000).unwrap();
+    // Malformed input is still refused.
+    let mut none_anchored = hint("x");
+    none_anchored.anchor.clear();
     assert_eq!(
-        Limits {
-            agent_layers: 50,
-            ..lim.clone()
-        }
-        .agent_cap(),
-        8
+        reason(as_agent(&mut l, LayerOp::Push(none_anchored), 1_000)),
+        Reason::Invalid
     );
     assert_eq!(
-        Limits {
-            agent_layers: 1,
-            ..lim
-        }
-        .agent_cap(),
-        1
+        reason(as_agent(
+            &mut l,
+            LayerOp::Pop(Selector::Layer("L-99".into())),
+            1_000
+        )),
+        Reason::NotFound
     );
+    assert_eq!(
+        reason(apply(
+            &mut l,
+            LayerOp::Push(hint("x")),
+            Some(""),
+            1_000,
+            &none
+        )),
+        Reason::Invalid
+    );
+    as_agent(&mut l, LayerOp::Clear, 1_000).unwrap();
+    assert!(l.layers.is_empty());
 }
 
 #[test]
@@ -267,8 +319,10 @@ fn agent_layers_expire_are_attributed_and_stay_in_their_band() {
             .unwrap()
             .title
             .as_deref(),
-        Some("◆ helper · tip")
+        Some("tip"),
+        "the crate writes no attribution into content"
     );
+    assert_eq!(got.owner.actor(), Some("helper"));
     assert!(!expire(&mut l, 8_999));
     assert!(expire(&mut l, 9_000));
 
@@ -290,14 +344,14 @@ fn agent_layers_expire_are_attributed_and_stay_in_their_band() {
             .unwrap()
             .title
             .as_deref(),
-        Some("◆ helper")
+        None
     );
 }
 
 #[test]
 fn bands_ids_and_the_persons_controls() {
     let mut l = Layers::default();
-    let lim = Limits::default();
+    let lim = Limits::agent_defaults();
     let mut g = hint("guide");
     g.owner = Owner::Guide;
     g.z = 99;
@@ -321,7 +375,7 @@ fn bands_ids_and_the_persons_controls() {
 
 #[test]
 fn a_recorded_op_sequence_replays_to_the_live_layers() {
-    let lim = Limits::default();
+    let lim = Limits::agent_defaults();
     // The live session: ops applied as they come, refusals included, expiry by now_ms.
     let ops: Vec<(LayerOp, Option<&str>, u64)> = vec![
         (LayerOp::Push(hint("one")), None, 100),
@@ -354,7 +408,7 @@ fn a_recorded_op_sequence_replays_to_the_live_layers() {
 
 #[test]
 fn update_keeps_since() {
-    let lim = Limits::default();
+    let lim = Limits::agent_defaults();
     let mut l = Layers::default();
     agent(&mut l, hint("two"), 200).unwrap();
     let mut u = hint("changed");

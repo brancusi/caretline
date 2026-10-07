@@ -27,7 +27,7 @@ in any caretline crate: hosts draw.
 | Crate | Contains | Depends on |
 |---|---|---|
 | `caretline` (engine) | Five generic hooks and one message change (1.3). Nothing named layer, tour, callout or spotlight, and no pixels | Unchanged dependencies |
-| `caretline-layers` | The layer model (`Layer`, `Layers`, `LayerOp`, `apply`, `observe`); `Anchor`, its resolvers and `AnchorMap`; char anchors mapped through ChangeSets; off-screen state; placement (sides, flip, shift, clamp, collision, protected rects, strip fallback); connector route geometry; spotlight holes; regions and hit-testing; agent limits; the `layer.*` and `hint.*` protocol ops; the `Renderer` trait and registry; `install(host)` | `caretline`, `serde`. Feature `kitty`: the pixel plumbing (`miniz_oxide`, base64; no IO). No raster crate, no terminal, no async |
+| `caretline-layers` | The layer model (`Layer`, `Layers`, `LayerOp`, `apply`, `observe`); `Anchor`, its resolvers and `AnchorMap`; char anchors mapped through ChangeSets; off-screen state; placement (sides, flip, shift, clamp, collision, protected rects, strip fallback); connector route geometry; spotlight holes; regions and hit-testing; an opt-in agent policy a host may apply (none by default); the `layer.*` and `hint.*` protocol ops; the `Renderer` trait and registry; `install(host)` | `caretline`, `serde`. Feature `kitty`: the pixel plumbing (`miniz_oxide`, base64; no IO). No raster crate, no terminal, no async |
 | `caretline-tour` | `Tour` (TOML or JSON), steps that name anchors, a content kind and data, predicates, branching, the tour reducer, seen-state as data, `tour.*` ops, a `LayerSource` that turns the current step into layers | `caretline`, `caretline-layers`, `serde`, `toml` |
 | `caretline-cli` | A host. Its renderers for `hint` and for `cli.guide` (callout panel, curved arrow, ring, veil), in cells and in pixels (`tiny-skia` lives here); its theme and roles; the graphics probe and the write of the kitty bytes; `caretline demo guide`; seen-state file; F-key bindings | |
 | `caretline-mcp` | `show_hint`, `hide_hint`, `start_guide`, `guide_step`, `list_hints` tools | |
@@ -102,14 +102,15 @@ A layer is pure data in `view.ext["layers"]`:
   `agent` 20–29. An agent can't draw over a walkthrough's box. (Kitty z values are the
   renderer's, per part; 3.6.)
 - **Owner:** `person` (a hint the person pinned), `host`, `guide` (a walkthrough) or
-  `agent:<name>`. The owner decides limits (7.5) and who may remove it. Renderers see it.
+  `agent:<name>`. The owner decides the z band; a host's policy (7.5, none by default) may
+  hold agents to limits by it. Renderers see it, and attribute an agent's layers their own way.
 - **Lifetime:** `ttl_ms` from `since_ms`, measured against `doc.now_ms`. `observe` drops expired
   layers on `tick` and `frame`. `null` means it lasts until popped.
 - **Anchors** are an ordered list of fallbacks (2.3).
 - **Placement request** (`place`): the sides to try, a width cap, whether to route a connector,
   whether to cut spotlight holes, `hide_off_screen`, or a `screen` position (2.4).
-- **Content** is opaque to the crate: a kind and its data. The crate checks only that the kind is
-  registered and the data is within the size cap (7.5).
+- **Content** is opaque to the crate: a kind and its data. The crate checks only that it is
+  well formed (a kind, and a `hint`'s shape); size caps are a host policy (7.5).
 
 ### 2.2 Content kinds
 
@@ -274,6 +275,10 @@ In-frame (7.1, mode A) the crate's frame pass runs these steps and then calls ea
 
 `render` at 100×40 costs 127 µs today. A bench guards the crate's numbers and the CLI's renderers
 together (9.2).
+
+As built (12): placement measures 4 µs for a box, 27 µs with an arrow and 44 µs for a
+spotlight with an arrow. A host skips even that when nothing changed by keeping the last plan
+with its inputs (12, "Unchanged inputs").
 
 ### 3.6 Pixel plumbing (feature `kitty`)
 
@@ -675,9 +680,13 @@ The tools are annotated non-destructive. `resolved` tells the agent whether the 
 
 ### 7.5 Safety limits for agent hints
 
-These are enforced in the layer reducer, so they hold for every client and every host:
+**As built (12): the layer level imposes no restrictions; hosts decide policy.** With
+`Limits::default()` the reducer refuses only malformed input, and agents may do what the person
+and the host can. The limits below are an opt-in policy, `Limits::agent_defaults()`, that a
+host passes to `apply` (field by field: each limit is an `Option`); enabled, they behave as
+described, deterministically. The CLI's choice is its own (decision 6).
 
-- **Cap:** at most 3 agent layers per view (the host may lower it, never raise it past 8). A
+- **Cap:** at most 3 agent layers per view (the host sets the number). A
   fourth replaces that actor's oldest one.
 - **Expiry:** `ttl_ms` defaults to 8 s and is clamped to 1–60 s. No permanent agent layers.
 - **Rate:** at most 2 pushes per second per actor, measured by `now_ms`, so it stays deterministic.
@@ -689,12 +698,14 @@ These are enforced in the layer reducer, so they hold for every client and every
     reveals it);
   - an agent's box never covers the caret or the person's selection (protected rects).
 - **No spotlight without consent:** agents can't set `place.spotlight` unless the person allowed
-  it (host config `agent_dim = "never" | "always"`, default `never`), or the person started the
-  walkthrough the agent is stepping.
+  it (`agent_dim = "never" | "always"`: `never` in the opt-in policy, `always` with none), or
+  the person started the walkthrough the agent is stepping.
 - **Size:** a `hint`'s text at most 280 characters and 6 lines; title at most 40. Other kinds'
   data at most 1 KB (`Limits::content_bytes`).
-- **Attribution:** renderers get the owner, and a host must draw agent layers so they can't pass
-  as its own (the CLI titles them `◆ <actor>` in its agent hue).
+- **Attribution:** every placed layer carries its owner (`agent:<actor>`, `Owner::actor`), and
+  the crate writes nothing into content. Drawing an agent's layers so they can't pass as the
+  host's own is recommended, in the host's own style (the CLI titles them `◆ <actor>` in its
+  agent hue); it is the host's choice, not a crate rule.
 - **Dismissal:** the person always wins: `hint.dismiss` and `layers.toggle` act on agent layers
   regardless of owner.
 
@@ -888,8 +899,9 @@ Phase 1 is about 6.5–7 engineer-weeks in all: 1b's plumbing can run in paralle
   - the kitty plumbing never leaves an id placed that the current frame doesn't have.
 - **Guide lint:** every `find` in built-in tours resolves in `tour.md`, every `command` predicate
   names a catalog id, and every step's kind is registered.
-- **Protocol:** limits are refused with reasons (`rate_limited`, `dim_not_allowed`,
-  `capture_not_allowed`, `unknown_kind`); `resolved` reports `off` or `missing`; `if_rev` works.
+- **Protocol:** under a host's policy, limits are refused with reasons (`rate_limited`,
+  `dim_not_allowed`, `capture_not_allowed`, `unknown_kind`); `resolved` reports `off` or
+  `missing`; `if_rev` works.
 - **Performance guard** (`caretline bench` and a CI threshold test):
   - `render` 100×40 with no layers within 2% of the baseline;
   - a hint ≤ +30 µs and a spotlight ≤ +60 µs, the CLI's cell renderers included;
@@ -1150,8 +1162,10 @@ going past the edge of the window.
    chips. Capture steps use Enter, ⇧Tab and Esc. macOS laptop keyboards need `fn` unless the
    standard-function-keys setting is on.
 5. **Frame passes** run in every `render`, so agents and snapshots see hints.
-6. **Agent policy** as 7.5: cap 3, 8 s TTL (60 s maximum), 2 pushes per second,
-   `agent_dim = never`. Hint tools work under `--read-only`; `--no-hints` turns them off.
+6. **Agent policy is the host's.** The crate imposes none (`Limits::default()`); 7.5's values
+   (cap 3, 8 s TTL with 60 s maximum, 2 pushes per second, `agent_dim = never`) are the opt-in
+   `Limits::agent_defaults()`, no longer crate defaults. Hint tools work under `--read-only`;
+   `--no-hints` turns them off.
 7. **`demo guide`** replaces `demo tour` (the alias is kept); the status-bar hint becomes the
    narrow-mode strip.
 8. **No autostart:** the guide starts only on request.
@@ -1208,7 +1222,63 @@ the scope narrowed. Where it differs from the sections above:
   The third-bend penalty is added to the finished route, not searched.
 - **Ops** are protocol-neutral: `ops::parse` and `ops::reply` serve any host's JSON
   protocol; `layer.list` parses to a listing, not an op.
-- **Performance:** at 100×40, placing a hint box costs about 10 µs; with its arrow
-  about 90 µs, and a spotlight with an arrow about 150 µs (release build), over the 30 and
-  60 µs budgets. The routes for the candidate boxes dominate; a cost grid built once per
-  plan and reusing the chosen box's route are the next steps.
+- **Performance:** `plan` at 100×40, release build, `tests/bench.rs` with `BENCH_N=50000`:
+
+  | Case | Before | After | Budget |
+  |---|---|---|---|
+  | A hint box | 10 µs | 4.3 µs | |
+  | A hint with an arrow and a ring | 94 µs | 27 µs | 30 µs |
+  | A spotlight with an arrow | 154 µs | 44 µs | 60 µs |
+
+  How, with every golden and property test unchanged:
+  - The routing cost of every cell is built **once per plan**, on the first arrow, and kept in
+    step as layers claim boxes, chips and holes or dim cells; the box-scoring sums are built
+    once too and rebuilt only when a spotlight dims. A candidate box's field is that table
+    with its own box and the anchor blocked.
+  - Placement routes only what scoring needs. One search back from the anchor per side
+    (`ToGoal`, the least cost on from each cell, boxes and bends left out) gives every
+    candidate box a lower bound on its arrow; the candidates are routed cheapest bound first,
+    one whose bound can't beat the best so far isn't routed, and a route's search stops once
+    it can't win. The same table is the router's heuristic, so a route expands little more
+    than its own cells.
+  - The winning box's route is reused, not routed again (unless the sliver rule moved the
+    box).
+  - The router reads each corridor cell's cost once and queues by bucket (keys are small
+    integers), popping in the same order as before: least estimate, then first pushed.
+- **Unchanged inputs, unchanged plan.** `plan` is a pure function of the layers, what the
+  resolver answers, the grid and the measured sizes, and keeps no cache of its own. A host
+  that redraws often keeps the last plan with the inputs it came from and calls `plan` only
+  when one of them changed (an edit, a scroll, a resize, a layer op): the layers and grid
+  compare with `==`, and the resolver's answers are the frame's (a new frame, a new plan).
+- **Policy is the host's** (owner decision). `Limits::default()` restricts nothing: no agent
+  cap, rate, forced or clamped TTL, size limits, and agents may spotlight, capture and touch
+  any layer; refusals are for malformed input only (no anchor, nothing to show, a duplicate or
+  unknown id, a bad actor name). The old values are the opt-in `Limits::agent_defaults()`,
+  and the refusal tests run against it. An agent's layer is still owned by it
+  (`agent:<actor>`) and kept in its z band.
+- **No attribution glyph.** `apply` no longer writes `◆ <actor>` into an agent's hint title
+  (styling is the host's, decision 12). `Planned.owner` and `Owner::actor()` expose who a
+  layer is for; attributing agents' layers is recommended to hosts, not enforced.
+- **Layers keep apart.** Every layer's anchor is resolved before any is placed, and no box,
+  strip or chip covers another layer's box, chip, anchor or arrow; later arrows don't cross
+  earlier ones. Edge chips on one edge slide along it to the nearest free place.
+- **Docked boxes.** A box for an off-screen anchor sits flush against its edge chip (no gap:
+  there's no arrow to make room for) and `Planned.dock` (`Attach { edge, offset }`) says where
+  the chip meets its border, so a host joins them there. A docked layer that asked for an arrow
+  reports `no_arrow: docked`: the chip itself points the way.
+- **Arrows route, or say why not.** Placement ranks every box whose arrow routes above any box
+  whose arrow can't (it used to charge a missing route 600, which a route crossing two words
+  outbid), trying further candidates when none of the first few routes. When the facing side
+  of the anchor can't be reached (a box under an anchor at the area's left edge), the arrow may
+  end beside the anchor on another side, pointing at it. `Planned.no_arrow` is `docked`,
+  `screen`, `no_box` or `no_way`. Every arrowed layer at an on-screen anchor of the test page
+  now routes (it was 146 of the page's chars at 80×24).
+- **Where an arrow attaches.** `Route.attach` gives the edge and offset of the junction; on a
+  left or right edge the arrow never leaves beside the title row (the first inside the border)
+  of a box taller than three rows, so a host's title has the row to itself.
+- **Chips sized by the host.** `Renderer::chip(data, anchor, off)` gets the anchor that lies off
+  screen and which way, so a label such as "↓ 2/11 here" can be measured to fit.
+- **Each message's changes come from the engine.** `caretline::update_with_changes`
+  (`update_doc_with_changes`, `Session::apply_with_changes`) returns the message's
+  `ChangeSet`; `observe` and `map_anchors` map text anchors through it. The stopgap that
+  diffed two texts (`changes_between`) is gone.

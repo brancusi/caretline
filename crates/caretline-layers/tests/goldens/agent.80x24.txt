@@ -18,7 +18,7 @@ together select whole words, and the selection grows from where you began.
 Every change can be undone. Undo steps follow the way you typed: a word
 at a time while^you type, and one step for a paste.
 +--------------+--------------------------------+
-| ◆ helper · tip                                |
+| tip                                           |
 | Each undo step is one word while you type.    |
 +-----------------------------------------------+u type, and Enter jumps
  guide.md                                                                   1:1

@@ -4,7 +4,10 @@
 
 mod common;
 
-use caretline::{Msg, OutlineConfig, State, Viewport, update, view};
+use caretline::helix::Selection;
+use caretline::{
+    ExtChange, Msg, OutlineConfig, State, Viewport, update, update_with_changes, view,
+};
 use caretline_layers::*;
 use common::*;
 
@@ -191,53 +194,90 @@ fn the_first_anchor_that_resolves_is_used_and_none_is_missing() {
     assert_eq!(p.missing, vec!["L-1".to_string()]);
 }
 
+/// Applies `msg` with the caret at `at` and returns the changes the editor made.
+fn edit(s: &mut State, at: usize, msg: Msg) -> caretline::ChangeSet {
+    s.view.selection = Selection::point(at);
+    update_with_changes(s, msg).1.expect("an edit")
+}
+
+fn typed(text: &str) -> Msg {
+    Msg::InsertText { text: text.into() }
+}
+
+fn replace(from: usize, to: usize, text: &str) -> Msg {
+    Msg::External {
+        changes: vec![ExtChange::Replace {
+            from,
+            to,
+            text: text.into(),
+        }],
+    }
+}
+
 #[test]
 fn text_anchors_follow_edits_and_a_deleted_range_falls_to_the_next() {
+    let mut s = State::new(
+        "alpha beta gamma",
+        None,
+        Viewport {
+            width: 80,
+            height: 24,
+        },
+    );
     let mut layers = Layers::default();
     let mut layer = Layer::new(Anchor::Text { from: 6, to: 10 }).with_content(hint("t", "b"));
     layer.anchor.push(Anchor::Block(3));
     push(&mut layers, layer, None);
 
-    assert!(map_anchors(
-        &mut layers,
-        &changes_between("alpha beta gamma", "XX alpha beta gamma")
-    ));
+    assert!(map_anchors(&mut layers, &edit(&mut s, 0, typed("XX "))));
+    assert_eq!(s.doc.text.to_string(), "XX alpha beta gamma");
+    assert_eq!(layers.layers[0].anchor[0], Anchor::Text { from: 9, to: 13 });
+    // Undo and redo move it back and forth.
+    let n = s.doc.text.len_chars();
+    map_anchors(&mut layers, &edit(&mut s, n, Msg::Undo));
+    assert_eq!(layers.layers[0].anchor[0], Anchor::Text { from: 6, to: 10 });
+    map_anchors(&mut layers, &edit(&mut s, 0, Msg::Redo));
     assert_eq!(layers.layers[0].anchor[0], Anchor::Text { from: 9, to: 13 });
     // An insertion at its start or end stays outside it.
-    map_anchors(
-        &mut layers,
-        &changes_between("XX alpha beta gamma", "XX alpha YYbeta gamma"),
-    );
+    map_anchors(&mut layers, &edit(&mut s, 9, typed("YY")));
+    assert_eq!(s.doc.text.to_string(), "XX alpha YYbeta gamma");
     assert_eq!(
         layers.layers[0].anchor[0],
         Anchor::Text { from: 11, to: 15 }
     );
-    map_anchors(
-        &mut layers,
-        &changes_between("XX alpha YYbeta gamma", "XX alpha YYbetaZZ gamma"),
-    );
+    map_anchors(&mut layers, &edit(&mut s, 15, typed("ZZ")));
     assert_eq!(
         layers.layers[0].anchor[0],
         Anchor::Text { from: 11, to: 15 }
     );
-    // Deleting its text collapses it: the block anchor takes over.
+    // Deleting its text (here, a change from elsewhere) collapses it: the block anchor takes
+    // over.
     assert!(map_anchors(
         &mut layers,
-        &changes_between("XX alpha YYbetaZZ gamma", "XX alpha YYZZ gamma")
+        &edit(&mut s, 0, replace(11, 15, ""))
     ));
+    assert_eq!(s.doc.text.to_string(), "XX alpha YYZZ gamma");
     assert_eq!(layers.layers[0].anchor, vec![Anchor::Block(3)]);
 
+    let mut s = State::new(
+        "ab cd",
+        None,
+        Viewport {
+            width: 80,
+            height: 24,
+        },
+    );
     let mut layers = Layers::default();
     push(
         &mut layers,
         Layer::new(Anchor::Text { from: 0, to: 2 }).with_content(hint("t", "b")),
         None,
     );
-    assert!(observe(
-        &mut layers,
-        Some(&changes_between("ab cd", " cd")),
-        0
-    ));
+    // A message that changes no text has no changes to map.
+    let (_, none) = update_with_changes(&mut s, Msg::Tick { now_ms: 0 });
+    assert!(!observe(&mut layers, none.as_ref(), 0));
+    let (_, changes) = update_with_changes(&mut s, replace(0, 2, ""));
+    assert!(observe(&mut layers, changes.as_ref(), 0));
     assert!(layers.layers.is_empty());
 }
 

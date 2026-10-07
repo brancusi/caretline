@@ -6,6 +6,7 @@
       "id": "L-1",
       "z": 0,
       "agent": false,
+      "owner": "host",
       "anchor": {
         "rects": [
           {
@@ -29,6 +30,10 @@
           50,
           9
         ],
+        "attach": {
+          "edge": "top",
+          "offset": 22
+        },
         "steps": [
           {
             "x": 50,

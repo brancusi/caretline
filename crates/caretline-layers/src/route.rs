@@ -21,6 +21,8 @@ const THIRD_BEND: u32 = 20;
 const START_SPAN: u16 = 10;
 /// How far the corridor reaches past the box edge and the anchor.
 const CORRIDOR: u16 = 4;
+/// A cell the router can't enter.
+const NONE: u32 = u32::MAX;
 
 /// A direction on the grid: which way an arrow enters or leaves a cell.
 #[derive(
@@ -36,15 +38,6 @@ pub enum Dir {
 
 impl Dir {
     const ALL: [Dir; 4] = [Dir::Up, Dir::Down, Dir::Left, Dir::Right];
-
-    fn step(self, x: u16, y: u16) -> Option<(u16, u16)> {
-        Some(match self {
-            Dir::Up => (x, y.checked_sub(1)?),
-            Dir::Down => (x, y.checked_add(1)?),
-            Dir::Left => (x.checked_sub(1)?, y),
-            Dir::Right => (x.checked_add(1)?, y),
-        })
-    }
 
     fn opposite(self) -> Dir {
         match self {
@@ -66,6 +59,23 @@ pub(crate) trait Field {
     fn cost(&self, x: u16, y: u16) -> Option<u32>;
 }
 
+/// What routing found: a path, no way through, or (with a limit) only routes dearer than it.
+#[derive(Debug, Clone)]
+pub(crate) enum Routed {
+    Found(Path),
+    NoWay,
+    Over,
+}
+
+impl Routed {
+    pub(crate) fn path(self) -> Option<Path> {
+        match self {
+            Routed::Found(p) => Some(p),
+            _ => None,
+        }
+    }
+}
+
 /// A routed arrow: its cells from the callout to the head, with the direction each is
 /// entered and left.
 #[derive(Debug, Clone)]
@@ -75,31 +85,220 @@ pub(crate) struct Path {
     pub cost: u32,
 }
 
-/// Routes from the edge of `boxr` (on `side` of the anchor) to the cell just outside
-/// `anchor`'s facing edge. The arrow may leave the box anywhere along the facing edge (not a
-/// corner); leaving away from the anchor's middle costs a little, so it stays close when the
-/// way is clear.
-pub(crate) fn route(
-    field: &dyn Field,
-    boxr: Rect,
-    side: Side,
-    anchor: Rect,
-    area: Rect,
-) -> Option<Path> {
+/// A monotone queue for small integer keys (Dial's buckets): `pop` returns the least key, and
+/// among equal keys the first pushed, as a heap keyed by (key, push order) would, in O(1).
+/// Keys pushed are never below the last key popped (a consistent heuristic's `f`, a
+/// Dijkstra distance). Keys within [`RING`] of the current one go in a ring of buckets
+/// (first-in-first-out lists in one arena); the rare farther ones wait in a heap and join the
+/// ring as it reaches them.
+struct Buckets<T> {
+    nodes: Vec<(T, u32)>,
+    head: [u32; RING as usize],
+    tail: [u32; RING as usize],
+    /// The key of the current bucket.
+    cur: u32,
+    len: usize,
+    started: bool,
+    far: BinaryHeap<Reverse<(u32, u32, T)>>,
+    seq: u32,
+}
+
+const RING: u32 = 64;
+const END: u32 = u32::MAX;
+
+impl<T: Copy + Ord> Buckets<T> {
+    fn with_capacity(n: usize) -> Buckets<T> {
+        Buckets {
+            nodes: Vec::with_capacity(n),
+            head: [END; RING as usize],
+            tail: [END; RING as usize],
+            cur: 0,
+            len: 0,
+            started: false,
+            far: BinaryHeap::new(),
+            seq: 0,
+        }
+    }
+
+    fn append(&mut self, key: u32, v: T) {
+        let b = (key % RING) as usize;
+        let n = self.nodes.len() as u32;
+        self.nodes.push((v, END));
+        match self.tail[b] {
+            END => self.head[b] = n,
+            t => self.nodes[t as usize].1 = n,
+        }
+        self.tail[b] = n;
+    }
+
+    fn push(&mut self, key: u32, v: T) {
+        if !self.started {
+            self.started = true;
+            self.cur = key;
+        }
+        debug_assert!(key >= self.cur, "keys never go back");
+        let key = key.max(self.cur);
+        self.len += 1;
+        if key - self.cur < RING {
+            self.append(key, v);
+        } else {
+            self.seq += 1;
+            self.far.push(Reverse((key, self.seq, v)));
+        }
+    }
+
+    fn pop(&mut self) -> Option<(u32, T)> {
+        if self.len == 0 {
+            return None;
+        }
+        loop {
+            let b = (self.cur % RING) as usize;
+            let h = self.head[b];
+            if h != END {
+                let (v, next) = self.nodes[h as usize];
+                self.head[b] = next;
+                if next == END {
+                    self.tail[b] = END;
+                }
+                self.len -= 1;
+                return Some((self.cur, v));
+            }
+            self.cur += 1;
+            // The key the ring now reaches: what waited for it joins, in push order.
+            let edge = self.cur + RING - 1;
+            while let Some(Reverse((k, _, v))) = self.far.peek().copied() {
+                if k != edge {
+                    break;
+                }
+                self.far.pop();
+                self.append(edge, v);
+            }
+        }
+    }
+}
+
+/// Whether an arrow ends at a cell: just outside `anchor`'s edge facing `side`.
+fn is_goal(side: Side, anchor: Rect, x: u16, y: u16) -> bool {
+    match side {
+        Side::Above => y + 1 == anchor.y && x >= anchor.x && x < anchor.right(),
+        Side::Below => y == anchor.bottom() && x >= anchor.x && x < anchor.right(),
+        Side::Right => x == anchor.right() && y >= anchor.y && y < anchor.bottom(),
+        Side::Left => x + 1 == anchor.x && y >= anchor.y && y < anchor.bottom(),
+    }
+}
+
+/// The least an arrow can cost from each cell of `region` to `anchor`'s side: one search back
+/// from the goal, shared by every candidate box on that side. Boxes and bends are left out, so
+/// it never overestimates; the router uses it as its heuristic and placement as a bound.
+pub(crate) struct ToGoal {
+    region: Rect,
+    dist: Vec<u32>,
+}
+
+impl ToGoal {
+    pub(crate) fn new(field: &impl Field, side: Side, anchor: Rect, region: Rect) -> ToGoal {
+        let (w, h) = (region.w as usize, region.h as usize);
+        let mut cost = vec![NONE; w * h];
+        let mut dist = vec![NONE; w * h];
+        let mut heap: Buckets<u32> = Buckets::with_capacity(w * h * 2);
+        for cy in 0..h {
+            for cx in 0..w {
+                let (x, y) = (region.x + cx as u16, region.y + cy as u16);
+                if let Some(c) = field.cost(x, y) {
+                    cost[cy * w + cx] = c;
+                    if is_goal(side, anchor, x, y) {
+                        dist[cy * w + cx] = 0;
+                        heap.push(0, (cy * w + cx) as u32);
+                    }
+                }
+            }
+        }
+        // From a cell, the way on costs what entering the next cell costs.
+        while let Some((d, i)) = heap.pop() {
+            let i = i as usize;
+            if d > dist[i] {
+                continue;
+            }
+            let nd = d + cost[i];
+            let (cx, cy) = (i % w, i / w);
+            let mut relax = |j: usize| {
+                if cost[j] != NONE && nd < dist[j] {
+                    dist[j] = nd;
+                    heap.push(nd, j as u32);
+                }
+            };
+            if cx > 0 {
+                relax(i - 1);
+            }
+            if cx + 1 < w {
+                relax(i + 1);
+            }
+            if cy > 0 {
+                relax(i - w);
+            }
+            if cy + 1 < h {
+                relax(i + w);
+            }
+        }
+        ToGoal { region, dist }
+    }
+
+    /// The least cost on from a cell (`None`: no way), or nothing known outside the region.
+    fn get(&self, x: u16, y: u16) -> Option<Option<u32>> {
+        if !self.region.contains(x, y) {
+            return None;
+        }
+        let d = self.dist
+            [(y - self.region.y) as usize * self.region.w as usize + (x - self.region.x) as usize];
+        Some((d != NONE).then_some(d))
+    }
+
+    /// The least a route from `boxr` on `side` can cost (its first cell, its offset and the
+    /// way on), `None` if there's no way at all.
+    pub(crate) fn bound(
+        &self,
+        field: &impl Field,
+        boxr: Rect,
+        side: Side,
+        anchor: Rect,
+    ) -> Option<u32> {
+        starts(boxr, side, anchor)
+            .into_iter()
+            .filter_map(|((x, y), _, extra)| {
+                let on = match self.get(x, y) {
+                    Some(d) => d?,
+                    None => 0,
+                };
+                Some(field.cost(x, y)? + extra + on)
+            })
+            .min()
+    }
+}
+
+type Cell = (u16, u16);
+
+/// The cells a route from `boxr` on `side` to `anchor` may use: the starts and the anchor,
+/// with room round them.
+pub(crate) fn reach(boxr: Rect, side: Side, anchor: Rect, area: Rect) -> Rect {
+    corridor(&starts(boxr, side, anchor), anchor, area)
+}
+
+fn corridor(starts: &[(Cell, Cell, u32)], anchor: Rect, area: Rect) -> Rect {
+    let edge = starts.iter().fold(Rect::default(), |r, s| {
+        r.union(&Rect::new(s.0.0, s.0.1, 1, 1))
+    });
+    edge.union(&anchor).grow(CORRIDOR, CORRIDOR, &area)
+}
+
+/// Where an arrow may leave a box: the first cell outside it, its junction on the border,
+/// and the extra cost of leaving there.
+fn starts(boxr: Rect, side: Side, anchor: Rect) -> Vec<(Cell, Cell, u32)> {
+    let mut starts: Vec<(Cell, Cell, u32)> = Vec::new();
     if boxr.w < 3 || boxr.h < 3 || anchor.is_empty() {
-        return None;
+        return starts;
     }
     let jx = anchor.x + anchor.w.saturating_sub(1) / 2;
     let jy = anchor.y;
-    // Each start: the first cell outside the box, its junction on the border, the extra cost.
-    type Cell = (u16, u16);
-    let mut starts: Vec<(Cell, Cell, u32)> = Vec::new();
-    let dir = match side {
-        Side::Above => Dir::Down,
-        Side::Below => Dir::Up,
-        Side::Right => Dir::Left,
-        Side::Left => Dir::Right,
-    };
     match side {
         Side::Above | Side::Below => {
             let cx = jx.clamp(boxr.x + 1, boxr.right() - 2);
@@ -117,9 +316,12 @@ pub(crate) fn route(
             }
         }
         Side::Right | Side::Left => {
-            let cy = jy.clamp(boxr.y + 1, boxr.bottom() - 2);
-            for y in (boxr.y + 1).max(cy.saturating_sub(START_SPAN))
-                ..(boxr.bottom() - 1).min(cy + START_SPAN + 1)
+            // Never beside the title row (the first inside the border) of a box that has text
+            // under it.
+            let top = boxr.y + if boxr.h >= 4 { 2 } else { 1 };
+            let cy = jy.clamp(top, boxr.bottom() - 2);
+            for y in
+                top.max(cy.saturating_sub(START_SPAN))..(boxr.bottom() - 1).min(cy + START_SPAN + 1)
             {
                 let (sx, jx) = if side == Side::Left {
                     (Some(boxr.right()), boxr.right() - 1)
@@ -132,19 +334,72 @@ pub(crate) fn route(
             }
         }
     }
-    let arrive = dir;
-    let goal = |x: u16, y: u16| match side {
-        Side::Above => y + 1 == anchor.y && x >= anchor.x && x < anchor.right(),
-        Side::Below => y == anchor.bottom() && x >= anchor.x && x < anchor.right(),
-        Side::Right => x == anchor.right() && y >= anchor.y && y < anchor.bottom(),
-        Side::Left => x + 1 == anchor.x && y >= anchor.y && y < anchor.bottom(),
+    starts
+}
+
+/// Routes from the edge of `boxr` (on `side` of the anchor) to the cell just outside
+/// `anchor`'s facing edge. The arrow may leave the box anywhere along the facing edge (not a
+/// corner); leaving away from the anchor's middle costs a little, so it stays close when the
+/// way is clear.
+///
+/// `limit` stops the search once every route left would cost more than it ([`Routed::Over`]):
+/// a caller scoring boxes needs no route that can't win. `u32::MAX` for none.
+///
+/// When no route reaches the facing side (the box sits past the anchor's end, say, with the
+/// anchor at the area's edge), the arrow may end beside the anchor on any side, pointing at it.
+pub(crate) fn route(
+    field: &impl Field,
+    boxr: Rect,
+    side: Side,
+    anchor: Rect,
+    area: Rect,
+    limit: u32,
+    to_goal: Option<&ToGoal>,
+) -> Routed {
+    match search(field, boxr, side, anchor, area, limit, to_goal, false) {
+        Routed::NoWay => search(field, boxr, side, anchor, area, limit, None, true),
+        r => r,
+    }
+}
+
+/// Whether an arrow entering a cell going `d` ends there, pointing at `anchor` from any side.
+fn is_goal_any(anchor: Rect, x: u16, y: u16, d: Dir) -> bool {
+    let rows = y >= anchor.y && y < anchor.bottom();
+    let cols = x >= anchor.x && x < anchor.right();
+    match d {
+        Dir::Right => rows && x + 1 == anchor.x,
+        Dir::Left => rows && x == anchor.right(),
+        Dir::Down => cols && y + 1 == anchor.y,
+        Dir::Up => cols && y == anchor.bottom(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search(
+    field: &impl Field,
+    boxr: Rect,
+    side: Side,
+    anchor: Rect,
+    area: Rect,
+    limit: u32,
+    to_goal: Option<&ToGoal>,
+    any_side: bool,
+) -> Routed {
+    if boxr.w < 3 || boxr.h < 3 || anchor.is_empty() {
+        return Routed::NoWay;
+    }
+    let starts = starts(boxr, side, anchor);
+    let dir = match side {
+        Side::Above => Dir::Down,
+        Side::Below => Dir::Up,
+        Side::Right => Dir::Left,
+        Side::Left => Dir::Right,
     };
-    let edge = starts.iter().fold(Rect::default(), |r, s| {
-        r.union(&Rect::new(s.0.0, s.0.1, 1, 1))
-    });
-    let corridor = edge.union(&anchor).grow(CORRIDOR, CORRIDOR, &area);
+    let arrive = dir;
+    let goal = |x: u16, y: u16| is_goal(side, anchor, x, y);
+    let corridor = corridor(&starts, anchor, area);
     // The heuristic: cells to the nearest goal cell (each costs at least 1).
-    let h = |x: u16, y: u16| -> u32 {
+    let cells_to = |x: u16, y: u16| -> u32 {
         let (gx, gy) = match side {
             Side::Above => (
                 x.clamp(anchor.x, anchor.right() - 1),
@@ -159,37 +414,80 @@ pub(crate) fn route(
         };
         (x.abs_diff(gx) + y.abs_diff(gy)) as u32
     };
+    // Or, better, the least cost on ([`ToGoal`]); `None`: the goal can't be reached from there.
+    // (Ending on any side, nothing is known: 0.)
+    let h = |x: u16, y: u16| -> Option<u32> {
+        if any_side {
+            return Some(0);
+        }
+        match to_goal.and_then(|t| t.get(x, y)) {
+            Some(d) => d.map(|d| d.max(cells_to(x, y))),
+            None => Some(cells_to(x, y)),
+        }
+    };
     let cw = corridor.w as usize;
-    let n = cw * corridor.h as usize * 4;
-    // State: cell and the direction it was entered. (Bends are costed as they happen; the
-    // penalty for more than two is added to the finished route, for scoring.)
+    let ch = corridor.h as usize;
+    let n = cw * ch * 4;
+    // Each corridor cell's cost, asked of the field once.
+    let mut cost_at = vec![NONE; cw * ch];
+    for cy in 0..ch {
+        for cx in 0..cw {
+            if let Some(c) = field.cost(corridor.x + cx as u16, corridor.y + cy as u16) {
+                cost_at[cy * cw + cx] = c;
+            }
+        }
+    }
+    // State: cell and the direction it was entered, as `cell * 4 + dir`. (Bends are costed as
+    // they happen; the penalty for more than two is added to the finished route, for scoring.)
     let idx = |x: u16, y: u16, d: Dir| {
         ((y - corridor.y) as usize * cw + (x - corridor.x) as usize) * 4 + d.index()
     };
     let mut best = vec![u32::MAX; n];
     let mut prev = vec![u32::MAX; n];
-    let mut heap = BinaryHeap::new();
-    let mut seq = 0u32;
+    // Entries (state, g) by `f`: cheapest estimate first, first pushed among equals.
+    let mut heap: Buckets<(u32, u32)> = Buckets::with_capacity(n);
+    // The starts, least `f` first (in their order among equals), so keys never go back.
+    let mut first: Vec<(u32, u32, u32)> = Vec::with_capacity(starts.len());
     for &((x, y), _, extra) in &starts {
         if !corridor.contains(x, y) {
             continue;
         }
-        let Some(c) = field.cost(x, y) else { continue };
+        let c = cost_at[(y - corridor.y) as usize * cw + (x - corridor.x) as usize];
+        if c == NONE {
+            continue;
+        }
         let g = c + extra;
         let i = idx(x, y, dir);
+        let Some(hh) = h(x, y) else { continue };
         if g < best[i] {
             best[i] = g;
-            seq += 1;
-            heap.push(Reverse((g + h(x, y), seq, x, y, dir, g)));
+            first.push((g + hh, i as u32, g));
         }
     }
+    first.sort_by_key(|e| e.0);
+    for (f, i, g) in first {
+        heap.push(f, (i, g));
+    }
     let mut found = None;
-    while let Some(Reverse((_, _, x, y, d, g))) = heap.pop() {
-        let i = idx(x, y, d);
+    while let Some((f, (i, g))) = heap.pop() {
+        // The heuristic never overestimates, so every route left costs at least `f`.
+        if f > limit {
+            return Routed::Over;
+        }
+        let i = i as usize;
         if g > best[i] {
             continue;
         }
-        if goal(x, y) && d == arrive {
+        let d = Dir::ALL[i % 4];
+        let cell = i / 4;
+        let (cx, cy) = (cell % cw, cell / cw);
+        let (x, y) = (cx as u16 + corridor.x, cy as u16 + corridor.y);
+        let arrived = if any_side {
+            is_goal_any(anchor, x, y, d)
+        } else {
+            d == arrive && goal(x, y)
+        };
+        if arrived {
             found = Some((i, g));
             break;
         }
@@ -197,26 +495,31 @@ pub(crate) fn route(
             if nd == d.opposite() {
                 continue;
             }
-            let Some((nx, ny)) = nd.step(x, y) else {
-                continue;
+            let (nx, ny) = match nd {
+                Dir::Up if cy > 0 => (cx, cy - 1),
+                Dir::Down if cy + 1 < ch => (cx, cy + 1),
+                Dir::Left if cx > 0 => (cx - 1, cy),
+                Dir::Right if cx + 1 < cw => (cx + 1, cy),
+                _ => continue,
             };
-            if !corridor.contains(nx, ny) {
+            let c = cost_at[ny * cw + nx];
+            if c == NONE {
                 continue;
             }
-            let Some(c) = field.cost(nx, ny) else {
-                continue;
-            };
             let ng = g + c + if nd == d { 0 } else { BEND };
-            let j = idx(nx, ny, nd);
+            let j = (ny * cw + nx) * 4 + nd.index();
             if ng < best[j] {
+                let (px, py) = (nx as u16 + corridor.x, ny as u16 + corridor.y);
+                let Some(hh) = h(px, py) else { continue };
                 best[j] = ng;
                 prev[j] = i as u32;
-                seq += 1;
-                heap.push(Reverse((ng + h(nx, ny), seq, nx, ny, nd, ng)));
+                heap.push(ng + hh, (j as u32, ng));
             }
         }
     }
-    let (end, cost) = found?;
+    let Some((end, cost)) = found else {
+        return Routed::NoWay;
+    };
     let decode = |i: usize| {
         let d = Dir::ALL[i % 4];
         let c = i / 4;
@@ -235,17 +538,65 @@ pub(crate) fn route(
     chain.reverse();
     let states: Vec<(u16, u16, Dir)> = chain.into_iter().map(decode).collect();
     let first = (states[0].0, states[0].1);
-    let junction = starts.iter().find(|s| s.0 == first).map(|s| s.1)?;
+    let Some(junction) = starts.iter().find(|s| s.0 == first).map(|s| s.1) else {
+        return Routed::NoWay;
+    };
     let mut cells = Vec::with_capacity(states.len());
     for (k, &(x, y, din)) in states.iter().enumerate() {
-        let dout = states.get(k + 1).map_or(arrive, |s| s.2);
+        // The head leaves the way it came in: at the anchor.
+        let dout = states.get(k + 1).map_or(din, |s| s.2);
         cells.push((x, y, din, dout));
     }
     let bends = cells.iter().filter(|c| c.2 != c.3).count();
     let cost = cost + if bends > 2 { THIRD_BEND } else { 0 };
-    Some(Path {
+    Routed::Found(Path {
         cells,
         junction,
         cost,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A blank screen with one box blocked.
+    struct Blank(Rect);
+
+    impl Field for Blank {
+        fn cost(&self, x: u16, y: u16) -> Option<u32> {
+            (x < 80 && y < 24 && !self.0.contains(x, y)).then_some(BLANK)
+        }
+    }
+
+    #[test]
+    fn with_the_facing_side_out_of_reach_the_arrow_ends_on_another_side() {
+        // The box is under the anchor at the left edge: no way reaches the cell below the
+        // anchor going up (that way runs through the box).
+        let boxr = Rect::new(0, 7, 20, 3);
+        let anchor = Rect::new(0, 5, 1, 1);
+        let area = Rect::new(0, 0, 80, 24);
+        let field = Blank(boxr);
+        assert!(matches!(
+            search(
+                &field,
+                boxr,
+                Side::Below,
+                anchor,
+                area,
+                u32::MAX,
+                None,
+                false
+            ),
+            Routed::NoWay
+        ));
+        let Routed::Found(p) = route(&field, boxr, Side::Below, anchor, area, u32::MAX, None)
+        else {
+            panic!("no route");
+        };
+        let &(x, y, din, dout) = p.cells.last().unwrap();
+        assert_eq!(din, dout, "the head points the way it came");
+        assert!(is_goal_any(anchor, x, y, din), "({x}, {y}) {din:?}");
+        assert_eq!(p.junction.1, boxr.y);
+    }
 }

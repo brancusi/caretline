@@ -29,13 +29,32 @@ use crate::update::step;
 ///
 /// `update(state, msg)` is `update_doc(&mut state.doc, [&mut state.view], 0, msg)`.
 pub fn update_doc(doc: &mut Document, views: &mut [View], acting: usize, msg: Msg) -> Vec<Effect> {
+    update_doc_logged(doc, views, acting, msg).0
+}
+
+/// [`update_doc`], also returning the message's text changes, composed into one
+/// [`ChangeSet`] from the text before it to the text after (`None` when the text didn't
+/// change). The multi-view twin of [`crate::update_with_changes`]: whichever view acted, the
+/// changes are the document's, so they map positions for every view and for the host.
+pub fn update_doc_with_changes(
+    doc: &mut Document,
+    views: &mut [View],
+    acting: usize,
+    msg: Msg,
+) -> (Vec<Effect>, Option<ChangeSet>) {
+    let (effects, log) = update_doc_logged(doc, views, acting, msg);
+    (effects, crate::update::compose_log(log))
+}
+
+/// [`update_doc`], returning the text changes made in order (not composed).
+pub(crate) fn update_doc_logged(doc: &mut Document, views: &mut [View], acting: usize, msg: Msg) -> (Vec<Effect>, Vec<ChangeSet>) {
     doc.change_log.0.clear();
     if msg.is_external() {
         return crate::external::apply(doc, views, msg);
     }
-    let Some(view) = views.get(acting) else { return Vec::new() };
+    let Some(view) = views.get(acting) else { return (Vec::new(), Vec::new()) };
     if view.read_only && msg.edits() {
-        return vec![Effect::Refused];
+        return (vec![Effect::Refused], Vec::new());
     }
     let tops = tops(doc, views);
     let edits = doc.edits.0;
@@ -51,18 +70,17 @@ pub fn update_doc(doc: &mut Document, views: &mut [View], acting: usize, msg: Ms
     if let Some(r) = &mut doc.run {
         r.view = acting;
     }
+    let changes = std::mem::take(&mut doc.change_log.0);
     if doc.edits.0 != edits {
         // The acting view's folds drop with their blocks too (whatever path the edit took).
         views[acting].folds.retain(|id| doc.marks.contains(*id));
-        let changes = std::mem::take(&mut doc.change_log.0);
         for (i, v) in views.iter_mut().enumerate() {
             if i != acting {
                 rebase(doc, v, &changes, tops[i]);
             }
         }
     }
-    doc.change_log.0.clear();
-    effects
+    (effects, changes)
 }
 
 /// Where each view's top line starts, as a char position (mapped through an edit, it keeps

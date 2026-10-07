@@ -1,8 +1,10 @@
 //! caretline anchors: resolving them from an editor's [`Frame`], and mapping text anchors
-//! through a [`ChangeSet`] so they follow edits.
+//! through a [`ChangeSet`] so they follow edits. The changes are the ones each editor message
+//! made, as caretline hands them out: `caretline::update_with_changes`,
+//! `caretline::update_doc_with_changes` or `Session::apply_with_changes`.
 
-use caretline::helix::{Assoc, ChangeSet, Rope, Tendril};
 use caretline::view::{Frame, RowInfo};
+use caretline::{Assoc, ChangeSet};
 use caretline::{Document, MarkId};
 
 use crate::geom::Rect;
@@ -230,21 +232,16 @@ pub fn map_anchors(layers: &mut Layers, changes: &ChangeSet) -> bool {
 
 /// After every message: maps anchors through its changes (if it edited) and drops expired
 /// layers. Returns whether the layers changed.
+///
+/// `changes` is what the editor returned for that message:
+///
+/// ```ignore
+/// let (effects, changes) = caretline::update_with_changes(&mut editor, msg);
+/// observe(&mut layers, changes.as_ref(), now_ms);
+/// ```
 pub fn observe(layers: &mut Layers, changes: Option<&ChangeSet>, now_ms: u64) -> bool {
     let mapped = changes.is_some_and(|c| map_anchors(layers, c));
     expire(layers, now_ms) | mapped
-}
-
-/// The changes that turn `old` into `new`, for a host that sees texts rather than messages
-/// (caretline doesn't hand out a message's `ChangeSet` yet).
-pub fn changes_between(old: &str, new: &str) -> ChangeSet {
-    let rope = Rope::from(old);
-    let diff = caretline::diff::changes(old, new);
-    ChangeSet::from_changes(
-        &rope,
-        diff.into_iter()
-            .map(|(f, t, s)| (f, t, (!s.is_empty()).then(|| Tendril::from(s.as_str())))),
-    )
 }
 
 impl crate::place::Grid {

@@ -1,4 +1,4 @@
- ◆ helper · tip Each undo step is one word w
+ tip Each undo step is one word while you ty
 
 This page is a short tour of the editor.
 Read it from top to bottom and
