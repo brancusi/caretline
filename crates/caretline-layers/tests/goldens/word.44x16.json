@@ -6,6 +6,7 @@
       "id": "L-1",
       "z": 0,
       "agent": false,
+      "owner": "host",
       "anchor": {
         "rects": [
           {
@@ -23,6 +24,7 @@
         "h": 1
       },
       "mode": "strip",
+      "no_arrow": "no_box",
       "ring": [
         {
           "x": 2,

@@ -213,6 +213,22 @@ fn draw_plan(buf: &mut Buffer, p: &Plan, layers: &Layers) {
         set(buf, x1, r.y, "╮", border);
         set(buf, r.x, y1, "╰", border);
         set(buf, x1, y1, "╯", border);
+        // Attribution is this host's to draw: an agent's name in the top border, clear of
+        // where an arrow attaches there.
+        if let Some(actor) = l.owner.actor() {
+            let label = format!(" ◆ {actor} ");
+            let n = label.chars().count() as u16;
+            let mut at = 2;
+            if let Some(a) = l.route.as_ref().map(|rt| rt.attach)
+                && a.edge == Edge::Top
+                && (at..at + n).contains(&a.offset)
+            {
+                at = a.offset + 2;
+            }
+            if at + n < r.w {
+                buf.set_string(r.x + at, r.y, label, border);
+            }
+        }
         if let (Some(rt), Some(side)) = (&l.route, l.side) {
             let j = match side {
                 Side::Above => "┬",

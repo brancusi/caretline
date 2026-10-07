@@ -316,9 +316,12 @@ fn starts(boxr: Rect, side: Side, anchor: Rect) -> Vec<(Cell, Cell, u32)> {
             }
         }
         Side::Right | Side::Left => {
-            let cy = jy.clamp(boxr.y + 1, boxr.bottom() - 2);
-            for y in (boxr.y + 1).max(cy.saturating_sub(START_SPAN))
-                ..(boxr.bottom() - 1).min(cy + START_SPAN + 1)
+            // Never beside the title row (the first inside the border) of a box that has text
+            // under it.
+            let top = boxr.y + if boxr.h >= 4 { 2 } else { 1 };
+            let cy = jy.clamp(top, boxr.bottom() - 2);
+            for y in
+                top.max(cy.saturating_sub(START_SPAN))..(boxr.bottom() - 1).min(cy + START_SPAN + 1)
             {
                 let (sx, jx) = if side == Side::Left {
                     (Some(boxr.right()), boxr.right() - 1)
@@ -341,6 +344,9 @@ fn starts(boxr: Rect, side: Side, anchor: Rect) -> Vec<(Cell, Cell, u32)> {
 ///
 /// `limit` stops the search once every route left would cost more than it ([`Routed::Over`]):
 /// a caller scoring boxes needs no route that can't win. `u32::MAX` for none.
+///
+/// When no route reaches the facing side (the box sits past the anchor's end, say, with the
+/// anchor at the area's edge), the arrow may end beside the anchor on any side, pointing at it.
 pub(crate) fn route(
     field: &impl Field,
     boxr: Rect,
@@ -349,6 +355,35 @@ pub(crate) fn route(
     area: Rect,
     limit: u32,
     to_goal: Option<&ToGoal>,
+) -> Routed {
+    match search(field, boxr, side, anchor, area, limit, to_goal, false) {
+        Routed::NoWay => search(field, boxr, side, anchor, area, limit, None, true),
+        r => r,
+    }
+}
+
+/// Whether an arrow entering a cell going `d` ends there, pointing at `anchor` from any side.
+fn is_goal_any(anchor: Rect, x: u16, y: u16, d: Dir) -> bool {
+    let rows = y >= anchor.y && y < anchor.bottom();
+    let cols = x >= anchor.x && x < anchor.right();
+    match d {
+        Dir::Right => rows && x + 1 == anchor.x,
+        Dir::Left => rows && x == anchor.right(),
+        Dir::Down => cols && y + 1 == anchor.y,
+        Dir::Up => cols && y == anchor.bottom(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search(
+    field: &impl Field,
+    boxr: Rect,
+    side: Side,
+    anchor: Rect,
+    area: Rect,
+    limit: u32,
+    to_goal: Option<&ToGoal>,
+    any_side: bool,
 ) -> Routed {
     if boxr.w < 3 || boxr.h < 3 || anchor.is_empty() {
         return Routed::NoWay;
@@ -380,7 +415,11 @@ pub(crate) fn route(
         (x.abs_diff(gx) + y.abs_diff(gy)) as u32
     };
     // Or, better, the least cost on ([`ToGoal`]); `None`: the goal can't be reached from there.
+    // (Ending on any side, nothing is known: 0.)
     let h = |x: u16, y: u16| -> Option<u32> {
+        if any_side {
+            return Some(0);
+        }
         match to_goal.and_then(|t| t.get(x, y)) {
             Some(d) => d.map(|d| d.max(cells_to(x, y))),
             None => Some(cells_to(x, y)),
@@ -443,7 +482,12 @@ pub(crate) fn route(
         let cell = i / 4;
         let (cx, cy) = (cell % cw, cell / cw);
         let (x, y) = (cx as u16 + corridor.x, cy as u16 + corridor.y);
-        if d == arrive && goal(x, y) {
+        let arrived = if any_side {
+            is_goal_any(anchor, x, y, d)
+        } else {
+            d == arrive && goal(x, y)
+        };
+        if arrived {
             found = Some((i, g));
             break;
         }
@@ -499,7 +543,8 @@ pub(crate) fn route(
     };
     let mut cells = Vec::with_capacity(states.len());
     for (k, &(x, y, din)) in states.iter().enumerate() {
-        let dout = states.get(k + 1).map_or(arrive, |s| s.2);
+        // The head leaves the way it came in: at the anchor.
+        let dout = states.get(k + 1).map_or(din, |s| s.2);
         cells.push((x, y, din, dout));
     }
     let bends = cells.iter().filter(|c| c.2 != c.3).count();
@@ -509,4 +554,49 @@ pub(crate) fn route(
         junction,
         cost,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A blank screen with one box blocked.
+    struct Blank(Rect);
+
+    impl Field for Blank {
+        fn cost(&self, x: u16, y: u16) -> Option<u32> {
+            (x < 80 && y < 24 && !self.0.contains(x, y)).then_some(BLANK)
+        }
+    }
+
+    #[test]
+    fn with_the_facing_side_out_of_reach_the_arrow_ends_on_another_side() {
+        // The box is under the anchor at the left edge: no way reaches the cell below the
+        // anchor going up (that way runs through the box).
+        let boxr = Rect::new(0, 7, 20, 3);
+        let anchor = Rect::new(0, 5, 1, 1);
+        let area = Rect::new(0, 0, 80, 24);
+        let field = Blank(boxr);
+        assert!(matches!(
+            search(
+                &field,
+                boxr,
+                Side::Below,
+                anchor,
+                area,
+                u32::MAX,
+                None,
+                false
+            ),
+            Routed::NoWay
+        ));
+        let Routed::Found(p) = route(&field, boxr, Side::Below, anchor, area, u32::MAX, None)
+        else {
+            panic!("no route");
+        };
+        let &(x, y, din, dout) = p.cells.last().unwrap();
+        assert_eq!(din, dout, "the head points the way it came");
+        assert!(is_goal_any(anchor, x, y, din), "({x}, {y}) {din:?}");
+        assert_eq!(p.junction.1, boxr.y);
+    }
 }

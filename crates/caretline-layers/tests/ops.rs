@@ -32,7 +32,8 @@ fn run(layers: &mut Layers, op: &str, req: Value, now: u64) -> Value {
         Err(r) => ops::error(&r),
         Ok((Request::List, _)) => ops::list(layers),
         Ok((Request::Apply(o), actor)) => {
-            match apply(layers, o, actor.as_deref(), now, &Limits::default()) {
+            // A host that holds agents to the opt-in policy.
+            match apply(layers, o, actor.as_deref(), now, &Limits::agent_defaults()) {
                 Err(r) => ops::error(&r),
                 Ok(a) => ops::reply(&a, Some(&plan(layers, &m, &g, &renderers))),
             }
@@ -67,7 +68,8 @@ fn hint_show_on_a_host_row() {
             .unwrap()
             .title
             .as_deref(),
-        Some("◆ claude · Stale")
+        Some("Stale"),
+        "the title is the agent's own; attribution is the host's to draw"
     );
 }
 

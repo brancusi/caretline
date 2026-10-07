@@ -6,6 +6,7 @@
       "id": "L-1",
       "z": 10,
       "agent": false,
+      "owner": "guide",
       "anchor": {
         "rects": [
           {
