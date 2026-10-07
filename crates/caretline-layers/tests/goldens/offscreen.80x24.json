@@ -1,0 +1,53 @@
+{
+  "width": 80,
+  "height": 24,
+  "layers": [
+    {
+      "id": "L-1",
+      "z": 10,
+      "agent": false,
+      "anchor": {
+        "off": {
+          "below": {
+            "x": null
+          }
+        }
+      },
+      "rect": {
+        "x": 60,
+        "y": 17,
+        "w": 20,
+        "h": 4
+      },
+      "mode": "box",
+      "side": "above",
+      "chip": {
+        "x": 72,
+        "y": 22,
+        "w": 8,
+        "h": 1
+      }
+    }
+  ],
+  "spots": [],
+  "regions": [
+    {
+      "rect": {
+        "x": 72,
+        "y": 22,
+        "w": 8,
+        "h": 1
+      },
+      "id": "L-1/reveal"
+    },
+    {
+      "rect": {
+        "x": 60,
+        "y": 17,
+        "w": 20,
+        "h": 4
+      },
+      "id": "L-1"
+    }
+  ]
+}

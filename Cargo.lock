@@ -201,6 +201,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "caretline-layers"
+version = "0.1.0"
+dependencies = [
+ "caretline",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "unicode-segmentation",
+ "unicode-width 0.1.12",
+]
+
+[[package]]
 name = "caretline-mcp"
 version = "0.1.0"
 dependencies = [
@@ -210,18 +222,6 @@ dependencies = [
  "rmcp",
  "serde_json",
  "tokio",
-]
-
-[[package]]
-name = "caretline-overlay"
-version = "0.1.0"
-dependencies = [
- "caretline",
- "ratatui",
- "serde",
- "serde_json",
- "unicode-segmentation",
- "unicode-width 0.1.12",
 ]
 
 [[package]]

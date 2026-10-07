@@ -1,0 +1,105 @@
+{
+  "width": 80,
+  "height": 24,
+  "layers": [
+    {
+      "id": "L-1",
+      "z": 10,
+      "agent": false,
+      "anchor": {
+        "rects": [
+          {
+            "x": 0,
+            "y": 12,
+            "w": 49,
+            "h": 1
+          }
+        ]
+      },
+      "rect": {
+        "x": 28,
+        "y": 3,
+        "w": 52,
+        "h": 5
+      },
+      "mode": "box",
+      "side": "above",
+      "route": {
+        "junction": [
+          32,
+          7
+        ],
+        "steps": [
+          {
+            "x": 32,
+            "y": 8,
+            "enter": "down",
+            "leave": "down"
+          },
+          {
+            "x": 32,
+            "y": 9,
+            "enter": "down",
+            "leave": "down"
+          },
+          {
+            "x": 32,
+            "y": 10,
+            "enter": "down",
+            "leave": "down"
+          },
+          {
+            "x": 32,
+            "y": 11,
+            "enter": "down",
+            "leave": "down"
+          }
+        ]
+      },
+      "ring": [
+        {
+          "x": 0,
+          "y": 12,
+          "w": 49,
+          "h": 1
+        }
+      ]
+    }
+  ],
+  "spots": [
+    {
+      "layer": "L-1",
+      "area": {
+        "x": 0,
+        "y": 0,
+        "w": 80,
+        "h": 23
+      },
+      "holes": [
+        {
+          "x": 0,
+          "y": 12,
+          "w": 50,
+          "h": 1
+        },
+        {
+          "x": 28,
+          "y": 3,
+          "w": 52,
+          "h": 5
+        }
+      ]
+    }
+  ],
+  "regions": [
+    {
+      "rect": {
+        "x": 28,
+        "y": 3,
+        "w": 52,
+        "h": 5
+      },
+      "id": "L-1"
+    }
+  ]
+}
