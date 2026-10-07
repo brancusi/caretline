@@ -26,6 +26,9 @@
   agents) the caret, never splitting a wide grapheme; a one-row strip on narrow areas or when
   nothing fits; edge chips for off-screen anchors; arrow routes as cells (A*, round words);
   ring cells; spotlight holes; click regions and `Plan::hit`. Pure and serializable.
+  At 100×40 (release), a box costs about 4 µs, a box with its arrow about 27 µs, and a
+  spotlight with an arrow about 44 µs: routing costs are built once per plan, candidate boxes
+  are routed only when a lower bound says they can win, and the winner's route is reused.
 - `Renderer` and `Renderers`: a host's measure per content kind.
 - `ops`: protocol-neutral `hint.show`, `hint.hide`, `layer.push`, `layer.update`,
   `layer.pop` and `layer.list` requests (`parse`) and replies (`reply`, `list`, `error`).

@@ -3,8 +3,8 @@
 //! made, as caretline hands them out: `caretline::update_with_changes`,
 //! `caretline::update_doc_with_changes` or `Session::apply_with_changes`.
 
-use caretline::{Assoc, ChangeSet};
 use caretline::view::{Frame, RowInfo};
+use caretline::{Assoc, ChangeSet};
 use caretline::{Document, MarkId};
 
 use crate::geom::Rect;

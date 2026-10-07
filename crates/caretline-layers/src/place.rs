@@ -185,6 +185,8 @@ pub fn plan(layers: &Layers, anchors: &dyn Resolve, grid: &Grid, renderers: &Ren
         holes: Vec::new(),
         dimmed: Vec::new(),
         any_dim: false,
+        sums: None,
+        costs: None,
     };
     for layer in layers.in_order() {
         let Some(t) = target(layer, anchors, grid) else {
@@ -261,7 +263,7 @@ fn plan_one(
                 rect: r,
                 id: format!("{}/reveal", layer.id),
             });
-            taken.panels.push(r);
+            taken.panel(r, grid);
             p.chip = Some(r);
         }
     }
@@ -274,14 +276,22 @@ fn plan_one(
         let m = rend.measure(data, avail);
         let size = (m.w.min(avail.w), m.h.min(avail.h));
         let has_box = size.0 > 0 && size.1 > 0;
-        let mut chosen: Option<(Rect, Option<Side>)> = None;
+        let routed = layer.arrow && dock.is_none() && !anchor.is_empty();
+        // (box, side, its route if placement already routed it)
+        let mut chosen: Option<(Rect, Option<Side>, Option<route::Path>)> = None;
         if !narrow && has_box {
+            if !matches!(t, Target::Screen(_)) {
+                taken.ensure_sums(grid);
+            }
+            if routed {
+                taken.ensure_costs(grid);
+            }
             chosen = match (&t, dock) {
                 (Target::Screen(pos), _) => {
-                    screen_box(*pos, size, area, grid, taken, agent).map(|r| (r, None))
+                    screen_box(*pos, size, area, grid, taken, agent).map(|r| (r, None, None))
                 }
                 (_, Some((chip, side))) => place(size, &[chip], &[side], grid, taken, agent, false)
-                    .map(|(r, s)| (r, Some(s))),
+                    .map(|(r, s, _)| (r, Some(s), None)),
                 (Target::At(_), None) => place(
                     size,
                     &anchor,
@@ -291,12 +301,12 @@ fn plan_one(
                     agent,
                     layer.arrow,
                 )
-                .map(|(r, s)| (r, Some(s))),
+                .map(|(r, s, path)| (r, Some(s), path)),
                 _ => None,
             };
         }
         match chosen {
-            Some((r, side)) => {
+            Some((r, side, path)) => {
                 p.rect = Some(r);
                 p.mode = Some(Mode::Box);
                 p.side = side;
@@ -304,17 +314,15 @@ fn plan_one(
                     rect: r,
                     id: layer.id.clone(),
                 });
-                taken.panels.push(r);
-                if let (true, None, Some(side), false) =
-                    (layer.arrow, dock, side, anchor.is_empty())
-                {
-                    let a = nearest(&anchor, &r);
-                    let field = RouteField {
-                        grid,
-                        taken,
-                        blocked: blockers(grid, taken, &anchor, None),
-                    };
-                    p.route = route::route(&field, r, side, a, area).map(|path| Route {
+                if let (true, Some(side)) = (routed, side) {
+                    // The route placement found for this box, else (the sliver rule moved
+                    // it) a fresh one.
+                    let path = path.or_else(|| {
+                        let field = CostField::new(grid, taken, &anchor, r);
+                        route::route(&field, r, side, nearest(&anchor, &r), area, u32::MAX, None)
+                            .path()
+                    });
+                    p.route = path.map(|path| Route {
                         junction: path.junction,
                         steps: path
                             .cells
@@ -323,6 +331,7 @@ fn plan_one(
                             .collect(),
                     });
                 }
+                taken.panel(r, grid);
             }
             None if has_box => {
                 let r = strip_rect(&anchor, off.as_ref(), grid, taken);
@@ -332,7 +341,7 @@ fn plan_one(
                     rect: r,
                     id: layer.id.clone(),
                 });
-                taken.panels.push(r);
+                taken.panel(r, grid);
             }
             None => {}
         }
@@ -352,18 +361,10 @@ fn plan_one(
         }
         // The edge chip is never dimmed.
         holes.extend(p.chip);
-        if taken.dimmed.is_empty() {
-            taken.dimmed = vec![false; grid.width as usize * grid.height as usize];
+        taken.dim(area, &holes, grid);
+        for h in &holes {
+            taken.hole(*h, grid);
         }
-        for y in area.y..area.bottom() {
-            for x in area.x..area.right() {
-                if !holes.iter().any(|h| h.contains(x, y)) {
-                    taken.dimmed[y as usize * grid.width as usize + x as usize] = true;
-                }
-            }
-        }
-        taken.any_dim = true;
-        taken.holes.extend(holes.iter().copied());
         out.spots.push(Spot {
             layer: layer.id.clone(),
             area,
@@ -553,35 +554,145 @@ pub const NARROW_ROWS: u16 = 12;
 /// them, and the box reaches the edge.
 const SLIVER: u16 = 8;
 
-/// What the layout has claimed so far, across layers.
+/// What the layout has claimed so far, across layers, and the tables built from it once per
+/// plan (kept in step as layers claim more): box scores and routing costs.
 struct Taken {
     panels: Vec<Rect>,
     holes: Vec<Rect>,
     dimmed: Vec<bool>,
     any_dim: bool,
+    /// Text and dimmed cells, for scoring boxes; rebuilt when a spotlight dims.
+    sums: Option<Sums>,
+    /// What entering each cell costs an arrow ([`NO_WAY`]: it can't), before this layer's
+    /// anchor and box block their cells. Built on the first arrow.
+    costs: Option<Vec<u32>>,
+}
+
+/// A cell no arrow may enter.
+const NO_WAY: u32 = u32::MAX;
+
+impl Taken {
+    fn ensure_sums(&mut self, grid: &Grid) {
+        if self.sums.is_none() {
+            self.sums = Some(Sums::new(grid, self));
+        }
+    }
+
+    fn sums(&self) -> &Sums {
+        self.sums.as_ref().expect("sums built before placing")
+    }
+
+    /// Builds the routing costs once: outside the area, wide graphemes and claimed cells
+    /// block; a text cell costs [`route::TEXT`], a blank one between words [`route::GAP`], a
+    /// dimmed blank one [`route::DIMMED`], any other blank one [`route::BLANK`].
+    fn ensure_costs(&mut self, grid: &Grid) {
+        if self.costs.is_some() {
+            return;
+        }
+        let w = grid.width as usize;
+        let mut costs = vec![NO_WAY; w * grid.height as usize];
+        let area = grid.area;
+        let blank = |k: Option<&CellKind>| k.is_none_or(|k| *k == CellKind::Blank);
+        for y in area.y as usize..area.bottom() as usize {
+            let row = &grid.kinds[y * w..(y + 1) * w];
+            for x in area.x as usize..area.right() as usize {
+                let i = y * w + x;
+                costs[i] = match row[x] {
+                    CellKind::Wide | CellKind::WideTail => NO_WAY,
+                    CellKind::Text => route::TEXT,
+                    CellKind::Blank
+                        if x > 0 && !blank(row.get(x - 1)) || !blank(row.get(x + 1)) =>
+                    {
+                        route::GAP
+                    }
+                    CellKind::Blank if self.any_dim && self.dimmed[i] => route::DIMMED,
+                    CellKind::Blank => route::BLANK,
+                };
+            }
+        }
+        for r in self.panels.iter().chain(&self.holes).chain(&grid.protect) {
+            block(&mut costs, grid, r);
+        }
+        self.costs = Some(costs);
+    }
+
+    /// Claims a box, strip or chip.
+    fn panel(&mut self, r: Rect, grid: &Grid) {
+        self.panels.push(r);
+        if let Some(c) = &mut self.costs {
+            block(c, grid, &r);
+        }
+    }
+
+    /// Claims a spotlight hole.
+    fn hole(&mut self, r: Rect, grid: &Grid) {
+        self.holes.push(r);
+        if let Some(c) = &mut self.costs {
+            block(c, grid, &r);
+        }
+    }
+
+    /// Dims `area` outside `holes` (dims don't compound).
+    fn dim(&mut self, area: Rect, holes: &[Rect], grid: &Grid) {
+        let w = grid.width as usize;
+        if self.dimmed.is_empty() {
+            self.dimmed = vec![false; w * grid.height as usize];
+        }
+        for y in area.y..area.bottom() {
+            for x in area.x..area.right() {
+                if !holes.iter().any(|h| h.contains(x, y)) {
+                    let i = y as usize * w + x as usize;
+                    self.dimmed[i] = true;
+                    if let Some(c) = &mut self.costs
+                        && c[i] == route::BLANK
+                    {
+                        c[i] = route::DIMMED;
+                    }
+                }
+            }
+        }
+        self.any_dim = true;
+        self.sums = None;
+    }
+}
+
+/// Marks a rect's cells as ones no arrow may enter.
+fn block(costs: &mut [u32], grid: &Grid, r: &Rect) {
+    let r = r.intersection(&Rect::new(0, 0, grid.width, grid.height));
+    for y in r.y..r.bottom() {
+        let row = y as usize * grid.width as usize;
+        costs[row + r.x as usize..row + r.right() as usize].fill(NO_WAY);
+    }
 }
 
 /// Summed-area tables of text cells and dimmed cells, for scoring a box in O(1).
 struct Sums {
     w: usize,
     text: Vec<u32>,
-    dim: Vec<u32>,
+    /// `None` while nothing is dimmed.
+    dim: Option<Vec<u32>>,
 }
 
 impl Sums {
     fn new(grid: &Grid, taken: &Taken) -> Sums {
-        let (w, h) = (grid.width as usize + 1, grid.height as usize + 1);
-        let mut text = vec![0u32; w * h];
-        let mut dim = vec![0u32; w * h];
-        for y in 0..grid.height as usize {
-            for x in 0..grid.width as usize {
-                let t = u32::from(grid.kind(x as u16, y as u16) != CellKind::Blank);
-                let d = u32::from(taken.any_dim && taken.dimmed[y * grid.width as usize + x]);
-                let i = (y + 1) * w + x + 1;
-                text[i] = t + text[i - 1] + text[i - w] - text[i - w - 1];
-                dim[i] = d + dim[i - 1] + dim[i - w] - dim[i - w - 1];
+        let gw = grid.width as usize;
+        let (w, h) = (gw + 1, grid.height as usize + 1);
+        // Each row's running count plus the row above's table.
+        let table = |cell: &dyn Fn(usize) -> bool| {
+            let mut t = vec![0u32; w * h];
+            for y in 0..h - 1 {
+                let mut run = 0u32;
+                let (above, row) = t.split_at_mut((y + 1) * w);
+                let above = &above[y * w..];
+                for x in 0..gw {
+                    run += u32::from(cell(y * gw + x));
+                    row[x + 1] = run + above[x + 1];
+                }
             }
-        }
+            t
+        };
+        let text = table(&|i| grid.kinds[i] != CellKind::Blank);
+        let dim = taken.any_dim.then(|| table(&|i| taken.dimmed[i]));
         Sums { w, text, dim }
     }
 
@@ -600,39 +711,42 @@ impl Sums {
     }
 
     fn dim(&self, r: &Rect) -> u32 {
-        Self::sum(&self.dim, self.w, r)
+        self.dim.as_ref().map_or(0, |d| Self::sum(d, self.w, r))
     }
 }
 
-/// The router's view of the screen for one layer.
-struct RouteField<'a> {
-    grid: &'a Grid,
-    taken: &'a Taken,
-    blocked: Vec<Rect>,
+/// The router's view of the screen for one layer and one candidate box: the plan's costs,
+/// with the anchor's cells and the box blocked.
+struct CostField<'a> {
+    costs: &'a [u32],
+    width: u16,
+    height: u16,
+    anchor: &'a [Rect],
+    own: Rect,
 }
 
-impl Field for RouteField<'_> {
+impl<'a> CostField<'a> {
+    fn new(grid: &Grid, taken: &'a Taken, anchor: &'a [Rect], own: Rect) -> CostField<'a> {
+        CostField {
+            costs: taken.costs.as_deref().expect("costs built before routing"),
+            width: grid.width,
+            height: grid.height,
+            anchor,
+            own,
+        }
+    }
+}
+
+impl Field for CostField<'_> {
     fn cost(&self, x: u16, y: u16) -> Option<u32> {
-        if !self.grid.area.contains(x, y) || self.blocked.iter().any(|r| r.contains(x, y)) {
+        if x >= self.width || y >= self.height {
             return None;
         }
-        match self.grid.kind(x, y) {
-            CellKind::Wide | CellKind::WideTail => None,
-            CellKind::Text => Some(route::TEXT),
-            CellKind::Blank
-                if x > 0 && self.grid.kind(x - 1, y) != CellKind::Blank
-                    || self.grid.kind(x + 1, y) != CellKind::Blank =>
-            {
-                Some(route::GAP)
-            }
-            CellKind::Blank
-                if self.taken.any_dim
-                    && self.taken.dimmed[y as usize * self.grid.width as usize + x as usize] =>
-            {
-                Some(route::DIMMED)
-            }
-            CellKind::Blank => Some(route::BLANK),
+        let c = self.costs[y as usize * self.width as usize + x as usize];
+        if c == NO_WAY || self.own.contains(x, y) || self.anchor.iter().any(|r| r.contains(x, y)) {
+            return None;
         }
+        Some(c)
     }
 }
 
@@ -727,7 +841,8 @@ fn allowed(r: &Rect, grid: &Grid, taken: &Taken, anchor: &[Rect], agent: bool) -
 /// Picks a box for a callout of `size` beside `anchor` (design §2.4): candidates on each side
 /// in order, shifted to fit, scored by the text they cover, dimmed cells, the caret and the
 /// distance (and, with an arrow, the arrow's route); ties go to the earlier side. Then the
-/// sliver rule. `None` if nothing fits.
+/// sliver rule. `None` if nothing fits. With an arrow, also the chosen box's route when the
+/// sliver rule left the box where it was routed.
 #[allow(clippy::too_many_arguments)]
 fn place(
     size: (u16, u16),
@@ -737,14 +852,14 @@ fn place(
     taken: &Taken,
     agent: bool,
     arrow: bool,
-) -> Option<(Rect, Side)> {
+) -> Option<(Rect, Side, Option<route::Path>)> {
     let area = grid.area;
     let (bw, bh) = size;
     if bw > area.w || bh > area.h || anchor.is_empty() {
         return None;
     }
     let a = Rect::bounds(anchor);
-    let sums = Sums::new(grid, taken);
+    let sums = taken.sums();
     let clamp_x = |x: i32| x.clamp(area.x as i32, (area.right() - bw) as i32) as u16;
     let clamp_y = |y: i32| y.clamp(area.y as i32, (area.bottom() - bh) as i32) as u16;
     // Where along the side: the junction over the anchor's middle, or the box at either edge.
@@ -860,48 +975,103 @@ fn place(
     cands.sort_by_key(|c| (c.0, c.1, c.2));
     if arrow {
         // The best few by box alone, re-scored with the arrow they'd need: a box whose arrow
-        // must cross words loses to one with a blank way.
-        let field = RouteField {
-            grid,
-            taken,
-            blocked: blockers(grid, taken, anchor, None),
-        };
-        let mut best: Option<(u32, usize, usize, Rect, Side)> = None;
+        // must cross words loses to one with a blank way. The winner is the least (score,
+        // side, order) of these, whatever order they're routed in, so they go cheapest bound
+        // first and a box whose bound can't win isn't routed at all.
+        // The least each arrow can cost, from one search back from the anchor per (side,
+        // anchor rect), over the cells any of their routes may use.
+        let open = CostField::new(grid, taken, anchor, Rect::default());
+        let mut goals: Vec<(Side, Rect, route::ToGoal)> = Vec::new();
         for c in cands.iter().take(ROUTED) {
-            // A route never costs less than nothing: a box already worse needs no route.
-            if best.as_ref().is_some_and(|b| c.5 >= b.0) {
+            let near = nearest(anchor, &c.3);
+            if goals.iter().any(|g| g.0 == c.4 && g.1 == near) {
                 continue;
             }
+            let region = cands
+                .iter()
+                .take(ROUTED)
+                .filter(|o| o.4 == c.4 && nearest(anchor, &o.3) == near)
+                .map(|o| route::reach(o.3, o.4, near, area))
+                .fold(
+                    Rect::default(),
+                    |r, o| if r.is_empty() { o } else { r.union(&o) },
+                );
+            goals.push((c.4, near, route::ToGoal::new(&open, c.4, near, region)));
+        }
+        let goal_of = |c: &(u32, usize, usize, Rect, Side, u32)| {
             let near = nearest(anchor, &c.3);
-            let mut f = RouteField {
-                grid,
-                taken,
-                blocked: field.blocked.clone(),
+            &goals
+                .iter()
+                .find(|g| g.0 == c.4 && g.1 == near)
+                .expect("a search per side")
+                .2
+        };
+        let mut few: Vec<(u32, &(u32, usize, usize, Rect, Side, u32))> = cands
+            .iter()
+            .take(ROUTED)
+            .map(|c| {
+                let field = CostField::new(grid, taken, anchor, c.3);
+                let near = nearest(anchor, &c.3);
+                let lb = goal_of(c)
+                    .bound(&field, c.3, c.4, near)
+                    .map_or(NO_ROUTE, |b| (b * 5).min(NO_ROUTE));
+                (c.5 + lb, c)
+            })
+            .collect();
+        few.sort_by_key(|(lb, c)| (*lb, c.1, c.2));
+        let mut best: Option<(u32, usize, usize, Rect, Side, Option<route::Path>)> = None;
+        for (lb, c) in few {
+            if best
+                .as_ref()
+                .is_some_and(|b| (lb, c.1, c.2) >= (b.0, b.1, b.2))
+            {
+                continue;
+            }
+            // A route that would lose costs more than the room left (and when even no way, at
+            // 600, would lose, the search can stop there).
+            let limit = match &best {
+                Some(b) if b.0 - c.5 < NO_ROUTE => (b.0 - c.5) / 5,
+                _ => u32::MAX,
             };
-            f.blocked.push(c.3);
+            let near = nearest(anchor, &c.3);
+            let field = CostField::new(grid, taken, anchor, c.3);
             // Crossing a word is worse than covering one: a box hides text, an arrow mangles it.
-            let rc = route::route(&f, c.3, c.4, near, area).map_or(600, |p| {
-                p.cost * 5
-                    + 300
-                        * p.cells
-                            .iter()
-                            .filter(|c| grid.kind(c.0, c.1) == CellKind::Text)
-                            .count() as u32
-            });
+            let (rc, path) =
+                match route::route(&field, c.3, c.4, near, area, limit, Some(goal_of(c))) {
+                    route::Routed::Over => continue,
+                    route::Routed::NoWay => (NO_ROUTE, None),
+                    route::Routed::Found(p) => (
+                        p.cost * 5
+                            + 300
+                                * p.cells
+                                    .iter()
+                                    .filter(|c| grid.kind(c.0, c.1) == CellKind::Text)
+                                    .count() as u32,
+                        Some(p),
+                    ),
+                };
             let s = c.5 + rc;
             if best
                 .as_ref()
                 .is_none_or(|b| (s, c.1, c.2) < (b.0, b.1, b.2))
             {
-                best = Some((s, c.1, c.2, c.3, c.4));
+                best = Some((s, c.1, c.2, c.3, c.4, path));
             }
         }
         let b = best?;
-        return Some((sliver(b.3, b.4, &sums, grid, taken, anchor, agent), b.4));
+        let r = sliver(b.3, b.4, sums, grid, taken, anchor, agent);
+        return Some((r, b.4, b.5.filter(|_| r == b.3)));
     }
     let c = cands[0];
-    Some((sliver(c.3, c.4, &sums, grid, taken, anchor, agent), c.4))
+    Some((
+        sliver(c.3, c.4, sums, grid, taken, anchor, agent),
+        c.4,
+        None,
+    ))
 }
+
+/// What a box with no route for its arrow pays.
+const NO_ROUTE: u32 = 600;
 
 /// The sliver rule: a narrow gap with text between the box and the area's edge is closed by
 /// stretching the box to the edge, or else by moving it there.

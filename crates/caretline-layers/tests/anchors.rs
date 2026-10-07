@@ -5,7 +5,9 @@
 mod common;
 
 use caretline::helix::Selection;
-use caretline::{ExtChange, Msg, OutlineConfig, State, Viewport, update, update_with_changes, view};
+use caretline::{
+    ExtChange, Msg, OutlineConfig, State, Viewport, update, update_with_changes, view,
+};
 use caretline_layers::*;
 use common::*;
 
@@ -214,7 +216,14 @@ fn replace(from: usize, to: usize, text: &str) -> Msg {
 
 #[test]
 fn text_anchors_follow_edits_and_a_deleted_range_falls_to_the_next() {
-    let mut s = State::new("alpha beta gamma", None, Viewport { width: 80, height: 24 });
+    let mut s = State::new(
+        "alpha beta gamma",
+        None,
+        Viewport {
+            width: 80,
+            height: 24,
+        },
+    );
     let mut layers = Layers::default();
     let mut layer = Layer::new(Anchor::Text { from: 6, to: 10 }).with_content(hint("t", "b"));
     layer.anchor.push(Anchor::Block(3));
@@ -243,11 +252,21 @@ fn text_anchors_follow_edits_and_a_deleted_range_falls_to_the_next() {
     );
     // Deleting its text (here, a change from elsewhere) collapses it: the block anchor takes
     // over.
-    assert!(map_anchors(&mut layers, &edit(&mut s, 0, replace(11, 15, ""))));
+    assert!(map_anchors(
+        &mut layers,
+        &edit(&mut s, 0, replace(11, 15, ""))
+    ));
     assert_eq!(s.doc.text.to_string(), "XX alpha YYZZ gamma");
     assert_eq!(layers.layers[0].anchor, vec![Anchor::Block(3)]);
 
-    let mut s = State::new("ab cd", None, Viewport { width: 80, height: 24 });
+    let mut s = State::new(
+        "ab cd",
+        None,
+        Viewport {
+            width: 80,
+            height: 24,
+        },
+    );
     let mut layers = Layers::default();
     push(
         &mut layers,

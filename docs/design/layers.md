@@ -275,6 +275,10 @@ In-frame (7.1, mode A) the crate's frame pass runs these steps and then calls ea
 `render` at 100×40 costs 127 µs today. A bench guards the crate's numbers and the CLI's renderers
 together (9.2).
 
+As built (12): placement measures 4 µs for a box, 27 µs with an arrow and 44 µs for a
+spotlight with an arrow. A host skips even that when nothing changed by keeping the last plan
+with its inputs (12, "Unchanged inputs").
+
 ### 3.6 Pixel plumbing (feature `kitty`)
 
 The target is Ghostty 1.3.1, the current stable release. Other terminals that answer kitty
@@ -1208,7 +1212,35 @@ the scope narrowed. Where it differs from the sections above:
   The third-bend penalty is added to the finished route, not searched.
 - **Ops** are protocol-neutral: `ops::parse` and `ops::reply` serve any host's JSON
   protocol; `layer.list` parses to a listing, not an op.
-- **Performance:** at 100×40, placing a hint box costs about 10 µs; with its arrow
-  about 90 µs, and a spotlight with an arrow about 150 µs (release build), over the 30 and
-  60 µs budgets. The routes for the candidate boxes dominate; a cost grid built once per
-  plan and reusing the chosen box's route are the next steps.
+- **Performance:** `plan` at 100×40, release build, `tests/bench.rs` with `BENCH_N=50000`:
+
+  | Case | Before | After | Budget |
+  |---|---|---|---|
+  | A hint box | 10 µs | 4.3 µs | |
+  | A hint with an arrow and a ring | 94 µs | 27 µs | 30 µs |
+  | A spotlight with an arrow | 154 µs | 44 µs | 60 µs |
+
+  How, with every golden and property test unchanged:
+  - The routing cost of every cell is built **once per plan**, on the first arrow, and kept in
+    step as layers claim boxes, chips and holes or dim cells; the box-scoring sums are built
+    once too and rebuilt only when a spotlight dims. A candidate box's field is that table
+    with its own box and the anchor blocked.
+  - Placement routes only what scoring needs. One search back from the anchor per side
+    (`ToGoal`, the least cost on from each cell, boxes and bends left out) gives every
+    candidate box a lower bound on its arrow; the candidates are routed cheapest bound first,
+    one whose bound can't beat the best so far isn't routed, and a route's search stops once
+    it can't win. The same table is the router's heuristic, so a route expands little more
+    than its own cells.
+  - The winning box's route is reused, not routed again (unless the sliver rule moved the
+    box).
+  - The router reads each corridor cell's cost once and queues by bucket (keys are small
+    integers), popping in the same order as before: least estimate, then first pushed.
+- **Unchanged inputs, unchanged plan.** `plan` is a pure function of the layers, what the
+  resolver answers, the grid and the measured sizes, and keeps no cache of its own. A host
+  that redraws often keeps the last plan with the inputs it came from and calls `plan` only
+  when one of them changed (an edit, a scroll, a resize, a layer op): the layers and grid
+  compare with `==`, and the resolver's answers are the frame's (a new frame, a new plan).
+- **Each message's changes come from the engine.** `caretline::update_with_changes`
+  (`update_doc_with_changes`, `Session::apply_with_changes`) returns the message's
+  `ChangeSet`; `observe` and `map_anchors` map text anchors through it. The stopgap that
+  diffed two texts (`changes_between`) is gone.
