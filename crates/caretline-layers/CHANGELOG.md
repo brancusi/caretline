@@ -80,10 +80,14 @@
   off-screen direction, else the first. A resolver that answered "off screen" no longer
   hides a later one that shows the anchor.
 - Placement with an arrow picks the least-scoring box of every candidate, not of the first
-  few that route: the result no longer depends on how a first guess ranked them. Every
-  golden plan is unchanged. At 100×40 (release, best of runs on a loaded machine, against
-  the previous build run alternately): a box with its arrow 36.9 µs (was 33.8), a
-  spotlight with an arrow 46.2 µs (was 55.1), a box alone 6.4 µs (was 5.3; four measures).
+  few that route: the result no longer depends on how a first guess ranked them. Boxes are
+  routed a side at a time, the best guess's side first; a side none of whose boxes could
+  win even with the cheapest arrow (one blank cell per cell of gap) gets no search at all,
+  and the search for a side covers only the boxes that could. Every golden plan is
+  unchanged. At 100×40 (release, `tests/bench.rs`, the least of ten runs of five rounds,
+  alternating with the previous build): a box with its arrow 26.7 µs (was 26.8), a
+  spotlight with an arrow 36.6 µs (was 42.7), a box alone 5.6 µs (was 4.2: four measures,
+  one per side, with the test host's measure).
 
 ### Fixed
 

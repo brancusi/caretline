@@ -1252,88 +1252,72 @@ impl Scored {
     }
 }
 
-/// Routes candidate boxes and returns the least by (no route, score, side, order), whatever
-/// order they come in: every box gets a lower bound on its arrow from one search back from
-/// the anchor per (side, anchor rect), over the cells any of that pair's routes may use, and
-/// they're routed cheapest bound first. A box whose bound can't win isn't routed, and a
-/// route's search stops once it can't win.
+/// Routes candidate boxes (sorted best first by box score and a guess at the arrow) and
+/// returns the least by (no route, score, side, order), whatever order they come in.
+///
+/// Boxes go by (side, anchor rect), the pair holding the best guess first. An arrow costs at
+/// least one blank cell per cell between its box and the anchor, so a box that couldn't beat
+/// the best so far even then is left out, and a pair with none left is skipped whole. For
+/// the rest, one search back from the anchor over the cells their routes may use gives each
+/// a closer bound (the search's cells cover each route's corridor, so it never
+/// overestimates); they're routed cheapest bound first, a box whose bound can't win isn't
+/// routed, and a route's search stops once it can't win.
 fn route_all(cands: &[Cand], anchor: &[Rect], grid: &Grid, taken: &Taken) -> Option<Scored> {
-    let near: Vec<Rect> = cands.iter().map(|c| nearest(anchor, &c.3)).collect();
-    let mut best: Option<Scored> = None;
-    let all: Vec<usize> = (0..cands.len()).collect();
-    route_group(&all, cands, &near, anchor, grid, taken, &mut best);
-    best
-}
-
-/// Whether a box whose arrow costs at least `lb` in all could still beat `best`.
-fn can_win(lb: u32, c: &Cand, best: &Option<Scored>) -> bool {
-    best.as_ref()
-        .is_none_or(|b| (false, lb, c.1, c.2) < b.key())
-}
-
-/// Routes the candidates `group` (indices into `cands`) into `best` ([`route_all`]).
-fn route_group(
-    group: &[usize],
-    cands: &[Cand],
-    near: &[Rect],
-    anchor: &[Rect],
-    grid: &Grid,
-    taken: &Taken,
-    best: &mut Option<Scored>,
-) {
-    if group.is_empty() {
-        return;
-    }
     let area = grid.area;
-    // (side, anchor rect, the region its routes may use), and each box's pair.
-    let mut keys: Vec<(Side, Rect, Rect)> = Vec::new();
-    let mut key: Vec<usize> = Vec::with_capacity(group.len());
-    for &i in group {
-        let c = &cands[i];
-        let reach = route::reach(c.3, c.4, near[i], area);
-        match keys.iter().position(|k| k.0 == c.4 && k.1 == near[i]) {
-            Some(k) => {
-                keys[k].2 = keys[k].2.union(&reach);
-                key.push(k);
-            }
-            None => {
-                key.push(keys.len());
-                keys.push((c.4, near[i], reach));
-            }
+    let near: Vec<Rect> = cands.iter().map(|c| nearest(anchor, &c.3)).collect();
+    // (side, anchor rect, the region its routes may use, its boxes), in order of first box.
+    // (side, anchor rect, its boxes), in order of their first box.
+    let mut pairs: Vec<(Side, Rect, Vec<usize>)> = Vec::new();
+    for (i, c) in cands.iter().enumerate() {
+        match pairs.iter_mut().find(|k| k.0 == c.4 && k.1 == near[i]) {
+            Some(k) => k.2.push(i),
+            None => pairs.push((c.4, near[i], vec![i])),
         }
     }
     let open = CostField::new(grid, taken, anchor, Rect::default());
-    let goals: Vec<route::ToGoal> = keys
-        .iter()
-        .map(|&(side, n, region)| route::ToGoal::new(&open, side, n, region))
-        .collect();
-    // A bound on each arrow's cost (at least one cell when the facing side is out of reach:
-    // the arrow may still end on another side).
-    let mut few: Vec<(u32, usize, usize)> = group
-        .iter()
-        .zip(&key)
-        .map(|(&i, &k)| {
-            let c = &cands[i];
-            let field = CostField::new(grid, taken, anchor, c.3);
-            let lb = goals[k].bound(&field, c.3, c.4, near[i]).unwrap_or(1) * 5;
-            (c.5 + lb, i, k)
-        })
-        .collect();
-    few.sort_by_key(|&(lb, i, _)| (lb, cands[i].1, cands[i].2));
-    for (lb, i, k) in few {
-        let c = &cands[i];
-        if !can_win(lb, c, best) {
+    let mut best: Option<Scored> = None;
+    for (side, n, boxes) in pairs {
+        let boxes: Vec<usize> = boxes
+            .into_iter()
+            .filter(|&i| {
+                let c = &cands[i];
+                can_win(c.5 + gap(&c.3, &n).max(1) * route::BLANK * 5, c, &best)
+            })
+            .collect();
+        if boxes.is_empty() {
             continue;
         }
-        // Against a box with a route, a route that would lose costs more than the room left.
-        let limit = match best.as_ref() {
-            Some(b) if !b.miss => b.score.saturating_sub(c.5) / 5,
-            _ => u32::MAX,
-        };
-        let field = CostField::new(grid, taken, anchor, c.3);
-        // Crossing a word is worse than covering one: a box hides text, an arrow mangles it.
-        let (miss, rc, path) =
-            match route::route(&field, c.3, c.4, near[i], area, limit, Some(&goals[k])) {
+        let region = boxes.iter().fold(Rect::default(), |r, &i| {
+            r.union(&route::reach(cands[i].3, side, n, area))
+        });
+        let goal = route::ToGoal::new(&open, side, n, region);
+        // At least one cell when the facing side is out of reach: the arrow may still end
+        // on another side.
+        let mut few: Vec<(u32, usize)> = boxes
+            .iter()
+            .map(|&i| {
+                let c = &cands[i];
+                let field = CostField::new(grid, taken, anchor, c.3);
+                (c.5 + goal.bound(&field, c.3, c.4, n).unwrap_or(1) * 5, i)
+            })
+            .collect();
+        few.sort_by_key(|&(lb, i)| (lb, cands[i].1, cands[i].2));
+        for (lb, i) in few {
+            let c = &cands[i];
+            if !can_win(lb, c, &best) {
+                continue;
+            }
+            // Against a box with a route, a route that would lose costs more than the room
+            // left.
+            let limit = match best.as_ref() {
+                Some(b) if !b.miss => b.score.saturating_sub(c.5) / 5,
+                _ => u32::MAX,
+            };
+            let field = CostField::new(grid, taken, anchor, c.3);
+            // Crossing a word is worse than covering one: a box hides text, an arrow mangles
+            // it.
+            let (miss, rc, path) = match route::route(&field, c.3, c.4, n, area, limit, Some(&goal))
+            {
                 route::Routed::Over => continue,
                 route::Routed::NoWay => (true, 0, None),
                 route::Routed::Found(p) => (
@@ -1347,19 +1331,27 @@ fn route_group(
                     Some(p),
                 ),
             };
-        let scored = Scored {
-            miss,
-            score: c.5 + rc,
-            si: c.1,
-            seq: c.2,
-            rect: c.3,
-            side: c.4,
-            path,
-        };
-        if best.as_ref().is_none_or(|b| scored.key() < b.key()) {
-            *best = Some(scored);
+            let scored = Scored {
+                miss,
+                score: c.5 + rc,
+                si: c.1,
+                seq: c.2,
+                rect: c.3,
+                side: c.4,
+                path,
+            };
+            if best.as_ref().is_none_or(|b| scored.key() < b.key()) {
+                best = Some(scored);
+            }
         }
     }
+    best
+}
+
+/// Whether a box whose arrow costs at least `lb` in all could still beat `best`.
+fn can_win(lb: u32, c: &Cand, best: &Option<Scored>) -> bool {
+    best.as_ref()
+        .is_none_or(|b| (false, lb, c.1, c.2) < b.key())
 }
 
 /// The sliver rule: a narrow gap with text between the box and the area's edge is closed by
