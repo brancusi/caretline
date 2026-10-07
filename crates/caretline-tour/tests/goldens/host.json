@@ -1,0 +1,107 @@
+{
+  "id": "host.intro",
+  "version": 2,
+  "title": "Intro",
+  "kind": "hint",
+  "step": [
+    {
+      "id": "one",
+      "layers": [
+        {
+          "id": "one/0",
+          "anchor": [
+            {
+              "host": {
+                "kind": "panel",
+                "key": "left"
+              }
+            }
+          ],
+          "data": {
+            "text": "The list."
+          },
+          "place": {
+            "max_width": 40,
+            "arrow": true
+          }
+        }
+      ],
+      "narration": {
+        "text": "Start here."
+      },
+      "host": {
+        "open": [
+          "left"
+        ]
+      }
+    },
+    {
+      "id": "two",
+      "layers": [
+        {
+          "id": "two/0",
+          "anchor": [
+            {
+              "text": {
+                "from": 4,
+                "to": 9
+              },
+              "in": "main"
+            },
+            {
+              "screen": "center"
+            }
+          ],
+          "data": {
+            "text": "a"
+          }
+        },
+        {
+          "id": "r",
+          "anchor": [
+            {
+              "block": 7,
+              "in": "side"
+            }
+          ],
+          "kind": "host.callout",
+          "data": {
+            "n": 1
+          },
+          "place": {
+            "sides": [
+              "left"
+            ]
+          },
+          "capture": true
+        }
+      ],
+      "narration": {
+        "title": "Two",
+        "text": "Both panels."
+      },
+      "host": {
+        "open": [
+          "left",
+          "right"
+        ]
+      },
+      "next": [
+        {
+          "if": {
+            "state": {
+              "key": "mode",
+              "match": {
+                "wide": true
+              }
+            }
+          },
+          "goto": "one"
+        },
+        {
+          "goto": "end"
+        }
+      ]
+    }
+  ]
+}

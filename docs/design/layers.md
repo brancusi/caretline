@@ -1,6 +1,6 @@
 # Design: the layer system
 
-Status: design; steps 1a and 1b built (section 12). Covers `caretline-layers` (where things go over a caretline
+Status: design; steps 1a and 1b, and `caretline-tour`, built (section 12). Covers `caretline-layers` (where things go over a caretline
 screen, and for how long) and `caretline-tour` (walkthroughs), the few generic hooks the engine
 needs for them, the kitty graphics plumbing for Ghostty, and the phases. How a layer looks is not
 in any caretline crate: hosts draw.
@@ -1485,3 +1485,56 @@ After 1b, for hosts that show one document in several views. Where it differs fr
   validates the requests `parse` accepts (and fails the ones it refuses), real replies, and
   the protocol examples in 7.4 against it with a small validator for the keywords it uses
   (no new dependency).
+
+### 12.4 As built: `caretline-tour`
+
+The walkthrough crate, built before the engine hooks (E1–E6), so a host keeps the state
+itself. It reads the format of 6.1 (`{id, version, title, kind, step[]}`; `layers` or the
+single-layer shorthand; `narration`; the opaque `host`). Where it differs from 6 and 8.3:
+
+- **No `install`, no `LayerSource`.** The host keeps a `TourState` in its own single state and
+  calls `apply(&mut state, op, now_ms)` and `observe(&mut state, &host, now_ms)`. Both return
+  effects in order: `Host { patch }`, `Layers { layers }` (replace the `guide` layers;
+  `replace_guide` does it), `Step { tour, step, at, of, narration }` and `Ended { tour, seen }`.
+  `apply` returns `Result<_, TourError>` (`invalid`, `not_found`, `not_running`, `no_back`);
+  `apply_with` lets the host answer branches and `skip_if` met by an op. The engine is a
+  feature (`caretline`, default), not a dependency.
+- **Predicates are the host's answers.** A `TourHost` says whether an action ran, a message
+  kind was applied, a host event happened, and gives its state by key; `caret_in`, `changed`,
+  `folded` and `selection` are asked of it too. With the feature, `Editor` answers those from a
+  caretline document, view, message, effects and `ChangeSet`, and passes the rest on.
+  `effect` and `host_effect` read as `event`; `ext` reads as `state` (`{key, present?,
+  match?}`); `count` goes with `msg`, `command` and `event`, and counts since the step began,
+  so `all = [{command = a}, {command = b}]` holds once both ran. A predicate's anchor name is
+  `"anchor"` (the first layer's) or a layer id.
+- **`find` is resolved once, by the host, before `tour.start`** (`Tour::resolve_finds`, and
+  `find_in` for a caretline document), not by the reducer on entering a step: the started tour
+  and its trace hold stable anchors. A `find` never resolved is left out of its layer's
+  fallbacks; `check` warns of a `find` with no `in`.
+- **Placement fields are the layer's.** `place` is `{sides, max_width, arrow, ring, spotlight,
+  hide_off_screen}` (`max_w` and `connector` are read as `max_width` and `arrow`; `ring` and
+  `spotlight` take `true` or their object) or a list of sides. A screen position is the
+  `{screen}` anchor.
+- **`at` and `of`** are added only to data of kinds other than `hint`, whose data stays
+  `{title?, text}`.
+- **Seen-state** is `TourState.seen` (`{version, end: finished | stopped}`), and an end emits
+  `Ended` for the host to persist (not `Effect::Host { "tour.seen" }`). `TourState::offer` is
+  the 6.3 policy for a host's prompt; an explicit start is never refused for it.
+- **Moving.** Going forward (start, restart, `next`, `advance`) follows `next` branches and
+  passes over steps whose `skip_if` holds; `to` and `back` enter their step exactly. `back`
+  returns to the step left last (skipped steps aren't in the history). A nudge is given once
+  per visit.
+- **Ops.** `tour.start {tour}` takes the whole tour or the id of one in the host's library
+  (`id` is the host's request id); `tour.step {to: id | "next" | "back"}`, `tour.restart`,
+  `tour.stop`, `tour.list`, and `ops::schema()`. Step ids `next`, `back` and `end` are
+  reserved.
+- **Checking at several sizes.** `plan_steps(&tour, sizes, &renderers, scene)` plans every
+  step with the host's scene per size (its grid and anchor resolver), and reports anchors
+  found nowhere, kinds with no renderer, arrows with no way, anchors off screen and `find`s
+  never resolved.
+- **Approximations in `Editor`.** A block runs from its mark to the next. A started tour's
+  text anchors aren't mapped through edits (the pushed layers are, by `caretline-layers`'
+  `observe`); block anchors need nothing.
+- **Still to come** with the engine hooks: `ext["tour"]` in the view (E1), `Msg::Ext` and an
+  ext reducer so a trace records tour ops (E2), the host catalog for `command` (E5;
+  `Editor` matches the engine's catalog), capture routing, and `caretline demo guide`.

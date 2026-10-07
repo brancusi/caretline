@@ -1,0 +1,157 @@
+{
+  "id": "example.basics",
+  "version": 1,
+  "title": "A table and an editor",
+  "kind": "hint",
+  "step": [
+    {
+      "id": "welcome",
+      "narration": {
+        "title": "Welcome",
+        "text": "On the left, a table of rows; on the right, the row you open, as text."
+      },
+      "host": {
+        "focus": "table",
+        "panels": {
+          "left": "table",
+          "right": "editor"
+        }
+      }
+    },
+    {
+      "id": "rows",
+      "layers": [
+        {
+          "id": "rows/0",
+          "anchor": [
+            {
+              "host": {
+                "kind": "row",
+                "key": "first"
+              }
+            }
+          ],
+          "data": {
+            "text": "Press Enter to open it.",
+            "title": "A row"
+          },
+          "place": {
+            "sides": [
+              "right",
+              "below"
+            ],
+            "arrow": true,
+            "ring": {}
+          }
+        }
+      ],
+      "narration": {
+        "title": "Rows",
+        "text": "Each row is one record. Move with the arrow keys; Enter opens it."
+      },
+      "host": {
+        "focus": "table",
+        "select": "first"
+      },
+      "advance": {
+        "any": [
+          {
+            "command": "row.open"
+          },
+          {
+            "event": "row.opened"
+          }
+        ]
+      }
+    },
+    {
+      "id": "edit",
+      "layers": [
+        {
+          "id": "edit/0",
+          "anchor": [
+            {
+              "find": "## Summary",
+              "in": "main"
+            }
+          ],
+          "data": {
+            "text": "Type here…"
+          },
+          "place": {
+            "arrow": true
+          }
+        },
+        {
+          "id": "outline-entry",
+          "anchor": [
+            {
+              "find": "Summary",
+              "in": "outline"
+            },
+            {
+              "screen": "top"
+            }
+          ],
+          "data": {
+            "text": "…and the outline shows the same heading."
+          }
+        }
+      ],
+      "narration": {
+        "title": "Two views, one text",
+        "text": "The outline follows the text you edit."
+      },
+      "host": {
+        "focus": "editor",
+        "panels": {
+          "right": "editor"
+        }
+      },
+      "advance": {
+        "msg": "insert_text",
+        "count": 5
+      },
+      "nudge": {
+        "after_ms": 8000,
+        "data": {
+          "text": "Type a few letters: the outline keeps up."
+        }
+      }
+    },
+    {
+      "id": "finish",
+      "layers": [
+        {
+          "id": "finish/0",
+          "anchor": [
+            {
+              "screen": "center"
+            }
+          ],
+          "data": {
+            "text": "Open the walkthrough again from the help menu.",
+            "title": "That's all"
+          },
+          "capture": true
+        }
+      ],
+      "host": {
+        "focus": "table"
+      },
+      "next": [
+        {
+          "if": {
+            "state": {
+              "key": "again"
+            }
+          },
+          "goto": "rows"
+        },
+        {
+          "goto": "end"
+        }
+      ]
+    }
+  ]
+}
