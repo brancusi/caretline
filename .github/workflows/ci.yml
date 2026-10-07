@@ -69,8 +69,17 @@ jobs:
             echo "caretline-layers must not depend on a host, terminal or async crate" >&2; exit 1
           fi
 
+      - name: caretline-layers with the kitty feature is still pure (no terminal, async or raster crate)
+        run: |
+          deps="$(cargo tree -p caretline-layers --features kitty --prefix none -e normal --locked)"
+          if echo "$deps" | grep -E '^(thc|ratatui|crossterm|termion|termwiz|tokio|tiny-skia|libc) '; then
+            echo "caretline-layers (kitty) must not depend on a host, terminal, async or raster crate" >&2; exit 1
+          fi
+
       - name: caretline-layers without the caretline feature
-        run: cargo clippy -p caretline-layers --no-default-features --all-targets --locked
+        run: |
+          cargo clippy -p caretline-layers --no-default-features --all-targets --locked
+          cargo clippy -p caretline-layers --no-default-features --features kitty --all-targets --locked
 
       - name: Format (report only until the one-time reformat lands)
         continue-on-error: true

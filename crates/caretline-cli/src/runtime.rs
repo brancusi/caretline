@@ -174,6 +174,35 @@ fn perform(effect: &Effect, quit: &mut bool) -> Option<Msg> {
     }
 }
 
+fn no_color() -> bool {
+    static NO_COLOR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *NO_COLOR.get_or_init(|| std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()))
+}
+
+/// The style of a cell's role: built-in roles, and the layer roles the CLI's renderers use
+/// (crate::layers). Other named roles draw plain.
+fn style_in(frame: &Frame, role: Role) -> Style {
+    use crate::layers::{ACCENT, INK, PANEL};
+    let Role::Named(_) = role else { return style(role) };
+    let rgb = |c: (u8, u8, u8)| Color::Rgb(c.0, c.1, c.2);
+    let plain = no_color();
+    match frame.role_name(role) {
+        "layer.callout" if !plain => Style::default().fg(rgb(INK)).bg(rgb(PANEL)),
+        "layer.border" | "layer.arrow" if plain => Style::default().add_modifier(Modifier::BOLD),
+        "layer.border" => Style::default().fg(rgb(ACCENT)).bg(rgb(PANEL)),
+        "layer.arrow" => Style::default().fg(rgb(ACCENT)).add_modifier(Modifier::BOLD),
+        "layer.title" if plain => Style::default().add_modifier(Modifier::BOLD),
+        "layer.title" => Style::default().fg(rgb(ACCENT)).bg(rgb(PANEL)).add_modifier(Modifier::BOLD),
+        "layer.title.px" if plain => Style::default().add_modifier(Modifier::BOLD),
+        "layer.title.px" => Style::default().fg(rgb(ACCENT)).add_modifier(Modifier::BOLD),
+        "layer.ring" if plain => Style::default().add_modifier(Modifier::UNDERLINED),
+        "layer.ring" => Style::default().bg(Color::Rgb(0x2c, 0x3a, 0x5c)),
+        "layer.chip" if plain => Style::default().add_modifier(Modifier::REVERSED),
+        "layer.chip" => Style::default().fg(rgb(ACCENT)).bg(Color::Rgb(0x33, 0x40, 0x5c)),
+        _ => Style::default(),
+    }
+}
+
 fn style(role: Role) -> Style {
     match role {
         Role::Text => Style::default(),
@@ -259,6 +288,87 @@ pub trait Demo {
     fn generation(&self) -> u64 {
         0
     }
+    /// Whether the demo draws layers that may use pixels: the runtime then reads the
+    /// terminal's input itself (so replies become `Input::Reply`, not keys) and probes it at
+    /// startup.
+    fn wants_pixels(&self) -> bool {
+        false
+    }
+    /// Draws over the frame about to be painted (layers). `gfx` says whether pixels are on.
+    fn decorate(&mut self, _hub: &Hub, _frame: &mut Frame, _gfx: &Gfx) -> Decor {
+        Decor::default()
+    }
+    /// Bytes that take down whatever the demo put on the terminal outside the cells (images),
+    /// written before the overlay or exit.
+    fn hide(&mut self) -> Vec<u8> {
+        Vec::new()
+    }
+}
+
+/// What the probe found: pixels on (the cell size in device pixels) or not, and why.
+///
+/// The cell size lives here, in the runtime, for now: it comes from the terminal, not from a
+/// message. Phase 1c makes it one (`Msg::Resize { cell_px }`, E6), so pixel output replays.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Gfx {
+    pub cell_px: Option<caretline_layers::kitty::CellPx>,
+    /// What XTVERSION said.
+    pub terminal: Option<String>,
+    /// Why pixels are on or off, for the status bar.
+    pub why: String,
+    /// Not over SSH: `t=t` temporary files may be used.
+    pub local: bool,
+}
+
+/// What a demo adds to a painted frame.
+#[derive(Debug, Clone, Default)]
+pub struct Decor {
+    /// Cells to dim (row by row; empty for none).
+    pub dim: Vec<bool>,
+    /// Bytes to write after the cells, inside the same synchronized update (kitty graphics).
+    pub bytes: Vec<u8>,
+}
+
+/// How layers draw: `CARETLINE_LAYERS=auto|pixels|cells` (default auto).
+fn layers_mode() -> String {
+    std::env::var("CARETLINE_LAYERS").unwrap_or_default().to_ascii_lowercase()
+}
+
+/// Probes the terminal for pixels: the graphics query, XTVERSION and the cell size, fenced by
+/// DA1, waiting at most 200 ms. Pixels are on when the query says OK, the cell size came
+/// back, and the terminal is Ghostty or kitty (or `CARETLINE_LAYERS=pixels`).
+fn probe_gfx(parser: &mut crate::rawin::Parser) -> Gfx {
+    use caretline_layers::probe::Probe;
+    let mode = layers_mode();
+    let local = std::env::var_os("SSH_CONNECTION").is_none() && std::env::var_os("SSH_TTY").is_none();
+    let off = |why: &str| Gfx { cell_px: None, terminal: None, why: why.to_string(), local };
+    if mode == "cells" {
+        return off("CARETLINE_LAYERS=cells");
+    }
+    if mode != "pixels" && (std::env::var_os("TMUX").is_some() || std::env::var_os("STY").is_some()) {
+        return off("inside a multiplexer");
+    }
+    let replies = crate::rawin::probe(parser, &mut io::stdout(), Duration::from_millis(200));
+    let mut p = Probe::default();
+    for r in &replies {
+        p.add(r);
+    }
+    let terminal = p.version.clone();
+    let name = p.terminal().unwrap_or_default();
+    let trusted = name == "ghostty" || name == "kitty" || mode == "pixels";
+    let why = if !p.fenced {
+        "no answer from the terminal".to_string()
+    } else if p.graphics != Some(true) {
+        "no kitty graphics".to_string()
+    } else if p.cell.is_none() {
+        "no cell size".to_string()
+    } else if !trusted {
+        format!("{} untested (CARETLINE_LAYERS=pixels)", if name.is_empty() { "terminal" } else { &name })
+    } else {
+        terminal.clone().unwrap_or_else(|| "pixels".into())
+    };
+    let on = p.fenced && p.graphics_ok() && trusted;
+    Gfx { cell_px: if on { p.cell } else { None }, terminal, why, local }
 }
 
 /// Applies messages from a demo, performing their effects (a save, a quit).
@@ -339,7 +449,12 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
 
     let mouse = opts.mouse;
     enable_raw_mode().map_err(|e| format!("terminal: {e}"))?;
-    let kitty = supports_keyboard_enhancement().unwrap_or(false);
+    // A demo with layers reads input itself and probes for pixels. It leaves the keyboard
+    // protocol alone: crossterm's query would read stdin from under the raw reader.
+    let raw = opts.demo.as_ref().is_some_and(|d| d.wants_pixels());
+    let mut parser = crate::rawin::Parser::default();
+    let gfx = if raw { probe_gfx(&mut parser) } else { Gfx::default() };
+    let kitty = !raw && supports_keyboard_enhancement().unwrap_or(false);
     let mut out = io::stdout();
     let _ = execute!(out, EnterAlternateScreen, EnableBracketedPaste, SetCursorStyle::SteadyBar);
     if mouse {
@@ -359,20 +474,24 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
 
     // Terminal events join socket requests on one queue: one order, one trace.
     let term_tx = tx.clone();
-    std::thread::spawn(move || {
-        while let Ok(ev) = event::read() {
-            if term_tx.send(Input::Terminal(ev)).is_err() {
-                break;
+    if raw {
+        crate::rawin::spawn(parser, term_tx);
+    } else {
+        std::thread::spawn(move || {
+            while let Ok(ev) = event::read() {
+                if term_tx.send(Input::Terminal(ev)).is_err() {
+                    break;
+                }
             }
-        }
-    });
+        });
+    }
     drop(tx);
 
     let status = listening.as_ref().map(|l| format!("listening on {}", l.path.display()));
     let started = Instant::now();
     let mut stats = Stats::default();
     let pacing = Pacing { max_fps: opts.max_fps, frame_clock: opts.frame_clock };
-    let result = event_loop(&mut hub, rx, status, pacing, &mut stats, opts.demo);
+    let result = event_loop(&mut hub, rx, status, pacing, &mut stats, opts.demo, gfx);
     restore_terminal(kitty, mouse);
     if opts.stats {
         let secs = started.elapsed().as_secs_f64();
@@ -477,6 +596,7 @@ fn event_loop(
     pacing: Pacing,
     stats: &mut Stats,
     mut demo: Option<Box<dyn Demo>>,
+    mut gfx: Gfx,
 ) -> Result<(), String> {
     // One buffered write per repaint, wrapped in a synchronized update (below).
     let backend = CrosstermBackend::new(BufWriter::with_capacity(1 << 16, io::stdout()));
@@ -504,7 +624,15 @@ fn event_loop(
 
     // The keys overlay (F1 or Alt-?): its scroll offset while it is shown.
     let mut help: Option<usize> = None;
-    let process = |hub: &mut Hub, demo: &mut Option<Box<dyn Demo>>, term: &mut Option<(u16, u16)>, help: &mut Option<usize>, input: Input, quit: &mut bool| match input {
+    let process = |hub: &mut Hub, demo: &mut Option<Box<dyn Demo>>, term: &mut Option<(u16, u16)>, help: &mut Option<usize>, gfx: &mut Gfx, input: Input, quit: &mut bool| match input {
+        // A reply read mid-session: the cell size after a font change. Others (a late probe
+        // answer) change nothing.
+        Input::Reply(caretline_layers::probe::Reply::CellSize(c)) => {
+            if gfx.cell_px.is_some() && c.w > 0 && c.h > 0 {
+                gfx.cell_px = Some(c);
+            }
+        }
+        Input::Reply(_) => {}
         Input::Connect { client, out } => hub.connect(client, out),
         Input::Disconnect { client } => hub.disconnect(client),
         Input::Line { client, line } => {
@@ -546,6 +674,15 @@ fn event_loop(
             }
             if let Event::Resize(w, h) = ev {
                 *term = Some((w, h));
+                // The window's pixels disagree with cells × cell size: the font size changed.
+                // Ask again; the answer comes back as an `Input::Reply`.
+                if let (Some(c), Ok(ws)) = (gfx.cell_px, crossterm::terminal::window_size())
+                    && ws.width > 0
+                    && (ws.width as u32 != ws.columns as u32 * c.w as u32 || ws.height as u32 != ws.rows as u32 * c.h as u32)
+                {
+                    let mut out = io::stdout();
+                    let _ = out.write_all(caretline_layers::probe::cell_size_request()).and_then(|_| out.flush());
+                }
                 if demo.is_some() {
                     fit_views(hub, demo, *term, quit);
                     return;
@@ -582,7 +719,7 @@ fn event_loop(
     let gap = if pacing.max_fps > 0 { Duration::from_secs_f64(1.0 / pacing.max_fps as f64) } else { Duration::ZERO };
     let epoch = Instant::now();
     let slot = |t: Instant| if gap.is_zero() { 0 } else { (t - epoch).as_nanos() / gap.as_nanos() };
-    let mut drawn: Option<(u64, u64, Option<usize>)> = None;
+    let mut drawn: Option<(u64, u64, Option<usize>, Option<caretline_layers::kitty::CellPx>)> = None;
     let mut painted_slot: Option<u128> = None;
     // The frame clock's next deadline, on an absolute schedule so it doesn't drift.
     let mut next_frame: Option<Instant> = None;
@@ -603,7 +740,7 @@ fn event_loop(
             None => next_frame = None,
         }
         let demo_wake = demo.as_mut().and_then(|d| d.poll(hub, now));
-        let key = |hub: &Hub, demo: &Option<Box<dyn Demo>>, help: Option<usize>| (hub.session.rev(), demo.as_ref().map_or(0, |d| d.generation()), help);
+        let key = |hub: &Hub, demo: &Option<Box<dyn Demo>>, help: Option<usize>| (hub.session.rev(), demo.as_ref().map_or(0, |d| d.generation()), help, gfx.cell_px);
         let dirty = drawn != Some(key(hub, &demo, help));
         let free = gap.is_zero() || painted_slot != Some(slot(now));
         if dirty && free {
@@ -615,10 +752,16 @@ fn event_loop(
                 },
                 None => hub.session.frame(),
             };
+            let decor = match (&mut demo, help) {
+                // The keys overlay hides the demo's images too.
+                (Some(d), Some(_)) => Decor { dim: Vec::new(), bytes: d.hide() },
+                (Some(d), None) => d.decorate(hub, &mut frame, &gfx),
+                (None, _) => Decor::default(),
+            };
             if let Some(offset) = help {
                 crate::keys::overlay(&mut frame, hub.session.state().doc.outline.is_some(), offset);
             }
-            draw(&mut terminal, &frame)?;
+            draw(&mut terminal, &frame, &decor)?;
             stats.paints += 1;
             stats.paint_time += t.elapsed();
             drawn = Some(key(hub, &demo, help));
@@ -642,13 +785,13 @@ fn event_loop(
         };
         if let Some(input) = input {
             stats.inputs += 1;
-            process(hub, &mut demo, &mut term, &mut help, input, &mut quit);
+            process(hub, &mut demo, &mut term, &mut help, &mut gfx, input, &mut quit);
             // Apply everything already queued before drawing again.
             while !quit {
                 match rx.try_recv() {
                     Ok(input) => {
                         stats.inputs += 1;
-                        process(hub, &mut demo, &mut term, &mut help, input, &mut quit)
+                        process(hub, &mut demo, &mut term, &mut help, &mut gfx, input, &mut quit)
                     }
                     Err(_) => break,
                 }
@@ -661,13 +804,24 @@ fn event_loop(
             }
         }
     }
+    // Take the demo's images down by id before the screen goes.
+    if let Some(d) = &mut demo {
+        let bytes = d.hide();
+        if !bytes.is_empty() {
+            let mut out = io::stdout();
+            let _ = out.write_all(&bytes).and_then(|_| out.flush());
+        }
+    }
     Ok(())
 }
 
 /// Draws a frame. ratatui diffs it against the last one and writes only the cells that
 /// changed; the writes go out as one buffered flush inside a synchronized update (DEC mode
 /// 2026), so a terminal that supports it shows the whole frame at once, never half of one.
-fn draw(terminal: &mut Term, frame: &Frame) -> Result<(), String> {
+///
+/// A demo's decor dims cells and adds bytes (kitty graphics) after the cells, inside the same
+/// update, so text and pixels change together.
+fn draw(terminal: &mut Term, frame: &Frame, decor: &Decor) -> Result<(), String> {
     let _ = queue!(terminal.backend_mut(), BeginSynchronizedUpdate);
     let drawn = terminal
         .draw(|f| {
@@ -680,7 +834,11 @@ fn draw(terminal: &mut Term, frame: &Frame) -> Result<(), String> {
                         continue;
                     }
                     let w = caretline::view::display_width(&cell.symbol).max(1);
-                    buf.set_stringn(x, y, &cell.symbol, w, style(cell.role));
+                    let mut st = style_in(frame, cell.role);
+                    if decor.dim.get(y as usize * frame.width as usize + x as usize) == Some(&true) {
+                        st = st.add_modifier(Modifier::DIM);
+                    }
+                    buf.set_stringn(x, y, &cell.symbol, w, st);
                 }
             }
             if let Some((x, y)) = frame.cursor
@@ -690,6 +848,9 @@ fn draw(terminal: &mut Term, frame: &Frame) -> Result<(), String> {
         })
         .map(|_| ())
         .map_err(|e| format!("draw: {e}"));
+    if !decor.bytes.is_empty() {
+        let _ = terminal.backend_mut().write_all(&decor.bytes);
+    }
     let _ = execute!(terminal.backend_mut(), EndSynchronizedUpdate);
     drawn
 }

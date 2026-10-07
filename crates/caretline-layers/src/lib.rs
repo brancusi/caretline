@@ -25,6 +25,9 @@
 //!   spotlight holes, and click [`Region`]s with [`Plan::hit`].
 //! - **Ops** ([`ops`]): protocol-neutral `hint.*` and `layer.*` requests and replies, for a
 //!   host's own JSON protocol or caretline's.
+//! - **Pixels** (feature `kitty`, off by default): `kitty::KittyState` turns a plan and the
+//!   host's own images into kitty graphics bytes (transmit, place, move, delete), and
+//!   `probe` parses a terminal's answers. Still pure: the host rasterises and does the I/O.
 //!
 //! A host that draws its own screen, every frame:
 //!
@@ -38,9 +41,13 @@
 #[cfg(feature = "caretline")]
 mod frame;
 mod geom;
+#[cfg(feature = "kitty")]
+pub mod kitty;
 mod model;
 pub mod ops;
 mod place;
+#[cfg(feature = "kitty")]
+pub mod probe;
 mod resolve;
 mod route;
 

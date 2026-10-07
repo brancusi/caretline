@@ -9,6 +9,8 @@ mod client;
 mod demo;
 mod hub;
 mod keys;
+mod layers;
+mod rawin;
 mod runtime;
 
 use std::fs;

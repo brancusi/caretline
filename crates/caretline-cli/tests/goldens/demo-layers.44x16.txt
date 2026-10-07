@@ -1,0 +1,16 @@
+ Jump by word · ⌥← and ⌥→ move the caret on
+
+      A terminal editor where the whole
+      editor is one value you can save,
+      send and replay. Work down this page
+      with ↓: the status bar names the keys
+      for the section the caret is in.
+
+  ##  1 · Type
+
+      The caret is already at the end of
+      this paragraph, so just start typing,
+      and keep going past the edge of the
+      window.
+                                     ↓ here
+ layers · cells (snapshot) · ↑↓ scroll · s s
