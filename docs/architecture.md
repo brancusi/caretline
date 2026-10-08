@@ -424,6 +424,24 @@ end of a long line re-lays about three rows. The memo is derived data: a propert
 that states, frames, coordinates and row counts match layout from scratch after random
 edits, motions, undos and resizes.
 
+### Prose wrapping and hanging space
+
+An outline block's content wraps as prose (`layout::prose_format`): a word moves to the
+next row whole, and the whitespace after a word that reaches the row's end stays on that row,
+hanging past the column, so a row never starts with a space. A word that ends exactly at the
+row's end stays too when a line end or the end of the text follows. caretline's copy of the
+formatter (`hang_spaces`) adds one more case: a line end or the end of the text right after
+hanging whitespace stays on that row, so the caret after a space typed at the end of a full row
+doesn't get an empty row of its own (the page doesn't grow a row while typing, nor shrink one
+when a save drops the trailing space). The next character starts the next row.
+
+The caret's cell on such a row is its column clamped to the view's last column: right after
+the hanging whitespace where the view has room, else in the last cell. `Layout::hangs(line)`
+says whether a line wraps this way, and drawing (`render`), `view::locate` and clicks
+(`Layout::click_at`: the last cell puts the caret at the row's end) all go through it, so they
+agree on that cell. Without a cell right of the column for the caret, the Helix rule holds
+instead: the next row takes the space.
+
 ## Block marks
 
 A mark is a `MarkId` (a plain `u64`) at a char position that is always the start of a line.

@@ -71,7 +71,7 @@ A **layer** is serializable data:
 | `avoid` | Anchors whose cells this layer's box and arrow keep off: the text its step talks about. Resolved every frame like `anchor` (every one that shows), so they follow scrolling and edits; covered only when nothing else fits ([Avoid areas](#avoid-areas)) |
 
 `Layers` holds them (and `hidden`, for "hide all"). In Rust, `Layer::new(anchor)` with
-`with_content`, `with_arrow`, `with_ring` and `with_spotlight` builds one.
+`with_content`, `with_arrow`, `with_ring`, `with_spotlight` and `with_avoid` builds one.
 
 Layers change only through **`apply(&mut layers, op, actor, now_ms, &limits)`**, with a
 `LayerOp`: `Push`, `Update`, `Pop` (by id, owner or all), `PopNewest`, `Toggle` or `Clear`.
@@ -331,7 +331,7 @@ A pure function of the layers, the resolved anchors, the screen and the measured
   go round words, and wide graphemes are never split;
 - `Grid::from_frame(&frame)` and `mark_frame(&frame, x, y)` for a caretline frame;
 - `avoid(rect, weight)` / `with_avoid(rect, weight)` for cells to keep off when anything else
-  fits, and `with_reach(Reach { rows, cols })` for how far a box may go to keep clear
+  fits (`avoid_weight(x, y)` reads a cell's back), and `with_reach(Reach { rows, cols })` for how far a box may go to keep clear
   ([Avoid areas](#avoid-areas)).
 
 The **`Plan`** (serializable) holds, per layer in draw order (`Planned`):

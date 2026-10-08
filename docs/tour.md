@@ -145,6 +145,10 @@ error, except inside `data` and `host`, which are opaque. The same walkthrough i
 | `place` | `{sides, max_width, arrow, ring, spotlight, hide_off_screen}` (`ring` and `spotlight` take `true` or their object; `max_w` and `connector` are read as `max_width` and `arrow`), or just a list of sides |
 | `capture` | A modal step: the host routes keys to the walkthrough |
 
+A step layer has no `avoid` field yet ([avoid areas](layers.md#avoid-areas)), and naming one is
+an error. To keep a step's box off the text it explains, mark those cells with `Grid::avoid`
+in the grid the host draws for the step.
+
 For kinds other than `hint`, the layer's data gets `at` and `of` (the step's place, from 1), so
 a renderer can draw step dots. A `hint`'s data stays `{title?, text}`.
 

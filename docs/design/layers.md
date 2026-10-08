@@ -1585,7 +1585,8 @@ and `hint.*` ops through `Host::op`. Then `caretline-tour` keeps `TourState` in
 
 ### 12.6 Host fixes: documents, arrow heads, strips, measuring for the owner, and avoid areas
 
-After 12.3, from a host that shows several documents. Where it differs from the sections above:
+After 12.5, from the first host that shows several documents (in the views of 12.3). Where it
+differs from the sections above:
 
 - **An edit moves only its own document's anchors.** A `ChangeSet` belongs to one document,
   but `observe` mapped every text anchor through it, so typing in `main` (page A) moved a
@@ -1667,7 +1668,10 @@ After 12.3, from a host that shows several documents. Where it differs from the 
     covering the paragraph. A seeded property test checks that whenever a clear box is in
     reach, the chosen one is clear, and that the plan is deterministic.
   - Cost, at 100×40 (release, the least of ten runs alternating with the build before
-    12.5): a box with its arrow 25.1 µs (was 27.9 in the same runs), a spotlight with an
+    these fixes): a box with its arrow 25.1 µs (was 27.9 in the same runs), a spotlight with an
     arrow 37.5 µs (38.2), a box alone 5.8 µs (5.9). The far scan checks only the summed
     tables until it finds a clear place, and a far box whose nearest head is too far isn't
     routed.
+  - `caretline-tour`'s step layers don't carry `avoid` yet (a step's `layers` entry refuses
+    unknown fields); a walkthrough host keeps a step's text clear with `Grid::avoid` in the
+    scene it draws.

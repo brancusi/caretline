@@ -139,7 +139,9 @@ For each line:
   `min_column` columns.
 - **Continuation lines** use the same column and width.
 - **Content wraps as prose:** between words at whitespace only, a word moving to the next row
-  whole unless it's longer than a row. A row never starts with a space.
+  whole unless it's longer than a row. A row never starts with a space: the space after a word
+  that fills the row hangs past the column, and a caret after it stays on that row
+  ([architecture](architecture.md#prose-wrapping-and-hanging-space)).
 - **A fence doesn't wrap.** A long line in it scrolls sideways on its own while the caret is on it.
 - **A gapped block** has a blank row before it; **`extra_rows`** add rows after it. Neither is
   ever a caret stop.

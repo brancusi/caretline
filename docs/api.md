@@ -46,14 +46,14 @@ log. There's no terminal crate and no ratatui.
 | `keymap`, `Key`, `KeyCode`, `Mods` | `caretline` | Map keys to messages |
 | `parse_keys`, `script_to_msgs`, `keymap::ScriptItem` | `caretline` | Use the `--keys` notation |
 | `trace::{TraceLine, parse_msgs, replay_trace, replay_trace_views}` | `caretline::trace` | Record and replay sessions (with their views) |
-| `layout::{Layout, LineFormat, RowPos, text_format, ensure_caret_visible}` | `caretline::layout` | Lower-level layout queries |
+| `layout::{Layout, LineFormat, RowPos, text_format, ensure_caret_visible}` | `caretline::layout` | Lower-level layout queries (`Layout::of(doc, view)`; `hangs(line)`: [a caret after hanging space](#a-caret-after-hanging-space)) |
 | `helix::*` | `caretline::helix` | Helix's `Selection`, `Range`, `Transaction`, `History`, `Rope`, … |
 | `Session`, `protocol::*` | `caretline` | A state with a rev and a trace, and the [protocol](protocol.md) in process: see [Session](#session) |
 | `Marks`, `Mark`, `MarkId`, `MarkAttrs` | `caretline` | Block identity that survives edits, with the host's payload: see [Block marks](#block-marks) |
 | `marks::{Clipboard, ClipMark, MarkDelta, Fixup, is_line_start}`, `update::mark_only_edit` | `caretline::marks`, `::update` | The register with carried marks, the per-revision deltas, a host's undoable mark edit |
 | `OutlineConfig`, `Outline`, `BlockInfo`, `Kind`, `NewBlock`, `outline::{markdown, derive, content, Hang}` | `caretline`, `::outline` | Block documents: [structure](structure.md) and the [Markdown grammar](markdown.md) over the same buffer |
 | `outline_keymap`, `keymap_for`, `script_to_msgs_for` | `caretline` | A block document's keys |
-| `Host`, `Ctx`, `Edit`, `MarkOp`, `Decoration`, `Deco` | `caretline` | Your app's [extensions](embedding.md#extending-the-engine): commands, input rules, decorations |
+| `Host`, `Ctx`, `Edit`, `MarkOp`, `Decoration`, `Deco` | `caretline` | Your app's [extensions](embedding.md#extending-the-engine): commands, input rules (`Edit::then_default`: [adjust the engine's own action](embedding.md#adjusting-what-enter-does)), decorations |
 | `ExtFns`, `ExtOut`, `Observed` | `caretline` | [View values and their reducers](embedding.md#view-values-and-ext-reducers): `Host::ext`, `Msg::Ext`, `View::ext` |
 | `HostCommandInfo`, `OpFns` | `caretline` | [Catalog entries and protocol ops](embedding.md#catalog-entries-and-protocol-ops): `Host::catalog`, `Host::op` |
 | `Host::frame_pass` | `caretline` | [Frame passes](embedding.md#frame-passes): draw over every rendered frame |
@@ -318,6 +318,36 @@ let state = State::new("one\ntwo\nthree\n", None, Viewport { width: 20, height: 
 assert_eq!(locate(&state.doc, &state.view, 5), Locate::At { x: 1, y: 1 });
 assert_eq!(hit(&state.doc, &state.view, 1, 1), Hit::Text { pos: 5 });
 assert_eq!(locate(&state.doc, &state.view, 9), Locate::Below);
+```
+
+### A caret after hanging space
+
+In an outline's prose wrapping, the space after a word that fills its row hangs past the
+column instead of starting the next row, and so does the end of the text (or a line end)
+right after it: typing a space at the end of a full row adds no row. The caret there is drawn
+right after the hanging space when the view has a cell for it, else in the view's last column,
+on the same row; `view::locate` gives that cell, and a click in the last cell (`view::hit`,
+`Msg::Click`) puts the caret at the row's end. The next character starts the next row.
+`Layout::of(doc, view).hangs(line)` says whether a line wraps this way (outline content, not a
+fence or a plain document).
+
+```rust
+use caretline::helix::Selection;
+use caretline::layout::Layout;
+use caretline::outline::markdown;
+use caretline::view::{locate, Locate};
+use caretline::{update, view, Msg, OutlineConfig, OutlineLayout, Viewport};
+
+// A bullet whose 72 chars fill the column: its content runs from x = 6 to 77.
+let md = format!("- {}", "a".repeat(72));
+let mut s = markdown::load(&md, None, Viewport { width: 80, height: 4 }, OutlineConfig::default());
+s.view.layout = Some(OutlineLayout::default());
+s.view.selection = Selection::point(s.doc.text.len_chars());
+update(&mut s, Msg::InsertText { text: " ".into() });
+// The space hangs in cell 78 and the caret stays on row 0, after it.
+assert!(Layout::of(&s.doc, &s.view).hangs(0));
+assert_eq!(view(&s).cursor, Some((79, 0)));
+assert_eq!(locate(&s.doc, &s.view, s.doc.text.len_chars()), Locate::At { x: 79, y: 0 });
 ```
 
 ### The cell's size in pixels
