@@ -371,3 +371,83 @@ fn a_person_keeps_typing_while_a_client_pushes_text() {
     }
     assert_eq!(carets(&mut client)[0].1, before);
 }
+
+/// The number of the line on the screen's first row (`L042` reads 42).
+fn top_line(screen: &str) -> Option<u32> {
+    screen
+        .lines()
+        .next()?
+        .trim()
+        .strip_prefix('L')?
+        .get(..3)?
+        .parse()
+        .ok()
+}
+
+#[test]
+fn a_drag_held_at_the_top_edge_keeps_scrolling_until_released() {
+    let dir = Scratch::new("cld");
+    let doc = dir.join("doc.md");
+    let text: String = (1..=100).map(|i| format!("L{i:03}\n")).collect();
+    std::fs::write(&doc, text).unwrap();
+    let trace = dir.join("t.jsonl");
+    let mut c = bin();
+    c.arg(&doc).arg("--trace").arg(&trace);
+    let mut pty = Pty::spawn(c, ROWS, COLS);
+    pty.wait("the editor", |s| s.contains("L011"));
+    let drags = || {
+        std::fs::read_to_string(&trace)
+            .unwrap_or_default()
+            .matches(r#""msg":"drag""#)
+            .count()
+    };
+
+    // Scroll down, press inside the text, drag to the first row and hold the pointer there.
+    for _ in 0..20 {
+        pty.send(b"\x1b[<65;3;3M"); // the wheel: three rows down
+    }
+    let s = pty.wait("the scrolled view", |s| top_line(s) == Some(61));
+    assert_eq!(top_line(&s), Some(61), "{s}");
+    pty.send(b"\x1b[<0;3;6M");
+    pty.send(b"\x1b[<32;3;1M");
+    // One drag was sent; the view keeps scrolling with the pointer still.
+    pty.wait("the held drag to scroll", |s| {
+        top_line(s).is_some_and(|t| t <= 55)
+    });
+    // One drag scrolls one row: the pointer's own drag, then the repeats.
+    assert!(drags() >= 6, "each repeated drag is in the trace");
+
+    // Waits for the drags to stop (none for 300 ms, six intervals), then checks that none
+    // follow and the view stays put. A drag already due when the input arrives may still go.
+    let settles = |pty: &Pty, what: &str| {
+        let deadline = Instant::now() + patience(10);
+        let mut last = drags();
+        loop {
+            std::thread::sleep(Duration::from_millis(300));
+            let now = drags();
+            if now == last {
+                break;
+            }
+            assert!(Instant::now() < deadline, "the drags never stopped {what}");
+            last = now;
+        }
+        let top = top_line(&pty.screen());
+        std::thread::sleep(Duration::from_millis(500));
+        assert_eq!(drags(), last, "no drags {what}");
+        assert_eq!(top_line(&pty.screen()), top, "the view stays {what}");
+        last
+    };
+
+    // Released, it stops.
+    pty.send(b"\x1b[<0;3;1m");
+    let released = settles(&pty, "after the release");
+    assert!(top_line(&pty.screen()).is_some_and(|t| t > 1));
+
+    // Held again, it scrolls to the top and stops there by itself, the button still down.
+    pty.send(b"\x1b[<0;3;6M");
+    pty.send(b"\x1b[<32;3;1M");
+    pty.wait("the view's top", |s| top_line(s) == Some(1));
+    let at_top = settles(&pty, "once the view can't scroll");
+    assert!(at_top > released + 5);
+    pty.send(b"\x1b[<0;3;1m");
+}

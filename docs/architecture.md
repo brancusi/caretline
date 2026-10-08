@@ -147,10 +147,11 @@ The view moves only when asked to or when the caret would otherwise leave it:
 - **A drag at an edge** scrolls one row per `drag` message: on the first text row with text
   above the view, up; on the last text row (or past it) with text below, down. The selection
   extends to the row brought in. Both edges behave the same, so a runtime only forwards the
-  pointer's row. A runtime sends a `drag` per pointer move, so a pointer held still at the
-  edge scrolls once: the engine has no timer. To keep scrolling, the runtime re-sends the
-  same `drag` on its frame ticks while the button is held on an edge row; each is an ordinary
-  message, so the trace records every row it scrolled
+  pointer's row. The engine has no timer, so a pointer held still at the edge keeps
+  scrolling only because the runtime re-sends the same `drag` while the button is held on an
+  edge row: the `caretline` editor does so about every 50 ms (faster below the last text
+  row) and stops on release, on a move inside, or once a drag no longer scrolls. Each is an
+  ordinary message, so the trace records every row it scrolled
   ([messages.md](messages.md#selecting-by-dragging)).
 
 ## Changes from elsewhere
