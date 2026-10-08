@@ -603,8 +603,8 @@ pub(crate) fn commit_with(
     if text_changed {
         txn.apply(&mut state.doc.text);
         state.view.wrap.edited(txn.changes());
-        state.doc.touched.record(txn.changes());
-        state.doc.derived.edited(txn.changes());
+        state.doc.touched.record(txn.changes(), old_text.slice(..));
+        state.doc.derived.edited(txn.changes(), old_text.slice(..));
         state.doc.change_log.0.push(txn.changes().clone());
     }
     let removed = state
@@ -617,6 +617,7 @@ pub(crate) fn commit_with(
     if state.doc.outline.is_some() {
         crate::outline::rules::settle(state);
     }
+    state.doc.touched.record_marks(&naive, &state.doc.marks);
     let before_selection = state.view.selection.clone();
     if let Some(sel) = txn.selection() {
         state.view.selection = sel.clone();
@@ -932,13 +933,15 @@ fn apply_history(state: &mut State, txn: &Transaction, rev: usize, undo: bool) {
     let old = state.doc.text.clone();
     txn.apply(&mut state.doc.text);
     state.view.wrap.edited(txn.changes());
-    state.doc.touched.record(txn.changes());
-    state.doc.derived.edited(txn.changes());
+    state.doc.touched.record(txn.changes(), old.slice(..));
+    state.doc.derived.edited(txn.changes(), old.slice(..));
     state.doc.change_log.0.push(txn.changes().clone());
     state.doc.edits.0 = state.doc.edits.0.wrapping_add(1);
     state.fit_mark_log();
     state.doc.derived.marks_changed();
     let delta = &state.doc.mark_log[rev];
+    // The marks as the text change alone left them, to tell the host which others changed.
+    let mut naive = None;
     if !state.doc.marks.is_empty() || !delta.is_empty() {
         let fixup = if undo {
             delta.undo.clone()
@@ -949,13 +952,18 @@ fn apply_history(state: &mut State, txn: &Transaction, rev: usize, undo: bool) {
             .doc
             .marks
             .map(old.slice(..), state.doc.text.slice(..), txn.changes());
+        naive = Some(state.doc.marks.clone());
         state.doc.marks.apply(&fixup);
         after_marks_changed(state);
     }
     // A step transformed over a change from elsewhere may leave a new block start unmarked
     // (its fix-ups describe the text before that change): give it a mark.
     if state.doc.outline.is_some() {
+        naive.get_or_insert_with(|| state.doc.marks.clone());
         crate::outline::mint_missing(&mut state.doc);
+    }
+    if let Some(naive) = naive {
+        state.doc.touched.record_marks(&naive, &state.doc.marks);
     }
     state.view.selection = match txn.selection() {
         Some(sel) => sel.clone(),
@@ -1293,11 +1301,14 @@ fn host_edit(state: &mut State, changes: Vec<(usize, usize, String)>, join: bool
     if changes.is_empty() {
         return;
     }
+    // As the least change: text put back as it was keeps its marks (block ids).
+    let text = state.doc.text.slice(..);
     let txn = Transaction::change(
         &state.doc.text,
-        changes
-            .into_iter()
-            .map(|(a, b, t)| (a, b, (!t.is_empty()).then(|| Tendril::from(t.as_str())))),
+        changes.into_iter().map(|(a, b, t)| {
+            let (a, b, t) = crate::external::least(text, a, b, t);
+            (a, b, (!t.is_empty()).then(|| Tendril::from(t.as_str())))
+        }),
     );
     // An edit by position, not at the caret: a caret where text goes in stays before it.
     let selection = crate::views::map_elsewhere(state.view.selection.clone(), txn.changes());

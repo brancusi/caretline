@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::helix::graphemes::ensure_grapheme_boundary_prev;
 use crate::helix::history::History;
 use crate::helix::line_ending::auto_detect_line_ending;
-use crate::helix::{ChangeSet, LineEnding, Range, Rope, Selection, SmallVec};
+use crate::helix::{ChangeSet, LineEnding, Range, Rope, RopeSlice, Selection, SmallVec};
 use crate::layout::{OutlineLayout, WrapCache};
 use crate::marks::{Clipboard, MarkDelta, MarkId, Marks};
 use crate::outline::{OutlineCache, OutlineConfig};
@@ -1125,6 +1125,10 @@ impl PartialEq for EditCount {
 pub struct Touched {
     range: Option<(usize, usize)>,
     all: bool,
+    /// The outline when the host last asked, and the length of its text: what the blocks
+    /// past the range are compared with, to take in the blocks a change reshaped beyond its
+    /// own chars (a blank row's default, a code fence opened or closed).
+    base: Option<(std::sync::Arc<crate::outline::Outline>, usize)>,
 }
 
 impl Default for Touched {
@@ -1145,64 +1149,236 @@ impl Touched {
         Touched {
             range: None,
             all: true,
+            base: None,
         }
     }
 
-    /// Records a change applied to the text: the range so far is mapped through it, then
-    /// joined with what it changed (in the new text's chars).
-    pub(crate) fn record(&mut self, cs: &ChangeSet) {
+    /// Records a change applied to `old`, the text before it: the range so far is mapped
+    /// through it, then joined with the chars it changed (in the new text's chars).
+    pub(crate) fn record(&mut self, cs: &ChangeSet, old: RopeSlice) {
         if !self.all && !cs.is_empty() {
-            self.range = Some(changed_span(self.range, cs));
+            if let Some(r) = changed_span(self.range, cs, old) {
+                self.range = Some(r);
+            }
+        }
+    }
+
+    /// Records that the mark at `pos` (a line start of the current text) changed: so did the
+    /// block it starts.
+    pub(crate) fn record_at(&mut self, pos: usize) {
+        if !self.all {
+            let (a, b) = self.range.unwrap_or((pos, pos));
+            self.range = Some((a.min(pos), b.max(pos)));
+        }
+    }
+
+    /// Records where `after` differs from `before` (marks of the same text): every mark
+    /// added, removed, or with another id or attributes.
+    pub(crate) fn record_marks(&mut self, before: &Marks, after: &Marks) {
+        if self.all {
+            return;
+        }
+        let (mut x, mut y) = (before.iter().peekable(), after.iter().peekable());
+        loop {
+            match (x.peek(), y.peek()) {
+                (None, None) => break,
+                (Some(m), None) => {
+                    self.record_at(m.pos);
+                    x.next();
+                }
+                (None, Some(n)) => {
+                    self.record_at(n.pos);
+                    y.next();
+                }
+                (Some(m), Some(n)) if m.pos < n.pos => {
+                    self.record_at(m.pos);
+                    x.next();
+                }
+                (Some(m), Some(n)) if n.pos < m.pos => {
+                    self.record_at(n.pos);
+                    y.next();
+                }
+                (Some(m), Some(n)) => {
+                    if m.id != n.id || m.attrs != n.attrs {
+                        self.record_at(m.pos);
+                    }
+                    x.next();
+                    y.next();
+                }
+            }
         }
     }
 }
 
-/// The chars that differ after `cs` from a text whose chars `range` already differed from
-/// another: `range` mapped through `cs`, joined with what `cs` changed (new text's chars).
-pub(crate) fn changed_span(range: Option<(usize, usize)>, cs: &ChangeSet) -> (usize, usize) {
+/// The chars that differ after `cs` (applied to `old`) from a text whose chars `range`
+/// already differed from another: `range` mapped through `cs`, joined with the chars `cs`
+/// changed (new text's chars). What a replacement puts back as it was (the same chars at its
+/// start or end) is not a change. `None`: nothing differs.
+pub(crate) fn changed_span(
+    range: Option<(usize, usize)>,
+    cs: &ChangeSet,
+    old: RopeSlice,
+) -> Option<(usize, usize)> {
     use crate::helix::transaction::{Assoc, Operation};
-    let mut pos = 0usize;
     let mut span: Option<(usize, usize)> = None;
-    for op in cs.changes() {
+    // One run of inserts and deletes between retains at a time: the old chars
+    // `[old_at, old_at + deleted)` became `inserted`, at `pos` in the new text.
+    let (mut pos, mut old_at, mut deleted) = (0usize, 0usize, 0usize);
+    let mut inserted = String::new();
+    let mut hunk = false;
+    let ops = cs.changes();
+    for (i, op) in ops.iter().enumerate() {
         match op {
-            Operation::Retain(n) => pos += n,
-            Operation::Delete(_) => {
-                let (a, b) = span.unwrap_or((pos, pos));
-                span = Some((a.min(pos), b.max(pos)));
+            Operation::Retain(n) => {
+                pos += n;
+                old_at += n;
+            }
+            Operation::Delete(n) => {
+                deleted += n;
+                hunk = true;
             }
             Operation::Insert(t) => {
-                let end = pos + t.chars().count();
-                let (a, b) = span.unwrap_or((pos, end));
-                span = Some((a.min(pos), b.max(end)));
-                pos = end;
+                inserted.push_str(t);
+                hunk = true;
             }
+        }
+        let ends = !matches!(
+            ops.get(i + 1),
+            Some(Operation::Delete(_) | Operation::Insert(_))
+        );
+        if hunk && ends {
+            let gone = old.slice(old_at..old_at + deleted);
+            let new: Vec<char> = inserted.chars().collect();
+            let pre = gone
+                .chars()
+                .zip(new.iter())
+                .take_while(|(a, b)| a == *b)
+                .count();
+            let room = deleted.min(new.len()) - pre;
+            let suf = gone
+                .chars_at(deleted)
+                .reversed()
+                .zip(new.iter().rev())
+                .take(room)
+                .take_while(|(a, b)| a == *b)
+                .count();
+            if !(deleted == new.len() && pre + suf == deleted) {
+                let (a, b) = (pos + pre, pos + new.len() - suf);
+                let (x, y) = span.unwrap_or((a, b));
+                span = Some((x.min(a), y.max(b)));
+            }
+            pos += new.len();
+            old_at += deleted;
+            deleted = 0;
+            inserted.clear();
+            hunk = false;
         }
     }
     let mapped = range.map(|(x, y)| (cs.map_pos(x, Assoc::Before), cs.map_pos(y, Assoc::After)));
     match (mapped, span) {
-        (Some((x, y)), Some((a, b))) => (x.min(a), y.max(b)),
-        (Some(r), None) | (None, Some(r)) => r,
-        (None, None) => (pos, pos),
+        (Some((x, y)), Some((a, b))) => Some((x.min(a), y.max(b))),
+        (Some(r), None) | (None, Some(r)) => Some(r),
+        (None, None) => None,
     }
+}
+
+/// `[from, to)` widened to the blocks of `now` (the outline of `text`) that differ from
+/// `base` (the outline of a text `base_len` chars long that differs from `text` only in
+/// `[from, to)`): every block the range meets, the block before its first line (that line
+/// may have started a block or stopped starting one), and past it every block until one is
+/// as it was (a change can reshape blocks past its own chars: a blank row's default follows
+/// the block before, a code fence takes in the lines after it).
+fn widen(
+    base: &crate::outline::Outline,
+    base_len: usize,
+    now: &crate::outline::Outline,
+    text: RopeSlice,
+    (from, to): (usize, usize),
+) -> (usize, usize) {
+    let blocks = &now.blocks;
+    let len = text.len_chars();
+    if blocks.is_empty() {
+        return (from, to);
+    }
+    let delta = len as isize - base_len as isize;
+    // The block holding the line break before the range's first line.
+    // Whether block `b` is as it was, `shift` chars from where it was.
+    let same = |b: &crate::outline::BlockInfo, shift: isize| {
+        let old_start = b.start as isize - shift;
+        let k = base
+            .blocks
+            .partition_point(|o| (o.start as isize) < old_start);
+        base.blocks.get(k).is_some_and(|o| {
+            o.start as isize == old_start
+                && o.end as isize == b.end as isize - shift
+                && o.id == b.id
+                && o.line_count == b.line_count
+                && o.depth == b.depth
+                && o.kind == b.kind
+                && o.tag == b.tag
+                && o.prefix_len == b.prefix_len
+                && o.indent == b.indent
+                && o.hang == b.hang
+                && o.fence == b.fence
+                && o.atomic == b.atomic
+                && o.gap == b.gap
+                && o.attrs == b.attrs
+        })
+    };
+    // The block holding the line break before the range's first line, unless it is as it
+    // was.
+    let line_start = text.line_to_char(text.char_to_line(from));
+    let mut first = blocks
+        .partition_point(|b| b.end < line_start.saturating_sub(1))
+        .min(blocks.len() - 1);
+    if first + 1 < blocks.len() && blocks[first].end < from && same(&blocks[first], 0) {
+        first += 1;
+    }
+    let mut last = first;
+    for (j, b) in blocks.iter().enumerate().skip(first + 1) {
+        if b.start >= to && same(b, delta) {
+            break;
+        }
+        last = j;
+    }
+    (
+        from.min(blocks[first].start),
+        to.max(blocks[last].end).min(len),
+    )
 }
 
 impl Document {
     /// The chars of the text that changed since the last call, as `[from, to)` in the current
     /// text (`to` may reach the end): `None` when nothing did, the whole text after a load or a
     /// repair. For a host that mirrors the text and re-reads only what changed.
+    ///
+    /// In an outline document the range covers whole blocks: every block whose text, marker,
+    /// depth, tag, blank row or mark (its attributes and payload too) changed, and the blocks
+    /// a change reshaped past its own chars (the block after one whose kind changed, whose
+    /// default blank row follows it; the lines a code fence takes in or lets go). Chars an
+    /// edit put back as they were don't count.
     pub fn take_touched(&mut self) -> Option<(usize, usize)> {
+        let n = self.text.len_chars();
+        let now = self.blocks().map(|o| (o, n));
         let t = std::mem::replace(
             &mut self.touched,
             Touched {
                 range: None,
                 all: false,
+                base: now.clone(),
             },
         );
-        let n = self.text.len_chars();
         if t.all {
             return Some((0, n));
         }
-        t.range.map(|(a, b)| (a.min(n), b.min(n)))
+        let (a, b) = t.range?;
+        let (a, b) = (a.min(n), b.min(n));
+        match (&t.base, &now) {
+            (Some((base, base_len)), Some((o, _))) => {
+                Some(widen(base, *base_len, o, self.text.slice(..), (a, b)))
+            }
+            _ => Some((a, b)),
+        }
     }
 
     /// Everything counts as changed for the next [`Document::take_touched`] (after the text

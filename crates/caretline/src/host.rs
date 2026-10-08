@@ -822,11 +822,14 @@ pub(crate) fn apply(state: &mut State, edit: Edit) -> Vec<Effect> {
             Some(s) => s,
             None => Ctx::new(&state.doc, &state.view).mapped_selection(&edit.changes),
         };
+        // As the least change: text put back as it was keeps its marks (block ids).
+        let text = state.doc.text.slice(..);
         let txn = Transaction::change(
             &state.doc.text,
-            edit.changes
-                .iter()
-                .map(|(a, b, t)| (*a, *b, (!t.is_empty()).then(|| Tendril::from(t.as_str())))),
+            edit.changes.iter().map(|(a, b, t)| {
+                let (a, b, t) = crate::external::least(text, *a, *b, t.clone());
+                (a, b, (!t.is_empty()).then(|| Tendril::from(t.as_str())))
+            }),
         )
         .with_selection(selection);
         let ops = edit.marks;
