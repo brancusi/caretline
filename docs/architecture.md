@@ -130,6 +130,13 @@ share of the height). `scroll_view` scrolls without moving the caret and leaves 
 
 The view moves only when asked to or when the caret would otherwise leave it:
 
+- **Passive messages never move it:** `tick`, `frame`, `frame_clock`, `ext`, `show_status`,
+  `saved`, `save_failed`, and `copy`, `save` and `quit`, which neither move the caret nor edit.
+  A runtime sends a `tick` before every batch, so the view after a click or a drag stays as the
+  click or drag left it. A host's `edit`, `command` or `insert_blocks` follows the caret only
+  when it moved a caret or changed the text. A host that changes a view's selection or rows
+  itself calls `layout::ensure_caret_visible`. `external` rebases the views instead: each
+  keeps its scroll on the text it showed.
 - **Keys and edits** follow the caret by the policy, `scrolloff` included. An edit that leaves
   the caret where the policy wants it doesn't scroll, even when it shortens the document: the
   view keeps its top and shows empty rows below the end, as VS Code and Sublime do.
@@ -489,9 +496,10 @@ After handling any message, `update` always:
    and atomic blocks, and reports `block_left` (and `notice`),
 2. recomputes `dirty`,
 3. closes the edit run if history moved past it, and
-4. scrolls so the primary caret is visible, by the view's follow policy (unless the view was
-   scrolled freely and the caret hasn't moved since, or the caret was placed by the pointer
-   inside the view; see [Documents and views](#documents-and-views)).
+4. scrolls so the primary caret is visible, by the view's follow policy, when the message may
+   move the view (not a passive one such as `tick`; not when the view was scrolled freely and
+   the caret hasn't moved since, or the caret was placed by the pointer inside the view; see
+   [Documents and views](#documents-and-views)).
 
 `update_doc` then rebases every other view through the text changes, and the host's ext
 observers run on each view whose `ext` holds their key, with the message's composed changes.

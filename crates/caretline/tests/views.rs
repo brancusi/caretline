@@ -586,6 +586,8 @@ fn a_view_keeps_its_scroll_on_its_text() {
     // View 1 looks at line 30.
     views[1].selection = Selection::point(doc.text.line_to_char(30));
     send(&mut doc, &mut views, 1, Msg::Tick { now_ms: 0 });
+    assert_eq!(views[1].scroll.line, 0, "a tick never moves the view");
+    send(&mut doc, &mut views, 1, Msg::resize(40, 6));
     let top = views[1].scroll.line;
     assert!(top > 20 && top <= 30, "{top}");
     // Three lines inserted at the top through view 0: view 1 still shows the same lines.

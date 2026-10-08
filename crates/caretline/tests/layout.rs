@@ -463,8 +463,10 @@ fn a_view_lays_out_into_any_size() {
     for (w, h) in [(1u16, 1u16), (8, 3), (12, 4), (40, 10), (200, 60)] {
         let mut s = s0.clone();
         update(&mut s, Msg::resize(w, h));
+        // A host that sets the selection itself brings the caret into view (a `tick` never
+        // moves the view).
         s.view.selection = Selection::point(s.doc.text.len_chars());
-        update(&mut s, Msg::Tick { now_ms: 1 });
+        caretline::layout::ensure_caret_visible(&mut s);
         let f = view(&s);
         assert_eq!(f.rows.len(), h as usize);
         if w > 12 {
@@ -525,8 +527,17 @@ fn random_editing_in_a_laid_out_view() {
                 14 => Msg::resize(rng.random_range(14..70), rng.random_range(3..20)),
                 _ => Msg::Outdent,
             };
+            let scroll = s.view.scroll;
             update(&mut s, msg.clone());
             let ctx = format!("seed {seed} step {step} {msg:?}");
+            if let Msg::Tick { .. } = msg {
+                // A passive message never moves the view; a host that changes a view's rows
+                // itself brings the caret back into it.
+                assert_eq!(s.view.scroll, scroll, "{ctx}: a tick scrolled");
+                if !s.view.free {
+                    caretline::layout::ensure_caret_visible(&mut s);
+                }
+            }
             let o = s.blocks().unwrap();
             let text = s.doc.text.slice(..);
             let caret = s.caret();

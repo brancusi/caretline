@@ -287,12 +287,13 @@ fn select_all_delete_then_undo() {
 /// The view stays put unless it must move: an edit that leaves the primary caret inside the
 /// view's margins (`scrolloff`) never scrolls, even when it shortens the document, and a
 /// click inside the view never scrolls, whatever the margins or the follow policy; a drag
-/// scrolls only on an edge row, one row.
+/// scrolls only on an edge row, one row. A passive message (a tick, a host value's operation, a
+/// status line, a save's result, a copy) never moves it, whatever came before.
 #[test]
 fn the_view_stays_for_edits_and_clicks_inside_it() {
     use caretline::layout::Layout;
     use caretline::Follow;
-    let (mut edits, mut clicks) = (0, 0);
+    let (mut edits, mut clicks, mut passives) = (0, 0, 0);
     for seed in 0..SEEDS {
         let mut rng = StdRng::seed_from_u64(0x5ca1_ab1e ^ seed);
         let text: Vec<String> = (0..rng.random_range(1..8))
@@ -364,10 +365,36 @@ fn the_view_stays_for_edits_and_clicks_inside_it() {
                 }
                 _ => {}
             }
+            // Passive messages, any number in any order, never move the view.
+            for _ in 0..rng.random_range(0..4) {
+                let msg = match rng.random_range(0..7) {
+                    0 => Msg::Tick {
+                        now_ms: rng.random_range(0..100_000),
+                    },
+                    1 => Msg::Ext {
+                        key: "nobody".into(),
+                        op: serde_json::Value::Null,
+                    },
+                    2 => Msg::ShowStatus { text: "hi".into() },
+                    3 => Msg::Saved,
+                    4 => Msg::SaveFailed { err: "no".into() },
+                    5 => Msg::Frame {
+                        now_ms: rng.random_range(0..100_000),
+                    },
+                    _ => Msg::Copy,
+                };
+                let before = state.view.scroll;
+                update(&mut state, msg.clone());
+                passives += 1;
+                assert_eq!(
+                    state.view.scroll, before,
+                    "seed {seed} step {step} {msg:?}: a passive message scrolled"
+                );
+            }
         }
     }
     assert!(
-        edits > 1000 && clicks > 1000,
-        "{edits} edits, {clicks} clicks"
+        edits > 1000 && clicks > 1000 && passives > 1000,
+        "{edits} edits, {clicks} clicks, {passives} passive messages"
     );
 }
