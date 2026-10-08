@@ -79,6 +79,31 @@ A **change of kind or depth never moves another block.** When Tab, Shift-Tab or 
 with `keep_gaps` changes a block, every other block keeps the blank row it had. When typing,
 Backspace or Delete changes the caret's block, that block and the one after it keep theirs.
 Where the default would now differ, the old value is written to the mark, in the same undo step.
+A blank row a host sets itself in the same message (a `MarkOp::SetGap` in a command's or an
+input rule's edit) is never written back: explicit host intent wins over this pinning
+([embedding](embedding.md#blank-rows-a-rule-sets)).
+
+### Blank rows and `nest_joins`
+
+By default Tab and Shift-Tab change only depths: every blank row stays, so a block separated
+from the one above by a blank row keeps it when nested under it. With
+`OutlineConfig::nest_joins` (`with_nest_joins(true)`, `"nest_joins": true` in JSON, left out
+while false), nesting reads as in an outliner such as Logseq:
+
+- **Tab** closes the blank row above every block it nests directly under the block above it
+  (the last non-empty block above becomes its parent), in the same undo step as the indent.
+  A block nested under a block further up (the one above it is deeper), a block whose row was
+  already tight, and a Tab that can't nest change no blank row.
+- **Shift-Tab** adds none back: every blank row stays as it is, so outdenting moves nothing
+  vertically.
+
+Undo restores the depth and the blank row together; redo takes both again.
+
+```text
+a                 Tab on b       a                Shift-Tab      a
+                  ────────▶        - b            ────────▶      - b
+- b
+```
 
 ## The caret
 
@@ -97,7 +122,7 @@ step.
 
 | Msg | Key | Does | Marks |
 |---|---|---|---|
-| `indent` / `outdent` | `Tab` / `Shift-Tab` | The caret's block, or every block the selection touches, one level deeper (at most one below the last non-empty block above) or shallower, keeping the selection. Nothing to nest under, or nothing to outdent: the status says so | Kept |
+| `indent` / `outdent` | `Tab` / `Shift-Tab` | The caret's block, or every block the selection touches, one level deeper (at most one below the last non-empty block above) or shallower, keeping the selection. Nothing to nest under, or nothing to outdent: the status says so | Kept; blank rows kept, or closed by Tab with [`nest_joins`](#blank-rows-and-nest_joins) |
 | `move_block { dir }` | `Alt-↑` / `Alt-↓` | Swaps the caret's block and its children with the previous or next sibling and its children. At the end of a list the status says so | Ids move with their blocks |
 | `move { by: block }` | `Ctrl-↑` / `Ctrl-↓` | To the next block's content start, or back to this block's (then the previous one's); Shift extends | |
 | `select_block { id }` | | Selects the block's content (a triple-click) | |

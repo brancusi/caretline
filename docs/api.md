@@ -105,6 +105,12 @@ when you build a state by hand) are `#[non_exhaustive]`, so new settings never b
 To make one, start from `default()` and chain the `with_` setters:
 `OutlineLayout::default().with_hang_glyphs(true)`.
 
+`OutlineConfig` holds a block document's grammar and rules: `indent`, `tags`, `new_tag`,
+`atomic_images`, `numbered` (see [markdown.md](markdown.md#outlineconfig)) and `nest_joins`,
+off by default: on, Tab closes the blank row above a block it nests directly under the block
+above, and Shift-Tab adds none back (`OutlineConfig::default().with_nest_joins(true)`; see
+[structure.md](structure.md#blank-rows-and-nest_joins)).
+
 `config.single_line` makes the document a one-line text field (a filter box, a prompt): the
 text never holds a line break. Enter changes nothing, line breaks typed, pasted, edited in or
 changed from elsewhere become spaces where they land (never joining two words or doubling a

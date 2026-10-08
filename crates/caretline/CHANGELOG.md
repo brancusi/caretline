@@ -4,6 +4,12 @@
 
 ### Added
 
+- `OutlineConfig::nest_joins` (`with_nest_joins`, `"nest_joins": true` in JSON, left out while
+  false): Tab closes the blank row above every block it nests directly under the block above
+  it (that block becomes its parent), in the same undo step; Shift-Tab adds none back, so
+  outdenting moves nothing vertically. Off by default: Tab and Shift-Tab keep every blank row,
+  as before.
+
 - `Edit::then_default` (and the constructor `Edit::then_default()`): an input rule's edit that
   adjusts what the engine does with the message rather than replacing it. The rule's changes,
   selection and marks are applied, then the engine handles the message as it would have (an
@@ -124,6 +130,10 @@
 
 ### Fixed
 
+- A blank row a host sets with `MarkOp::SetGap` is no longer reverted by the engine's gap
+  pinning in the same message: an input rule's edit for Tab, Shift-Tab, typing, Backspace or
+  Delete (with or without `then_default`), or a command's edit with `keep_gaps`. The gaps the
+  engine kept were read before the edit and written back after it, over the host's own.
 - A click (`Msg::Click`, `view::hit`) on the right half of a wide grapheme puts the caret after
   it, not before.
 - The engine no longer enables serde_json's `preserve_order` for every crate that depends on it

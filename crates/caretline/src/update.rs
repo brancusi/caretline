@@ -128,7 +128,7 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
     let motion = msg.view_motion();
     let scroll_before = state.view.scroll;
 
-    let pins = if outline_on {
+    let mut pins = if outline_on {
         crate::outline::rules::pins_for(state, &msg)
     } else {
         None
@@ -136,7 +136,7 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
     let edits_before = state.doc.edits.0;
     let handled = match &msg {
         Msg::Command { name, args } => Some(crate::host::run_command(state, name, args)),
-        _ => match crate::host::input_rules(state, &msg) {
+        _ => match crate::host::input_rules(state, &msg, &mut pins) {
             Some(fx) => Some(fx),
             None if outline_on => crate::outline::rules::update(state, &msg),
             None => None,
