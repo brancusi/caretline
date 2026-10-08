@@ -72,7 +72,10 @@ fn plan_for(s: &State, layers: &Layers) -> (Plan, Grid) {
     let frame = view(s);
     let res = FrameResolver::new(&frame).with_doc(&s.doc);
     let grid = Grid::from_frame(&frame);
-    (plan(layers, &res, &grid, &common::renderers()), grid)
+    let r = common::renderers();
+    let p = plan(layers, &res, &grid, &r);
+    common::conform(layers, &res, &grid, &r, &p);
+    (p, grid)
 }
 
 #[test]

@@ -79,7 +79,9 @@ fn plan_doc(
     let res = FrameResolver::new(&frame).with_doc(&s.doc);
     let mut grid = Grid::from_frame(&frame);
     setup(&mut grid, &res);
-    let p = plan(layers, &res, &grid, &renderers());
+    let r = renderers();
+    let p = plan(layers, &res, &grid, &r);
+    conform(layers, &res, &grid, &r, &p);
     (frame, grid, p)
 }
 
@@ -305,7 +307,9 @@ fn a_box_clear_of_avoid_cells_wins_whenever_the_search_has_one() {
         layer.place = vec![Side::Below, Side::Above];
         let mut l = Layers::default();
         push(&mut l, layer, None);
-        let p = plan(&l, &m, &grid, &card_size(bw, bh));
+        let r = card_size(bw, bh);
+        let p = plan(&l, &m, &grid, &r);
+        conform(&l, &m, &grid, &r, &p);
         let pl = &p.layers[0];
         if exists {
             assert_eq!(pl.covers_avoid, 0, "seed {seed}: {pl:?}");

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::explain::{Arrow, Candidate, Explained, Explanation, why_won};
 use crate::geom::{Rect, Side};
 use crate::model::{Anchor, Layer, Layers, Owner, Part, Pulse, ScreenPos};
 use crate::resolve::{Off, Resolve, Resolved};
@@ -266,6 +267,53 @@ pub fn hit_regions(regions: &[Region], x: u16, y: u16) -> Option<&Region> {
 /// Places every visible layer. Pure: the same layers, resolved anchors, grid and measured
 /// sizes give the same plan.
 pub fn plan(layers: &Layers, anchors: &dyn Resolve, grid: &Grid, renderers: &Renderers) -> Plan {
+    plan_with(layers, anchors, grid, renderers, &Opts::default(), None)
+}
+
+/// [`plan`], and why each box landed where it did: every fallback anchor tried, the size
+/// measured for each side, every candidate box weighed (side, cells, text and avoid weight
+/// covered, distance, its arrow's cost) and why the winner won ([`Explanation`], with a
+/// `Display` for people). The plan is the one [`plan`] gives. Gathering costs a little, so
+/// only an inspector or a test asks for it; [`plan`] keeps none of it.
+pub fn plan_explained(
+    layers: &Layers,
+    anchors: &dyn Resolve,
+    grid: &Grid,
+    renderers: &Renderers,
+) -> (Plan, Explanation) {
+    let mut e = Explanation {
+        width: grid.width,
+        height: grid.height,
+        layers: Vec::new(),
+    };
+    let p = plan_with(
+        layers,
+        anchors,
+        grid,
+        renderers,
+        &Opts::default(),
+        Some(&mut e),
+    );
+    (p, e)
+}
+
+/// How a caller other than a host's frame wants a plan made.
+#[derive(Default)]
+pub(crate) struct Opts<'a> {
+    /// This layer's box covers no avoid cell: a candidate that would is never weighed. The
+    /// conformance kit re-plans with it to learn whether a clear box was in reach.
+    #[cfg_attr(not(feature = "conformance"), allow(dead_code))]
+    pub(crate) hard_avoid: Option<&'a str>,
+}
+
+pub(crate) fn plan_with(
+    layers: &Layers,
+    anchors: &dyn Resolve,
+    grid: &Grid,
+    renderers: &Renderers,
+    opts: &Opts<'_>,
+    mut explain: Option<&mut Explanation>,
+) -> Plan {
     let mut out = Plan {
         width: grid.width,
         height: grid.height,
@@ -302,10 +350,18 @@ pub fn plan(layers: &Layers, anchors: &dyn Resolve, grid: &Grid, renderers: &Ren
         }
     }
     for (layer, t) in targets {
+        let trace = explain.as_deref_mut().map(|e| {
+            e.layers.push(Explained::begin(layer, anchors, grid));
+            e.layers.last_mut().expect("just pushed")
+        });
         let Some(t) = t else {
+            if let Some(tr) = trace {
+                tr.why = "missing: none of its anchors resolved".into();
+            }
             out.missing.push(layer.id.clone());
             continue;
         };
+        let hard = opts.hard_avoid.is_some_and(|id| id == layer.id);
         // The cells this layer keeps off: every avoid anchor that shows.
         let avoid: Vec<Rect> = layer
             .avoid
@@ -315,7 +371,9 @@ pub fn plan(layers: &Layers, anchors: &dyn Resolve, grid: &Grid, renderers: &Ren
             .map(|r| r.intersection(&screen))
             .filter(|r| !r.is_empty())
             .collect();
-        plan_one(layer, t, &avoid, grid, renderers, &mut taken, &mut out);
+        plan_one(
+            layer, t, &avoid, grid, renderers, &mut taken, &mut out, hard, trace,
+        );
     }
     out
 }
@@ -332,10 +390,15 @@ fn plan_one(
     renderers: &Renderers,
     taken: &mut Taken,
     out: &mut Plan,
+    hard: bool,
+    mut trace: Option<&mut Explained>,
 ) {
     let area = grid.area;
     let agent = layer.owner.is_agent();
     let narrow = area.w < NARROW_COLS || area.h < NARROW_ROWS;
+    if let Some(tr) = trace.as_deref_mut() {
+        tr.narrow = narrow && layer.content.is_some();
+    }
     let renderer = layer.content.as_ref().and_then(|c| renderers.get(&c.kind));
     if layer.content.is_some() && renderer.is_none() {
         out.unrendered.push(layer.id.clone());
@@ -430,6 +493,12 @@ fn plan_one(
                 _ => Vec::new(),
             }
         };
+        if let Some(tr) = trace.as_deref_mut() {
+            tr.measured = sides
+                .iter()
+                .map(|&(s, (w, h))| (s, Size::new(w, h)))
+                .collect();
+        }
         let screen_size = match &t {
             Target::Screen(_) if !narrow => measure(whole),
             _ => None,
@@ -449,10 +518,19 @@ fn plan_one(
                 (Target::Screen(pos), _) => screen_size
                     .and_then(|size| screen_box(*pos, size, area, grid, taken, agent))
                     .map(|r| (r, None, None)),
-                (_, Some((chip, _))) => {
-                    place(&sides, &[chip], avoid, grid, taken, agent, false, true)
-                        .map(|(r, s, _)| (r, Some(s), None))
-                }
+                (_, Some((chip, _))) => place(
+                    &sides,
+                    &[chip],
+                    avoid,
+                    grid,
+                    taken,
+                    agent,
+                    false,
+                    true,
+                    hard,
+                    trace.as_deref_mut(),
+                )
+                .map(|(r, s, _)| (r, Some(s), None)),
                 (Target::At(_), None) => place(
                     &sides,
                     &anchor,
@@ -462,10 +540,40 @@ fn plan_one(
                     agent,
                     layer.arrow,
                     false,
+                    hard,
+                    trace.as_deref_mut(),
                 )
                 .map(|(r, s, path)| (r, Some(s), path)),
                 _ => None,
             };
+        }
+        if let Some(tr) = trace {
+            match (&chosen, &t) {
+                (Some(_), Target::Screen(pos)) => {
+                    tr.why = format!(
+                        "at the screen position {}",
+                        format!("{pos:?}").to_lowercase()
+                    );
+                }
+                (None, _) if !has_box => {
+                    tr.why = "no box: the renderer measured nothing for it".into();
+                }
+                (None, _) if narrow => {
+                    tr.why = format!(
+                        "a strip: the area is {}x{}, under {NARROW_COLS} columns or {NARROW_ROWS} rows",
+                        area.w, area.h
+                    );
+                }
+                (None, _) if sides.is_empty() && !matches!(t, Target::Screen(_)) => {
+                    tr.why = "a strip: no side had room for a box".into();
+                }
+                (None, _) => {
+                    tr.why = "a strip: no box fits beside the anchor, clear of its anchor, \
+                              other layers, holes, protected cells and wide graphemes"
+                        .into();
+                }
+                _ => {}
+            }
         }
         match chosen {
             Some((r, side, path)) => {
@@ -550,7 +658,7 @@ fn plan_one(
                 }
             }
             None if has_box => {
-                let r = strip_rect(&anchor, off.as_ref(), grid, taken);
+                let r = strip_rect(&anchor, off.as_ref(), grid, taken, agent);
                 p.rect = Some(r);
                 p.mode = Some(Mode::Strip);
                 out.regions.push(Region {
@@ -606,8 +714,9 @@ fn plan_one(
 /// The strip's row, on the edge nearest the anchor: the area's top for an anchor that lies
 /// above, its bottom for one below; for an anchor on screen (or left or right), the top,
 /// unless the anchor is on the top row. Failing that (its chip, another layer, a hole or
-/// protected cells there), the nearest free row inward from that edge.
-fn strip_rect(anchor: &[Rect], off: Option<&Off>, grid: &Grid, taken: &Taken) -> Rect {
+/// protected cells there, or for an agent's layer the caret), the nearest free row inward
+/// from that edge.
+fn strip_rect(anchor: &[Rect], off: Option<&Off>, grid: &Grid, taken: &Taken, agent: bool) -> Rect {
     let area = grid.area;
     let row = |y: u16| Rect::new(area.x, y, area.w, 1);
     let top_first = match off {
@@ -620,11 +729,46 @@ fn strip_rect(anchor: &[Rect], off: Option<&Off>, grid: &Grid, taken: &Taken) ->
     } else {
         (area.y..area.bottom()).rev().collect()
     };
-    let blocked = blockers(grid, taken, anchor, None);
-    ys.iter()
+    let mut blocked = blockers(grid, taken, anchor, None);
+    // An agent's strip keeps off the caret, as its box does.
+    if let (true, Some((x, y))) = (agent, grid.caret) {
+        blocked.push(Rect::new(x, y, 1, 1));
+    }
+    if let Some(r) = ys
+        .iter()
         .map(|&y| row(y))
         .find(|r| !blocked.iter().any(|b| b.intersects(r)))
-        .unwrap_or_else(|| row(ys[0]))
+    {
+        return r;
+    }
+    // No whole row is free: the widest free run of any row, in the same order (the nearer
+    // the edge, the better on a tie), its ends off the halves of a wide grapheme.
+    let mut best: Option<Rect> = None;
+    for &y in &ys {
+        let free = |x: u16| !blocked.iter().any(|b| b.contains(x, y));
+        let mut x = area.x;
+        while x < area.right() {
+            if !free(x) {
+                x += 1;
+                continue;
+            }
+            let start = x;
+            while x < area.right() && free(x) {
+                x += 1;
+            }
+            let (mut a, mut b) = (start, x);
+            if grid.kind(a, y) == CellKind::WideTail {
+                a += 1;
+            }
+            if b < area.right() && grid.kind(b, y) == CellKind::WideTail && b > a {
+                b -= 1;
+            }
+            if b > a && best.is_none_or(|r| b - a > r.w) {
+                best = Some(Rect::new(a, y, b - a, 1));
+            }
+        }
+    }
+    best.unwrap_or_else(|| row(ys[0]))
 }
 
 /// The edge chip's cells: on the edge the anchor lies beyond, at its column or row if known,
@@ -1332,6 +1476,8 @@ fn place(
     agent: bool,
     arrow: bool,
     flush: bool,
+    hard: bool,
+    trace: Option<&mut Explained>,
 ) -> Option<(Rect, Side, Option<route::Path>)> {
     let area = grid.area;
     if anchor.is_empty() {
@@ -1398,6 +1544,10 @@ fn place(
             } else {
                 0
             };
+            // Kept off avoid cells altogether (the conformance kit's re-plan).
+            if hard && covered > 0 {
+                return;
+            }
             if text == 0 && covered == 0 {
                 clear.set(true);
             }
@@ -1509,8 +1659,16 @@ fn place(
         // loses to one with a blank way, and any box whose arrow routes beats one whose arrow
         // can't. The winner is the least of them all, whatever order they're routed in, so
         // it doesn't depend on which boxes a first guess ranked together (`route_all`).
-        let b = route_all(&cands, anchor, avoid, grid, taken)?;
-        let r = keep(b.rect, b.side);
+        let mut arrows = trace.as_ref().map(|_| Vec::new());
+        let b = route_all(&cands, anchor, avoid, grid, taken, arrows.as_mut());
+        let r = b.as_ref().map(|b| keep(b.rect, b.side));
+        if let Some(tr) = trace {
+            let winner = b
+                .as_ref()
+                .and_then(|b| cands.iter().position(|c| c.seq == b.seq));
+            explain_cands(tr, &cands, sums, grid, avoid, arrows, winner, r);
+        }
+        let (b, r) = (b?, r?);
         return Some((r, b.side, b.path.filter(|_| r == b.rect)));
     }
     let c = cands[0];
@@ -1521,7 +1679,58 @@ fn place(
     } else {
         r
     };
+    if let Some(tr) = trace {
+        explain_cands(tr, &cands, sums, grid, avoid, None, Some(0), Some(r));
+    }
     Some((r, c.side, None))
+}
+
+/// Records the candidates weighed, best first, with their score's parts, their arrows, the
+/// winner and why it won.
+#[allow(clippy::too_many_arguments)]
+fn explain_cands(
+    tr: &mut Explained,
+    cands: &[Cand],
+    sums: &Sums,
+    grid: &Grid,
+    avoid: &[Rect],
+    arrows: Option<Vec<(usize, Arrow)>>,
+    winner: Option<usize>,
+    placed: Option<Rect>,
+) {
+    tr.candidates = cands
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let r = &c.rect;
+            let (text, covered, dimmed) = (sums.text(r), sums.avoid(r, avoid), sums.dim(r));
+            let caret = grid.caret.is_some_and(|(x, y)| r.contains(x, y));
+            let rest = text * 10 + covered * 10 + dimmed * 3 + if caret { 500 } else { 0 };
+            Candidate {
+                side: c.side,
+                rect: c.rect,
+                far: c.far,
+                text,
+                avoid: covered,
+                dimmed,
+                caret,
+                distance: c.score.saturating_sub(rest) / 5,
+                score: c.score,
+                arrow: arrows.as_ref().map(|a| {
+                    a.iter()
+                        .find(|(k, _)| *k == i)
+                        .map_or(Arrow::Pruned, |(_, x)| *x)
+                }),
+            }
+        })
+        .collect();
+    tr.winner = winner;
+    if let (Some(w), Some(p)) = (winner, placed) {
+        if p != cands[w].rect {
+            tr.sliver_from = Some(cands[w].rect);
+        }
+        tr.why = why_won(&tr.candidates, w);
+    }
 }
 
 /// Whether a box on `side` of `a` is next to it and shares at least one cell of its edge.
@@ -1589,6 +1798,7 @@ fn route_all(
     avoid: &[Rect],
     grid: &Grid,
     taken: &Taken,
+    mut trace: Option<&mut Vec<(usize, Arrow)>>,
 ) -> Option<Scored> {
     let area = grid.area;
     let near: Vec<Rect> = cands.iter().map(|c| nearest(anchor, &c.rect)).collect();
@@ -1691,7 +1901,12 @@ fn route_all(
             // Crossing a word is worse than covering one: a box hides text, an arrow mangles
             // it. Crossing an avoid cell costs what covering it would, on top.
             let (miss, rc, path) = match routed {
-                route::Routed::Over => continue,
+                route::Routed::Over => {
+                    if let Some(t) = trace.as_deref_mut() {
+                        t.push((i, Arrow::Over));
+                    }
+                    continue;
+                }
                 route::Routed::NoWay => (true, 0, None),
                 route::Routed::Found(p) => {
                     let (mut words, mut avoided) = (0u32, 0u32);
@@ -1702,6 +1917,18 @@ fn route_all(
                     (false, p.cost * 5 + 300 * words + 10 * avoided, Some(p))
                 }
             };
+            if let Some(t) = trace.as_deref_mut() {
+                t.push((
+                    i,
+                    match &path {
+                        Some(p) => Arrow::Routed {
+                            cost: rc,
+                            cells: p.cells.len() as u16,
+                        },
+                        None => Arrow::NoWay,
+                    },
+                ));
+            }
             let scored = Scored {
                 avoid: c.avoid,
                 miss,

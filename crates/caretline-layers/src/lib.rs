@@ -31,6 +31,12 @@
 //!   serializable [`Plan`]: each layer's box or
 //!   strip, the edge chip of an off-screen anchor, the arrow's route as cells, ring cells,
 //!   spotlight holes, and click [`Region`]s with [`Plan::hit`].
+//! - **Inspector:** [`Plan::explain`] reads a plan back in words; [`plan_explained`] also
+//!   keeps every candidate box weighed and why the winner won ([`Explanation`]). Only when
+//!   asked: [`plan`] gathers none of it.
+//! - **Conformance** (feature `conformance`, off by default; for a host's dev-dependencies):
+//!   `conformance` checks a host's plans, replays, edits and protocol bridge against the
+//!   invariants every host shares, and writes goldens of its screens.
 //! - **Ops** ([`ops`]): protocol-neutral `hint.*` and `layer.*` requests and replies, for a
 //!   host's own JSON protocol or caretline's.
 //! - **Pixels** (feature `kitty`, off by default): `kitty::KittyState` turns a plan and the
@@ -49,6 +55,9 @@
 // `ops::schema` is one `json!` literal, deeper than the default limit.
 #![recursion_limit = "256"]
 
+#[cfg(feature = "conformance")]
+pub mod conformance;
+mod explain;
 #[cfg(feature = "caretline")]
 mod frame;
 mod geom;
@@ -62,6 +71,7 @@ pub mod probe;
 mod resolve;
 mod route;
 
+pub use explain::{Arrow, Candidate, Explained, Explanation, Tried};
 #[cfg(feature = "caretline")]
 pub use frame::{Edited, FrameResolver, map_anchors, observe};
 pub use geom::{Rect, Side};
@@ -72,7 +82,7 @@ pub use model::{
 pub use place::{
     AVOID, Attach, CellKind, Edge, Grid, MAX_WIDTH, MeasureCtx, Mode, NARROW_COLS, NARROW_ROWS,
     NoArrow, Plan, Planned, Reach, Region, Renderer, Renderers, Route, Size, Spot, Step,
-    hit_regions, plan, width,
+    hit_regions, plan, plan_explained, width,
 };
 pub use resolve::{AnchorKey, AnchorMap, Chain, Off, Resolve, Resolved};
 pub use route::Dir;

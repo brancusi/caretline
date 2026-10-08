@@ -329,3 +329,61 @@ fn placement_is_a_pure_function_of_its_inputs() {
     assert_eq!(c.layers[0].rect, a.layers[0].rect);
     assert_eq!(c.layers[0].route, a.layers[0].route);
 }
+
+/// Found by the conformance kit (`check_plan`, `covers_caret`): an agent's box kept off the
+/// caret, but its strip took the top row over it.
+#[test]
+fn an_agents_strip_keeps_off_the_caret() {
+    let mut m = AnchorMap::new();
+    let a = at(&mut m, "a", Rect::new(5, 6, 4, 1));
+    let narrow = Grid::new(40, 16)
+        .with_area(Rect::new(0, 0, 40, 15))
+        .with_caret(Some((3, 0)));
+    let mut l = Layers::default();
+    apply(
+        &mut l,
+        LayerOp::Push(Layer::new(a.clone()).with_content(card())),
+        Some("helper"),
+        0,
+        &Limits::default(),
+    )
+    .unwrap();
+    let p = plan(&l, &m, &narrow, &sized(20, 4));
+    assert_eq!(p.layers[0].mode, Some(Mode::Strip));
+    assert_eq!(p.layers[0].rect, Some(Rect::new(0, 1, 40, 1)));
+    // The host's own strip may still take that row.
+    let p = plan(
+        &one(Layer::new(a).with_content(card())),
+        &m,
+        &narrow,
+        &sized(20, 4),
+    );
+    assert_eq!(p.layers[0].rect, Some(Rect::new(0, 0, 40, 1)));
+}
+
+/// Found by the conformance kit (`check_plan`, `overlap`): with every row of a short area
+/// taken by strips, anchors and a chip, a strip fell back to the top row over another layer's
+/// strip. It now takes the widest free run of a row.
+#[test]
+fn a_strip_with_no_free_row_takes_the_widest_free_run() {
+    let mut m = AnchorMap::new();
+    let grid = Grid::new(60, 4).with_area(Rect::new(0, 0, 60, 3));
+    let first = at(&mut m, "a", Rect::new(10, 2, 4, 1));
+    let second = at(&mut m, "b", Rect::new(0, 1, 50, 1));
+    let mut l = Layers::default();
+    for a in [first, second] {
+        apply(
+            &mut l,
+            LayerOp::Push(Layer::new(a).with_content(card())),
+            None,
+            0,
+            &Limits::default(),
+        )
+        .unwrap();
+    }
+    let p = plan(&l, &m, &grid, &sized(20, 4));
+    assert_eq!(p.layers[0].rect, Some(Rect::new(0, 0, 60, 1)));
+    // Row 1 is free past the second anchor; row 2 left and right of the first.
+    assert_eq!(p.layers[1].mode, Some(Mode::Strip));
+    assert_eq!(p.layers[1].rect, Some(Rect::new(14, 2, 46, 1)));
+}

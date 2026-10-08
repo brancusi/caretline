@@ -487,7 +487,10 @@ fn golden_views(name: &str, focus_panel: bool) {
         l.arrow = arrow;
         push(&mut layers, l, None);
     }
-    let p = plan(&layers, &Chain(vec![&m, &p]), &grid, &renderers());
+    let chain = Chain(vec![&m, &p]);
+    let r = renderers();
+    let p = plan(&layers, &chain, &grid, &r);
+    conform(&layers, &chain, &grid, &r, &p);
     golden(
         &format!("{name}.txt"),
         &picture(&screen(&main, &panel), &p, &layers),
