@@ -50,6 +50,27 @@
   then a function of the state, and replays the same on any machine. The `caretline` binary
   sends the size its terminal probe finds (and a later `CSI 16 t` answer) this way.
 - `Msg::resize(width, height)`: a resize that keeps the cell pixel size.
+- **Frame passes**: `Host::frame_pass(name, |ctx, frame| …)` draws over every frame
+  `view::render` (and `view`, snapshots, the protocol's `render`) makes, in registration order;
+  a pass registered again under its name is replaced in place. `view::render_plain` draws
+  without any, `view::render_skipping(doc, view, &["name"])` without the named ones.
+  `Host::frame_pass_names` lists them. With none registered rendering costs the same (100×40:
+  143.7 µs before, 143.9 µs after).
+- Grapheme-safe writers on `Frame` for passes: `Frame::new(w, h)` (now public),
+  `set(x, y, grapheme, role) -> u16` (the cells written; writing over either half of a wide
+  grapheme blanks its other half, a wide grapheme that doesn't fit is drawn as a space),
+  `restyle(x, y, role)`, `flag(x, y, CellFlags)` and `role(name) -> Role` (a host's style
+  name, as decorations use). `Frame::regions: Vec<Region { x, y, w, h, id }>` and
+  `Frame::region_at(x, y)` (the last added wins) for what a pass makes clickable.
+- `CellFlags` (`DIM`, `RING`, one byte) on every `Cell` (`Cell::flags`): marks a pass sets for
+  its renderer. The engine never sets or reads them. The protocol's `cells` rows gain an
+  optional `flags` list of runs, `[x, len, "dim" | "ring" | "dim ring"]` (left out when empty;
+  additive, proto 1), and `Frame::to_ansi` draws them faint and underlined.
+- `view::locate(doc, view, pos) -> Locate`: where a char position is on screen, the inverse
+  of `view::hit` through the same layout: `At { x, y }`, or which way it lies, `Above`,
+  `Below`, `Left`, `Right` (a line that doesn't wrap) or `Folded { block }`. Serialized as
+  `{"kind": "at", "x": …, "y": …}`.
+- `Cell`, `CellFlags`, `Region` and `Role` are re-exported at the crate root.
 
 ### Breaking
 
@@ -62,8 +83,9 @@
   `Msg::resize(width, height)` (or adds `cell_px: None`); a pattern that names its fields adds
   `..`. Its JSON is unchanged without pixels (`#[serde(default)]`, left out when `None`), so
   old traces and clients replay and parse as before.
-- `Frame` has a new public field, `cell_px`: a `Frame` built with a struct literal adds
-  `cell_px: None`.
+- `Frame` has new public fields, `cell_px` and `regions`, and `Cell` one, `flags`: a struct
+  literal adds `cell_px: None, regions: Vec::new()` (or starts from `Frame::new(w, h)`) and
+  `flags: CellFlags::NONE`.
 
 - `Config`, `ConfigInput`, `ViewConfig`, `OutlineConfig` and `OutlineLayout` are
   `#[non_exhaustive]`, so adding a setting is no longer a breaking change. Outside the crate

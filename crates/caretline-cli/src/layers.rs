@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use caretline::Frame;
 use caretline::helix::Tendril;
-use caretline::view::{Cell, Role};
+use caretline::view::{Cell, CellFlags, Role};
 use caretline_layers::kitty::{CellPx, Cells, Image, KittyState, Picture, Z, shape_key};
 use caretline_layers::{
     Anchor, Dir, Edge, Hint, Layers, Mode, Off, Plan, Planned, Rect, Renderer, Size, width,
@@ -158,12 +158,14 @@ fn put(frame: &mut Frame, x: u16, y: u16, g: &str, r: Role) -> u16 {
         symbol: Tendril::from(g),
         role: r,
         char_idx: None,
+        flags: CellFlags::NONE,
     };
     for cx in x + 1..end {
         frame.cells[at(cx)] = Cell {
             symbol: Tendril::new(),
             role: r,
             char_idx: None,
+            flags: CellFlags::NONE,
         };
     }
     w

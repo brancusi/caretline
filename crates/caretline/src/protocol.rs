@@ -227,6 +227,9 @@ struct CellRow {
     text: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     spans: Vec<(u16, u16, String)>,
+    /// Runs of cells a frame pass flagged, as `[x, len, "dim" | "ring" | "dim ring"]`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    flags: Vec<(u16, u16, &'static str)>,
     /// What the row shows (text of a line, a block's blank row, …).
     info: crate::view::RowInfo,
 }
@@ -278,16 +281,25 @@ impl RenderedFrame {
     }
 }
 
-/// Each row's symbols joined (a wide grapheme's second cell adds nothing) and its runs of
-/// non-text roles as `[x, len, role]`, in cell columns.
+/// Each row's symbols joined (a wide grapheme's second cell adds nothing), its runs of
+/// non-text roles as `[x, len, role]` and of flagged cells as `[x, len, flags]`, in cell
+/// columns.
 fn cell_rows(frame: &Frame) -> Vec<CellRow> {
     (0..frame.height)
         .map(|y| {
             let mut text = String::with_capacity(frame.width as usize);
             let mut spans: Vec<(u16, u16, String)> = Vec::new();
+            let mut flags: Vec<(u16, u16, &'static str)> = Vec::new();
             for x in 0..frame.width {
                 let cell = frame.cell(x, y);
                 text.push_str(&cell.symbol);
+                if !cell.flags.is_empty() {
+                    let name = cell.flags.names();
+                    match flags.last_mut() {
+                        Some((fx, len, f)) if *f == name && *fx + *len == x => *len += 1,
+                        _ => flags.push((x, 1, name)),
+                    }
+                }
                 if cell.role == Role::Text {
                     continue;
                 }
@@ -300,6 +312,7 @@ fn cell_rows(frame: &Frame) -> Vec<CellRow> {
             CellRow {
                 text,
                 spans,
+                flags,
                 info: frame
                     .rows
                     .get(y as usize)

@@ -5,11 +5,16 @@
 use std::sync::{Arc, Mutex};
 
 use caretline::trace::{replay_trace_with, TraceLine};
+use caretline::view::{
+    hit, locate, render_plain, render_skipping, CellFlags, Frame, Hit, Locate, Region, Role,
+};
 use caretline::{
     update, update_doc_with_changes, update_with_changes, CellPx, ChangeSet, Effect, ExtChange,
     ExtFns, ExtOut, Host, Msg, Session, State, View, Viewport,
 };
 use serde_json::{json, Value};
+
+mod common;
 
 fn vp() -> Viewport {
     Viewport {
@@ -467,4 +472,325 @@ fn an_old_trace_with_resize_still_replays() {
     let (s, _, _) = replay_trace_with(&session.trace_jsonl(), &Host::new()).unwrap();
     assert_eq!(s.view.cell_px, Some(CellPx::new(16, 34)));
     assert_eq!(caretline::view(&s), session.frame());
+}
+
+// --------------------------------------------------------------------------------------
+// E3: frame passes, cell writers, flags and regions
+
+/// Draws `[n]` at the top right, where `n` is the view's `count` value, and rings the caret's
+/// cell.
+fn badge_host() -> Host {
+    host()
+        .frame_pass("badge", |ctx, frame| {
+            let Some(n) = ctx.view.ext.get("count") else {
+                return;
+            };
+            let role = frame.role("badge");
+            let text = format!("[{n}]");
+            let mut x = frame.width - text.len() as u16;
+            for g in text.chars() {
+                x += frame.set(x, 0, &g.to_string(), role);
+            }
+            frame.regions.push(Region {
+                x: frame.width - text.len() as u16,
+                y: 0,
+                w: text.len() as u16,
+                h: 1,
+                id: "badge".into(),
+            });
+        })
+        .frame_pass("ring", |_, frame| {
+            if let Some((x, y)) = frame.cursor {
+                frame.flag(x, y, CellFlags::RING);
+            }
+        })
+}
+
+#[test]
+fn a_frame_pass_shows_in_render_but_not_render_plain() {
+    let mut s = with_host("hello", badge_host());
+    let plain = caretline::view(&s);
+    update(&mut s, ext("count", json!({"add": 7})));
+    let drawn = caretline::view(&s);
+    assert!(drawn.to_text().lines().next().unwrap().ends_with("[7]"));
+    let bare = render_plain(&s.doc, &s.view);
+    assert!(!bare.to_text().contains("[7]"));
+    assert_eq!(bare.to_text(), plain.to_text());
+    assert!(bare.regions.is_empty());
+    // The pass's role has its name; the region is there to hit.
+    let x = drawn.width - 2;
+    assert_eq!(drawn.role_name(drawn.cell(x, 0).role), "badge");
+    assert_eq!(drawn.region_at(x, 0).map(|r| r.id.as_str()), Some("badge"));
+    assert_eq!(drawn.region_at(0, 0), None);
+    // The caret's cell is ringed; skipping that pass leaves it alone.
+    let (cx, cy) = drawn.cursor.unwrap();
+    assert!(drawn.cell(cx, cy).flags.contains(CellFlags::RING));
+    let skipped = render_skipping(&s.doc, &s.view, &["ring"]);
+    assert!(skipped.cell(cx, cy).flags.is_empty());
+    assert!(skipped.to_text().contains("[7]"));
+    // A session's frames and the protocol's go through the passes, with flags in `cells`.
+    let mut session = Session::new(s);
+    assert_eq!(session.frame(), drawn);
+    let r: Value = serde_json::from_str(
+        &session
+            .handle(r#"{"id":1,"op":"render","format":"cells"}"#, None)
+            .response,
+    )
+    .unwrap();
+    let row = &r["result"]["rows"][cy as usize];
+    assert_eq!(row["flags"], json!([[cx, 1, "ring"]]));
+    assert!(r["result"]["rows"][1].get("flags").is_none());
+    let ansi = session.frame().to_ansi();
+    assert!(ansi.contains("\x1b[4m"), "{ansi:?}");
+}
+
+#[test]
+fn frame_passes_run_in_order_and_replace_by_name() {
+    let host = Host::new()
+        .frame_pass("a", |_, f| {
+            let r = f.role("a");
+            f.set(0, 0, "A", r);
+        })
+        .frame_pass("b", |_, f| {
+            let r = f.role("b");
+            f.set(0, 0, "B", r);
+        });
+    assert_eq!(host.frame_pass_names(), vec!["a", "b"]);
+    let s = with_host("", host.clone());
+    assert_eq!(caretline::view(&s).cell(0, 0).symbol.as_str(), "B");
+    // Replaced in its place: still before "b".
+    let host = host.frame_pass("a", |_, f| {
+        let r = f.role("a");
+        f.set(1, 0, "Z", r);
+    });
+    assert_eq!(host.frame_pass_names(), vec!["a", "b"]);
+    let s = with_host("", host);
+    let f = caretline::view(&s);
+    assert_eq!(
+        (f.cell(0, 0).symbol.as_str(), f.cell(1, 0).symbol.as_str()),
+        ("B", "Z")
+    );
+}
+
+#[test]
+fn frame_set_restyle_and_flag_respect_wide_graphemes() {
+    let mut f = Frame::new(6, 1);
+    let r = f.role("x");
+    assert_eq!(f.set(0, 0, "語", r), 2);
+    assert_eq!(f.set(2, 0, "語", r), 2);
+    assert_eq!(f.to_text(), "語語\n");
+    // Over the second half of the first: its lead goes blank.
+    assert_eq!(f.set(1, 0, "a", r), 1);
+    assert_eq!(f.to_text(), " a語\n");
+    // Over the lead of the second: its second half goes blank.
+    assert_eq!(f.set(2, 0, "b", r), 1);
+    assert_eq!(f.to_text(), " ab\n");
+    assert_eq!(f.cell(3, 0).symbol.as_str(), " ");
+    // A wide grapheme that doesn't fit is a space.
+    assert_eq!(f.set(5, 0, "語", r), 1);
+    assert_eq!(f.cell(5, 0).symbol.as_str(), " ");
+    // Off the frame, or nothing: no cells.
+    assert_eq!(f.set(6, 0, "a", r), 0);
+    assert_eq!(f.set(0, 1, "a", r), 0);
+    assert_eq!(f.set(0, 0, "", r), 0);
+    // A control char draws as a placeholder.
+    assert_eq!(f.set(0, 0, "\u{7}", r), 1);
+    assert_eq!(f.cell(0, 0).symbol.as_str(), "\u{FFFD}");
+    // Restyling or flagging either half covers the whole grapheme.
+    f.set(3, 0, "語", Role::Text);
+    let y = f.role("y");
+    f.restyle(4, 0, y);
+    assert_eq!((f.cell(3, 0).role, f.cell(4, 0).role), (y, y));
+    f.flag(4, 0, CellFlags::DIM);
+    f.flag(3, 0, CellFlags::DIM | CellFlags::RING);
+    assert!(f
+        .cell(3, 0)
+        .flags
+        .contains(CellFlags::DIM | CellFlags::RING));
+    assert_eq!(f.cell(4, 0).flags.names(), "dim ring");
+    assert!(f.cell(2, 0).flags.is_empty());
+}
+
+#[test]
+fn frame_set_never_splits_a_wide_grapheme() {
+    use rand::{Rng, SeedableRng};
+    const GS: &[&str] = &["a", "語", "😀", "é", " ", "x", "ｗ", "\t"];
+    for seed in 0..300u64 {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let w = rng.random_range(1..12u16);
+        let mut f = Frame::new(w, 2);
+        let r = f.role("r");
+        for _ in 0..rng.random_range(1..40) {
+            let g = GS[rng.random_range(0..GS.len())];
+            let x = rng.random_range(0..w + 1);
+            let y = rng.random_range(0..2);
+            let n = f.set(x, y, g, r);
+            if x < w {
+                assert!(n >= 1 && x + n <= w, "seed {seed}: {g:?} at {x} wrote {n}");
+            }
+            // Every row: a lead of width k is followed by exactly k - 1 empty cells.
+            for y in 0..2 {
+                let mut x = 0;
+                while x < w {
+                    let c = f.cell(x, y);
+                    assert!(
+                        !c.symbol.is_empty(),
+                        "seed {seed}: a lone second half at {x}"
+                    );
+                    let k = caretline::view::display_width(&c.symbol) as u16;
+                    for dx in 1..k {
+                        assert!(x + dx < w, "seed {seed}: a grapheme past the edge");
+                        assert!(f.cell(x + dx, y).symbol.is_empty(), "seed {seed}");
+                    }
+                    x += k.max(1);
+                }
+            }
+        }
+    }
+}
+
+// --------------------------------------------------------------------------------------
+// E4: view::locate, the inverse of view::hit
+
+/// Every position a caret can stop at: the grapheme boundaries.
+fn stops(s: &State) -> Vec<usize> {
+    let text = s.doc.text.slice(..);
+    let mut out = vec![0];
+    let mut p = 0;
+    while p < text.len_chars() {
+        p = caretline::helix::graphemes::next_grapheme_boundary(text, p);
+        out.push(p);
+    }
+    out
+}
+
+/// `hit(locate(p)) == p` for every position on screen, and the caret is where the frame draws
+/// it.
+fn check_inverse(s: &State, what: &str) -> usize {
+    let layout = caretline::layout::Layout::of(&s.doc, &s.view);
+    let mut on_screen = 0;
+    for p in stops(s) {
+        let line = s.doc.text.char_to_line(p);
+        if p < layout.content_start(line) {
+            continue; // inside a block's marker: placed at its content, as a caret is
+        }
+        match locate(&s.doc, &s.view, p) {
+            Locate::At { x, y } => {
+                on_screen += 1;
+                assert_eq!(
+                    hit(&s.doc, &s.view, x, y),
+                    Hit::Text { pos: p },
+                    "{what}: {p} located at ({x}, {y})"
+                );
+            }
+            Locate::Folded { block } => assert!(s.view.folds.contains(&block), "{what}"),
+            _ => {}
+        }
+    }
+    let f = caretline::view(s);
+    if let Some((x, y)) = f.cursor {
+        assert_eq!(
+            locate(&s.doc, &s.view, s.caret()),
+            Locate::At { x, y },
+            "{what}: the caret"
+        );
+    }
+    on_screen
+}
+
+#[test]
+fn locate_finds_cells_and_directions() {
+    // 10 columns, no wrap, 3 text rows.
+    let mut s = State::new("abcdefghijklmno\nline two\nthree\nfour\nfive\n", None, vp());
+    s.doc.config.soft_wrap = false;
+    update(&mut s, Msg::resize(10, 4));
+    let at = |s: &State, p| locate(&s.doc, &s.view, p);
+    assert_eq!(at(&s, 0), Locate::At { x: 0, y: 0 });
+    assert_eq!(at(&s, 3), Locate::At { x: 3, y: 0 });
+    assert_eq!(at(&s, 12), Locate::Right);
+    assert_eq!(at(&s, 17), Locate::At { x: 1, y: 1 });
+    assert_eq!(at(&s, 38), Locate::Below);
+    // Scrolled sideways and down.
+    s.view.scroll.col = 5;
+    assert_eq!(at(&s, 2), Locate::Left);
+    assert_eq!(at(&s, 12), Locate::At { x: 7, y: 0 });
+    update(&mut s, Msg::ScrollView { rows: 2 });
+    assert_eq!(at(&s, 0), Locate::Above);
+    // Serialized for hosts and agents.
+    assert_eq!(
+        serde_json::to_value(Locate::At { x: 1, y: 2 }).unwrap(),
+        json!({"kind": "at", "x": 1, "y": 2})
+    );
+    assert_eq!(
+        serde_json::to_value(Locate::Folded {
+            block: caretline::MarkId(4)
+        })
+        .unwrap(),
+        json!({"kind": "folded", "block": 4})
+    );
+}
+
+#[test]
+fn locate_is_the_inverse_of_hit_in_plain_text() {
+    use rand::{Rng, SeedableRng};
+    let mut shown = 0;
+    for seed in 0..120u64 {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let text = common::gen::text(&mut rng);
+        let w = rng.random_range(4..40);
+        let h = rng.random_range(2..10);
+        let mut s = State::new(&text, None, vp());
+        s.doc.config.soft_wrap = rng.random_bool(0.6);
+        s.view.config.status_bar = rng.random_bool(0.5);
+        update(&mut s, Msg::resize(w, h));
+        for _ in 0..rng.random_range(0..6) {
+            let m = common::gen::msg(&mut rng, &s);
+            update(&mut s, m);
+            if rng.random_bool(0.3) {
+                update(
+                    &mut s,
+                    Msg::ScrollView {
+                        rows: rng.random_range(-3..4),
+                    },
+                );
+            }
+        }
+        shown += check_inverse(&s, &format!("seed {seed}"));
+    }
+    assert!(shown > 1000, "only {shown} positions were on screen");
+}
+
+#[test]
+fn locate_is_the_inverse_of_hit_in_an_outline_with_folds() {
+    use caretline::outline::markdown;
+    use caretline::{OutlineConfig, OutlineLayout};
+    const MD: &str = "# Trip\n\nBooked the flat, which faces the river and the old tram line.\n\n- Pay the deposit before the end of the month\n  - ask about the desk\n  - and the lamp\n- Book flights\n\n```\na fenced line that is much longer than any column here\n```\n\n1. Pack\n2. Leave\n";
+    for w in [12u16, 20, 33, 60] {
+        for h in [3u16, 6, 12] {
+            for layout in [false, true] {
+                let mut s = markdown::load(MD, None, vp(), OutlineConfig::default());
+                if layout {
+                    s.view.layout = Some(OutlineLayout::default().with_hang_glyphs(true));
+                }
+                update(&mut s, Msg::resize(w, h));
+                let what = format!("{w}x{h} layout {layout}");
+                check_inverse(&s, &what);
+                // Fold the first list item: its children are Folded under it.
+                let item = s.doc.text.to_string().find("- Pay").unwrap();
+                let block = s.doc.marks.at(item).unwrap();
+                update(&mut s, Msg::Fold { id: block });
+                let child = s.doc.text.to_string().find("ask").unwrap();
+                assert_eq!(
+                    locate(&s.doc, &s.view, child),
+                    Locate::Folded { block },
+                    "{what}"
+                );
+                check_inverse(&s, &what);
+                for _ in 0..4 {
+                    update(&mut s, Msg::ScrollView { rows: 2 });
+                    check_inverse(&s, &what);
+                }
+            }
+        }
+    }
 }

@@ -81,5 +81,5 @@ pub use state::{
     CellPx, Config, Document, ExternalUndo, Follow, Scroll, State, View, ViewConfig, Viewport,
 };
 pub use update::{replay, update, update_with_changes};
-pub use view::{view, Frame};
+pub use view::{view, Cell, CellFlags, Frame, Region, Role};
 pub use views::{update_doc, update_doc_with_changes};

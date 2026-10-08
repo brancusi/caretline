@@ -32,6 +32,7 @@ use crate::msg::{Effect, Msg};
 use crate::outline::{BlockInfo, Outline};
 use crate::state::{Document, State, View};
 use crate::update::{self, Step};
+use crate::view::Frame;
 
 /// A host command: (document and view, arguments) to an edit, or why it can't run.
 pub type CommandFn = dyn Fn(&Ctx, &Value) -> Result<Edit, String> + Send + Sync;
@@ -39,6 +40,9 @@ pub type CommandFn = dyn Fn(&Ctx, &Value) -> Result<Edit, String> + Send + Sync;
 pub type InputRuleFn = dyn Fn(&Ctx, &Msg) -> Option<Edit> + Send + Sync;
 /// A decorator: what to draw beside a block.
 pub type DecoratorFn = dyn Fn(&Ctx, &BlockInfo) -> Decoration + Send + Sync;
+/// A frame pass: draws over a rendered frame (through [`Frame::set`] and friends), at the end
+/// of every [`crate::view::render`].
+pub type FramePassFn = dyn Fn(&Ctx, &mut Frame) + Send + Sync;
 /// An ext reducer's `apply`: (the acting view, the key's value there if any, the message's
 /// `op`) to what changes, or why it can't (shown in the status).
 pub type ExtApplyFn = dyn Fn(&Ctx, Option<&Value>, &Value) -> Result<ExtOut, String> + Send + Sync;
@@ -59,6 +63,8 @@ struct Inner {
     decorator: Option<Arc<DecoratorFn>>,
     /// Ext reducers, in registration order (observers run in it).
     exts: Vec<(String, ExtFns)>,
+    /// Frame passes, in registration order (they draw in it).
+    passes: Vec<(String, Arc<FramePassFn>)>,
 }
 
 /// An ext reducer's functions ([`Host::ext`]): `apply` for [`Msg::Ext`], and an optional
@@ -221,6 +227,28 @@ impl Host {
         self
     }
 
+    /// Adds a frame pass: `f` draws over every frame [`crate::view::render`] makes (not
+    /// [`crate::view::render_plain`]), after the passes before it. A later pass of the same
+    /// name replaces it in its place. It must be pure: snapshots, the protocol's `render` and
+    /// replays draw through it. With none registered, rendering costs nothing more.
+    pub fn frame_pass(
+        mut self,
+        name: &str,
+        f: impl Fn(&Ctx, &mut Frame) + Send + Sync + 'static,
+    ) -> Host {
+        let passes = &mut Arc::make_mut(&mut self.inner).passes;
+        match passes.iter_mut().find(|(n, _)| n == name) {
+            Some(slot) => slot.1 = Arc::new(f),
+            None => passes.push((name.to_string(), Arc::new(f))),
+        }
+        self
+    }
+
+    /// The frame passes' names, in the order they run.
+    pub fn frame_pass_names(&self) -> Vec<&str> {
+        self.inner.passes.iter().map(|(n, _)| n.as_str()).collect()
+    }
+
     /// The keys with a registered ext reducer, in registration order.
     pub fn ext_keys(&self) -> Vec<&str> {
         self.inner.exts.iter().map(|(k, _)| k.as_str()).collect()
@@ -262,6 +290,7 @@ impl Host {
             && self.inner.input_rules.is_empty()
             && self.inner.decorator.is_none()
             && self.inner.exts.is_empty()
+            && self.inner.passes.is_empty()
     }
 
     /// The decoration of `block`, from the decorator (none without one).
@@ -284,6 +313,7 @@ impl std::fmt::Debug for Host {
             .field("input_rules", &self.input_rule_names())
             .field("decorator", &self.has_decorator())
             .field("ext", &self.ext_keys())
+            .field("frame_passes", &self.frame_pass_names())
             .finish()
     }
 }
@@ -442,6 +472,20 @@ pub(crate) fn run_command(state: &mut State, name: &str, args: &Value) -> Vec<Ef
         Err(why) => {
             state.view.status = Some(why);
             Vec::new()
+        }
+    }
+}
+
+/// Runs the frame passes over `frame`, but those named in `skip`.
+pub(crate) fn run_frame_passes(doc: &Document, view: &View, frame: &mut Frame, skip: &[&str]) {
+    let passes = &doc.host.inner.passes;
+    if passes.is_empty() {
+        return;
+    }
+    let ctx = Ctx::new(doc, view);
+    for (name, f) in passes {
+        if !skip.contains(&name.as_str()) {
+            f(&ctx, frame);
         }
     }
 }
