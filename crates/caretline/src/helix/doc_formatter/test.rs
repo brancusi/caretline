@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: MPL-2.0. This file is under the Mozilla Public License 2.0;
 // see LICENSE-MPL-2.0 in the `helix` directory.
 // Changes from upstream: module paths, and the `hang_spaces` field (off); caretline's tests
-// for wide graphemes at the wrap edge (the section at the end) are added.
+// for wide graphemes at the wrap edge and for the end of a row after hanging whitespace (the
+// sections at the end) are added.
 
 use crate::helix::doc_formatter::{DocumentFormatter, TextFormat};
 use crate::helix::text_annotations::{InlineAnnotation, Overlay, TextAnnotations};
@@ -291,20 +292,24 @@ fn check_rows(text: &str, fmt: &TextFormat) {
                 fmt.hang_spaces, r.text
             )
         };
+        let limit = if fmt.soft_wrap_at_text_width {
+            width
+        } else {
+            width - 1
+        };
         let mut cells = r.cells.as_slice();
-        // Trailing whitespace may hang past the column.
+        // Trailing whitespace may hang past the column, and a line end or the end of the
+        // text right after it stays on the row.
         if fmt.hang_spaces {
+            if let [rest @ .., (_, _, true, false), (_, _, _, true)] = cells {
+                cells = &cells[..rest.len() + 1];
+            }
             while let [rest @ .., (_, _, true, false)] = cells {
                 cells = rest;
             }
         }
         for (k, &(col, w, _, end)) in cells.iter().enumerate() {
             if end {
-                let limit = if fmt.soft_wrap_at_text_width {
-                    width
-                } else {
-                    width - 1
-                };
                 assert!(col <= limit, "{}: line end at {col}", ctx());
             } else if col + w > width {
                 assert!(
@@ -451,5 +456,76 @@ fn wrapped_rows_never_exceed_the_column() {
         let hang = next() % 2 == 0;
         let max_wrap = if hang { width } else { 20.min(width / 4) };
         check_rows(&text, &wrap_fmt(width, max_wrap, hang));
+    }
+}
+
+// caretline: with `hang_spaces`, the end of the text or a line end right after whitespace that
+// hangs past the column stays on that row.
+
+/// Each grapheme's (row, column), the end of the text included.
+fn positions(text: &str, fmt: &TextFormat) -> Vec<(usize, usize)> {
+    let rope = crate::helix::Rope::from(text);
+    let annotations = TextAnnotations::default();
+    DocumentFormatter::new_at_prev_checkpoint(rope.slice(..), fmt, &annotations, 0)
+        .map(|g| (g.visual_pos.row, g.visual_pos.col))
+        .collect()
+}
+
+#[test]
+fn the_end_after_a_hanging_space_stays_on_the_row() {
+    // Host request #9's minimal case.
+    let fmt = TextFormat {
+        soft_wrap: true,
+        viewport_width: 4,
+        hang_spaces: true,
+        ..TextFormat::default()
+    };
+    let at = positions("abcd ", &fmt);
+    assert_eq!(at.last(), Some(&(0, 5)), "the end sits after the space");
+    assert_eq!(wrap("abcd ", &fmt), ["abcd "]);
+    // More spaces hang too; the end follows them.
+    assert_eq!(positions("abcd   ", &fmt).last(), Some(&(0, 7)));
+    // A line end after the space stays as well; the next line starts the next row.
+    assert_eq!(wrap("abcd \nx", &fmt), ["abcd \n", "x"]);
+    // The next word still starts the next row.
+    assert_eq!(wrap("abcd x", &fmt), ["abcd ", "x"]);
+    for t in ["abcd ", "abcd   ", "abcd \nx", "abcd x"] {
+        check_rows(t, &fmt);
+    }
+    // The layout's prose format agrees.
+    let fmt = wrap_fmt(72, 72, true);
+    let text = format!("{} ", "a".repeat(72));
+    assert_eq!(wrap(&text, &fmt), [text.clone()]);
+    assert_eq!(positions(&text, &fmt).last(), Some(&(0, 73)));
+    check_rows(&text, &fmt);
+}
+
+/// With `hang_spaces`, appending only spaces never adds a row.
+#[test]
+fn trailing_spaces_never_add_a_row() {
+    const PIECES: &[&str] = &["a", "word", "lorem", " ", "  ", "日本", "🙂", "\t", "\n"];
+    let mut seed: u32 = 0x2545_f491;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        seed
+    };
+    for _ in 0..2000 {
+        let len = (next() % 30) as usize;
+        let mut text: String = (0..len)
+            .map(|_| PIECES[next() as usize % PIECES.len()])
+            .collect();
+        let width = 2 + (next() % 30) as u16;
+        let fmt = wrap_fmt(width, width, true);
+        let rows = wrap(&text, &fmt).len();
+        for _ in 0..1 + next() % 6 {
+            text.push(' ');
+            assert!(
+                wrap(&text, &fmt).len() <= rows,
+                "{text:?} at {width}: a trailing space added a row"
+            );
+            check_rows(&text, &fmt);
+        }
     }
 }

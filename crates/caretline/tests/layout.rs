@@ -725,3 +725,130 @@ fn every_block_shows_on_its_own_rows_after_its_hang_at_any_width() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// The caret after a space that hangs past the column
+
+/// The text rows as drawn (trailing blanks trimmed; an empty row counts) and the caret's cell.
+fn rows_and_caret(s: &State) -> (Vec<String>, Option<(u16, u16)>) {
+    let f = view(s);
+    let rows = f
+        .to_text()
+        .lines()
+        .zip(&f.rows)
+        .filter(|(_, info)| matches!(info, RowInfo::Text { .. }))
+        .map(|(r, _)| r.trim_end().to_string())
+        .collect();
+    (rows, f.cursor)
+}
+
+fn type_text(s: &mut State, text: &str) {
+    update(s, Msg::InsertText { text: text.into() });
+}
+
+fn mv(s: &mut State, dir: Dir, by: By) {
+    update(
+        s,
+        Msg::Move {
+            dir,
+            by,
+            extend: false,
+        },
+    );
+}
+
+#[test]
+fn the_caret_after_a_hanging_space_stays_on_its_row() {
+    // Host request #9: column 72, a bullet of 72 `a`, then a space typed at the end. The space
+    // hangs past the column and the caret is drawn right after it, on the same row: the page
+    // doesn't grow a row for the caret (nor shrink one when a save drops the space). At depth
+    // 0 the content starts at 6, at depth 1 at 10 (column 68): both end at 78, and in an
+    // 80-cell view the space takes cell 78 and the caret cell 79.
+    let a = |n| "a".repeat(n);
+    for (md, x, n) in [
+        (format!("- {}", a(72)), 6u16, 72u16),
+        (format!("- top\n  - {}", a(68)), 10, 68),
+    ] {
+        let mut s = laid_out(&md, 80, 6);
+        s.view.selection = Selection::point(s.doc.text.len_chars());
+        let (before, caret) = rows_and_caret(&s);
+        let y = before.len() as u16 - 1;
+        assert_eq!(
+            caret,
+            Some((x + n, y)),
+            "{md:?}: the caret at the column's end"
+        );
+        type_text(&mut s, " ");
+        let (rows, caret) = rows_and_caret(&s);
+        assert_eq!(rows, before, "{md:?}: the space adds no row");
+        assert_eq!(
+            caret,
+            Some((x + n + 1, y)),
+            "{md:?}: after the hanging space"
+        );
+        // locate and hit agree with the drawn caret.
+        let end = s.doc.text.len_chars();
+        assert_eq!(
+            caretline::view::locate(&s.doc, &s.view, end),
+            caretline::view::Locate::At { x: x + n + 1, y }
+        );
+        assert_eq!(hit(&s.doc, &s.view, x + n + 1, y), Hit::Text { pos: end });
+        assert_eq!(hit(&s.doc, &s.view, x + n, y), Hit::Text { pos: end - 1 });
+        // Home and End stay on the row.
+        let mut h = s.clone();
+        mv(&mut h, Dir::Backward, By::LineStart);
+        assert_eq!(view(&h).cursor, Some((x, y)), "{md:?}: Home");
+        mv(&mut h, Dir::Forward, By::LineEnd);
+        assert_eq!(h.caret(), end, "{md:?}: End");
+        // The next character starts the next row.
+        let mut t = s.clone();
+        type_text(&mut t, "b");
+        let (rows, caret) = rows_and_caret(&t);
+        assert_eq!(rows.len(), before.len() + 1, "{md:?}: `b` wraps");
+        assert_eq!(rows.last().map(|r| r.trim()), Some("b"));
+        assert_eq!(caret, Some((x + 1, y + 1)));
+        // Deleting it, then the space, comes back with no shift.
+        update(&mut t, Msg::DeleteBackward);
+        assert_eq!(rows_and_caret(&t), rows_and_caret(&s));
+        update(&mut t, Msg::DeleteBackward);
+        assert_eq!(rows_and_caret(&t), (before.clone(), Some((x + n, y))));
+        // Up from the caret goes to the row above; down comes back to it.
+        if y > 0 {
+            let mut u = s.clone();
+            mv(&mut u, Dir::Backward, By::VisualLine);
+            assert_eq!(view(&u).cursor.map(|c| c.1), Some(y - 1), "{md:?}: up");
+            mv(&mut u, Dir::Forward, By::VisualLine);
+            assert_eq!(u.caret(), end, "{md:?}: down comes back");
+        }
+    }
+}
+
+#[test]
+fn the_caret_after_a_hanging_space_clamps_to_the_last_column() {
+    // A 79-cell view: the column ends at 78, so the hanging space takes the last cell and
+    // there's no cell after it. The caret is drawn in the last cell, on the same row; the
+    // row count doesn't change.
+    let md = format!("- {}", "a".repeat(72));
+    let mut s = laid_out(&md, 79, 4);
+    s.view.selection = Selection::point(s.doc.text.len_chars());
+    let (before, _) = rows_and_caret(&s);
+    type_text(&mut s, " ");
+    let (rows, caret) = rows_and_caret(&s);
+    assert_eq!(rows, before);
+    assert_eq!(caret, Some((78, 0)));
+    let end = s.doc.text.len_chars();
+    assert_eq!(
+        caretline::view::locate(&s.doc, &s.view, end),
+        caretline::view::Locate::At { x: 78, y: 0 }
+    );
+    // A click in the last cell puts the caret at the row's end, where it's drawn.
+    assert_eq!(hit(&s.doc, &s.view, 78, 0), Hit::Text { pos: end });
+    // More spaces clamp the same way.
+    type_text(&mut s, "  ");
+    assert_eq!(rows_and_caret(&s), (before.clone(), Some((78, 0))));
+    // The next word starts the next row.
+    type_text(&mut s, "b");
+    let (rows, caret) = rows_and_caret(&s);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(caret, Some((7, 1)));
+}

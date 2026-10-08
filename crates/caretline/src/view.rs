@@ -564,6 +564,7 @@ pub fn render_plain(doc: &Document, view: &View) -> Frame {
                 Some(_) => lf.x + layout.line_text_format(l).viewport_width as usize,
                 None => width as usize,
             };
+            let hangs = layout.hangs(l);
             let mut seen = vec![false; shown];
             let formatter = layout.formatter_at_row(RowPos {
                 line: l,
@@ -601,13 +602,16 @@ pub fn render_plain(doc: &Document, view: &View) -> Frame {
                     Role::Text
                 };
                 // The caret may sit one past the column (after a word that fills the row, on
-                // the space that hangs there), never past the frame.
-                if Some(g.char_idx) == caret
-                    && col >= 0
-                    && (col as usize) <= limit
-                    && (col as usize) < width as usize
-                {
-                    frame.cursor = Some((col as u16, sy as u16));
+                // the space that hangs there), never past the frame. On a prose row with a
+                // hang it may sit after whitespace hanging further: it's drawn there, clamped
+                // to the frame's last column on the same row (`Layout::hangs`).
+                if Some(g.char_idx) == caret && col >= 0 {
+                    let c = col as usize;
+                    if hangs && c >= lf.x {
+                        frame.cursor = Some((c.min(width as usize - 1) as u16, sy as u16));
+                    } else if c <= limit && c < width as usize {
+                        frame.cursor = Some((c as u16, sy as u16));
+                    }
                 }
                 if col < lf.x as isize {
                     continue;
@@ -814,10 +818,17 @@ pub fn locate(doc: &Document, view: &View, pos: usize) -> Locate {
         return Locate::Left;
     }
     let width = view.viewport.width.max(1) as usize;
-    let limit = match layout.geometry() {
-        // A block's content stops at its column; the caret may sit one past it.
-        Some(_) => lf.x + layout.line_text_format(at.line).viewport_width as usize + 1,
-        None => width,
+    let (x, limit) = if layout.hangs(at.line) {
+        // After whitespace hanging past the column, as the caret is drawn: there, clamped
+        // to the frame's last column (`Layout::hangs`).
+        (x.min(width as isize - 1), width)
+    } else {
+        let limit = match layout.geometry() {
+            // A block's content stops at its column; the caret may sit one past it.
+            Some(_) => lf.x + layout.line_text_format(at.line).viewport_width as usize + 1,
+            None => width,
+        };
+        (x, limit)
     };
     if x as usize >= width.min(limit) {
         return Locate::Right;
