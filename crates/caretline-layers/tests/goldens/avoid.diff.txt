@@ -1,0 +1,49 @@
+# Review: parser           +----------------------------------+
+                           | Into a node                      |
+@@ -12,7 +12,9 @@ fn parse(| Each token becomes a node first. |
+     let mut tokens = lex(i+---+------------------------------+
+     let mut ast = Ast::new(); v
+-    while let Some(t) = tokens.next() {
+-        ast.push(t)?;
++    for t in tokens {
++        let node = t.into_node()?;
++        ast.push(node)?;
+     }
+     Ok(ast)
+ }
+
+The loop now converts each token into a node before it is pushed, so a
+token that can't become a node stops the parse with an error there.
+
+Notes on the rest of the change follow below, with the tests that cover it
+and the cases they leave out for a later change.
+
+
+
+
+ page.md                                                                    1:1
+--- map
+                           ####################################
+                           ####################################
+                           ####################################
+                           ####################################
+                               >
+                         *************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss

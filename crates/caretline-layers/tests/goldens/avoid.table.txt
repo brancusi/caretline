@@ -1,0 +1,49 @@
+# Releases
+
+| Version | Date       | Notes           |
+|---------|------------|-----------------|
+| 0.3.0   | 2026-09-01 | Views and folds |
+| 0.2.0   | 2026-07-14 | The protocol    |
+| 0.1.0   | 2026-05-02 | First release ^ |
+                                       +---+
+Each row links to its notes. Older releases|are in the archive, with
+the notes for every version before these+--+-----------------------------------+
+                                        | 0.2.0                                |
+                                        | The release that added the protocol. |
+                                        +--------------------------------------+
+
+
+
+
+
+
+
+
+
+
+ page.md                                                                    1:1
+--- map
+
+
+
+
+
+
+                                       >
+                                       >>>>>
+                                           >
+                                        ########################################
+                                        ########################################
+                                        ########################################
+                                        ########################################
+
+
+
+
+
+
+
+
+
+
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss

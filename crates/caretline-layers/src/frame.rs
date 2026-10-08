@@ -304,17 +304,53 @@ impl FrameResolver<'_> {
     }
 }
 
-/// Maps every text anchor through an edit's changes: the start sticks after an insertion
-/// there, the end before one, and a range that collapses (its text deleted) is dropped, so
-/// the next fallback anchor takes over. A layer with no anchor left is removed. Block anchors
-/// need nothing: marks follow their blocks. A scoped anchor maps as its target does: every
-/// view shows the same document, so an edit made through any of them maps anchors in all.
-/// Returns whether anything changed.
-pub fn map_anchors(layers: &mut Layers, changes: &ChangeSet) -> bool {
+/// Which anchors an edit moves. A `ChangeSet` belongs to one document, so the host says which
+/// of its views show the document that changed:
+///
+/// - [`Edited::All`]: the host shows one document (in one view or several). Every text anchor
+///   maps, scoped or not.
+/// - [`Edited::Views`]: one of several documents changed. An anchor scoped to a view
+///   ([`Anchor::In`]) maps only when that view is in `views` (every view that shows the edited
+///   document, not only the one the edit came through); an unscoped anchor maps only when
+///   `unscoped` is set. Unscoped anchors resolve in the focused view first, so they belong to
+///   the focused view's document: the host sets `unscoped` when the edited document is that
+///   one. Anchors on another document are left as they are.
+///
+/// A host with several documents scopes its anchors (`Anchor::scoped`), so each names the
+/// document it points into.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edited<'a> {
+    All,
+    Views {
+        /// The ids of the views that show the edited document (`FrameResolver::id`).
+        views: &'a [&'a str],
+        /// Whether unscoped anchors map: the edited document is the focused view's.
+        unscoped: bool,
+    },
+}
+
+impl Edited<'_> {
+    /// Whether an anchor points into the edited document.
+    fn covers(&self, a: &Anchor) -> bool {
+        match (self, a.view()) {
+            (Edited::All, _) => true,
+            (Edited::Views { views, .. }, Some(v)) => views.contains(&v),
+            (Edited::Views { unscoped, .. }, None) => *unscoped,
+        }
+    }
+}
+
+/// Maps the text anchors that point into the edited document ([`Edited`]) through its
+/// changes: the start sticks after an insertion there, the end before one, and a range that
+/// collapses (its text deleted) is dropped, so the next fallback anchor takes over. A layer
+/// with no anchor left is removed. Block anchors need nothing: marks follow their blocks.
+/// Anchors on another document are left alone. Returns whether anything changed.
+pub fn map_anchors(layers: &mut Layers, edited: Edited<'_>, changes: &ChangeSet) -> bool {
     let mut changed = false;
     for l in &mut layers.layers {
         let before = l.anchor.clone();
-        l.anchor.retain_mut(|a| map_anchor(a, changes));
+        l.anchor
+            .retain_mut(|a| !edited.covers(a) || map_anchor(a, changes));
         changed |= l.anchor != before;
     }
     let n = layers.layers.len();
@@ -346,17 +382,22 @@ fn map_anchor(a: &mut Anchor, changes: &ChangeSet) -> bool {
     }
 }
 
-/// After every message: maps anchors through its changes (if it edited) and drops expired
-/// layers. Returns whether the layers changed.
+/// After every message: maps the anchors in the edited document ([`Edited`]) through its
+/// changes (if it edited) and drops expired layers. Returns whether the layers changed.
 ///
 /// `changes` is what the editor returned for that message:
 ///
 /// ```ignore
 /// let (effects, changes) = caretline::update_with_changes(&mut editor, msg);
-/// observe(&mut layers, changes.as_ref(), now_ms);
+/// observe(&mut layers, Edited::All, changes.as_ref(), now_ms);
 /// ```
-pub fn observe(layers: &mut Layers, changes: Option<&ChangeSet>, now_ms: u64) -> bool {
-    let mapped = changes.is_some_and(|c| map_anchors(layers, c));
+pub fn observe(
+    layers: &mut Layers,
+    edited: Edited<'_>,
+    changes: Option<&ChangeSet>,
+    now_ms: u64,
+) -> bool {
+    let mapped = changes.is_some_and(|c| map_anchors(layers, edited, c));
     expire(layers, now_ms) | mapped
 }
 

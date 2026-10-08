@@ -173,6 +173,53 @@ fn a_docked_box_sits_against_its_chip_and_says_where() {
     assert_eq!(l.no_arrow, Some(NoArrow::Docked));
 }
 
+#[test]
+fn a_strip_falls_back_to_the_edge_the_anchor_lies_beyond() {
+    // The area's last row is protected (a prompt): no chip fits on it, so no box can dock,
+    // and the layer is a strip. It goes on the last free row, nearest the anchor below.
+    let area = Rect::new(0, 0, 80, 23);
+    let grid = Grid::new(80, 24)
+        .with_area(area)
+        .with_protect(vec![Rect::new(0, 22, 80, 1)]);
+    let mut m = AnchorMap::new();
+    let below = off(&mut m, "below", Off::Below { x: Some(12) });
+    let p = plan(
+        &all(vec![Layer::new(below).with_content(card())]),
+        &m,
+        &grid,
+        &sized(20, 3),
+    );
+    let l = &p.layers[0];
+    assert_eq!(l.chip, None);
+    assert_eq!(l.mode, Some(Mode::Strip));
+    assert_eq!(l.rect, Some(Rect::new(0, 21, 80, 1)));
+    // Above, with the top row protected: the first free row under it.
+    let grid = Grid::new(80, 24)
+        .with_area(area)
+        .with_protect(vec![Rect::new(0, 0, 80, 1)]);
+    let above = off(&mut m, "above", Off::Above { x: Some(12) });
+    let p = plan(
+        &all(vec![Layer::new(above).with_content(card())]),
+        &m,
+        &grid,
+        &sized(20, 3),
+    );
+    assert_eq!(p.layers[0].mode, Some(Mode::Strip));
+    assert_eq!(p.layers[0].rect, Some(Rect::new(0, 1, 80, 1)));
+    // On a narrow area with the chip on its edge: the strip sits next to the chip.
+    let narrow = Grid::new(40, 24).with_area(Rect::new(0, 0, 40, 23));
+    let below = off(&mut m, "below", Off::Below { x: Some(12) });
+    let p = plan(
+        &all(vec![Layer::new(below).with_content(card())]),
+        &m,
+        &narrow,
+        &sized(20, 3),
+    );
+    let l = &p.layers[0];
+    assert_eq!(l.chip.map(|c| c.y), Some(22));
+    assert_eq!(l.rect, Some(Rect::new(0, 21, 40, 1)));
+}
+
 /// A docked box touches its chip: they share a stretch of edge, and `dock` names a cell of
 /// it, on the box's border next to the chip.
 fn docked_against_chip(l: &Planned) {
@@ -398,8 +445,8 @@ fn reasons_for_no_arrow() {
 struct Labelled;
 
 impl Renderer for Labelled {
-    fn measure(&self, _: &Value, avail: Size) -> Size {
-        Size::new(20.min(avail.w), 3)
+    fn measure(&self, cx: &MeasureCtx) -> Size {
+        Size::new(20.min(cx.avail.w), 3)
     }
     fn chip(&self, _: &Value, anchor: &Anchor, off: Off) -> Size {
         let key = match anchor {
@@ -432,6 +479,128 @@ fn the_host_sizes_a_chip_from_its_anchor_and_direction() {
     );
     assert_eq!(p.layers[0].chip.unwrap().w, 16);
     assert_eq!(p.layers[1].chip.unwrap().w, 5);
+}
+
+/// A tight checklist: one item per row, no blank rows between.
+fn checklist() -> Grid {
+    let mut grid = Grid::new(80, 24).with_area(Rect::new(0, 0, 80, 23));
+    for (y, row) in [
+        "[ ] buy milk and some bread",
+        "[ ] call the well-known plumber",
+        "[ ] file the forms",
+    ]
+    .iter()
+    .enumerate()
+    {
+        grid.mark_text(2, 5 + y as u16, row);
+    }
+    grid
+}
+
+/// Whether an arrow's head is on a clear cell: blank, nothing but the anchor beside it on
+/// its row.
+fn clear_head(grid: &Grid, p: &Planned) -> bool {
+    let route = p.route.as_ref().expect("a route");
+    let head = route.steps.last().unwrap();
+    let anchor = &p.anchor.as_ref().unwrap().rects;
+    let beside = |x: u16| {
+        grid.kind(x, head.y) == CellKind::Blank || anchor.iter().any(|r| r.contains(x, head.y))
+    };
+    grid.kind(head.x, head.y) == CellKind::Blank
+        && beside(head.x.saturating_sub(1))
+        && beside(head.x + 1)
+}
+
+#[test]
+fn an_arrow_head_never_lands_on_text_in_a_tight_list() {
+    let grid = checklist();
+    let mut m = AnchorMap::new();
+    // The middle item's checkbox, the box to its right: the cell after `]` is the gap before
+    // "call". The head goes round to the clear cell left of the checkbox instead.
+    let boxed = host(&mut m, "box", Rect::new(2, 6, 3, 1));
+    let mut l = Layer::new(boxed).with_content(card()).with_arrow();
+    l.place = vec![Side::Right];
+    let p = plan(&all(vec![l]), &m, &grid, &sized(20, 3));
+    let l = &p.layers[0];
+    assert!(clear_head(&grid, l), "{:?}", l.route);
+    let head = l.route.as_ref().unwrap().steps.last().unwrap();
+    assert_eq!((head.x, head.y, head.leave), (1, 6, Dir::Right));
+    // Its item's text, from any side: every route has a clear head.
+    for side in Side::DEFAULT {
+        let call = host(&mut m, "call", Rect::new(6, 6, 4, 1));
+        let mut l = Layer::new(call).with_content(card()).with_arrow();
+        l.place = vec![side];
+        let p = plan(&all(vec![l]), &m, &grid, &sized(20, 3));
+        let l = &p.layers[0];
+        if l.route.is_some() {
+            assert!(clear_head(&grid, l), "{side:?}: {:?}", l.route);
+        }
+    }
+    // "well" in "well-known", hemmed in by its own line and the items above and below: every
+    // cell beside it is a letter, the hyphen or a word gap. The arrow is dropped, and the
+    // plan says why.
+    let well = host(&mut m, "well", Rect::new(15, 6, 4, 1));
+    let p = plan(
+        &all(vec![Layer::new(well).with_content(card()).with_arrow()]),
+        &m,
+        &grid,
+        &sized(20, 3),
+    );
+    let l = &p.layers[0];
+    assert_eq!(l.mode, Some(Mode::Box));
+    assert_eq!(l.route, None);
+    assert_eq!(l.no_arrow, Some(NoArrow::HeadOnText));
+    assert_eq!(
+        serde_json::to_value(NoArrow::HeadOnText).unwrap(),
+        json!("head_on_text")
+    );
+}
+
+/// A host that adds an attribution line (`from <actor>`) inside an agent's box, and sizes
+/// the box for it.
+struct Attributed;
+
+impl Renderer for Attributed {
+    fn measure(&self, cx: &MeasureCtx) -> Size {
+        let text = cx.data["text"].as_str().unwrap_or("").chars().count() as u16;
+        let by = cx.owner.actor().map(|a| a.chars().count() as u16 + 5);
+        let w = text.max(by.unwrap_or(0)) + 4;
+        Size::new(w.min(cx.avail.w), 3 + u16::from(by.is_some()))
+    }
+}
+
+#[test]
+fn the_renderer_measures_knowing_whose_layer_it_is() {
+    let grid = Grid::new(80, 24).with_area(Rect::new(0, 0, 80, 23));
+    let mut m = AnchorMap::new();
+    let a = host(&mut m, "a", Rect::new(10, 5, 6, 1));
+    let r = Renderers::new().register("card", Attributed);
+    let mut l = Layers::default();
+    let layer = Layer::new(a).with_content(card());
+    apply(
+        &mut l,
+        LayerOp::Push(layer.clone()),
+        None,
+        0,
+        &Limits::default(),
+    )
+    .unwrap();
+    let mine = plan(&l, &m, &grid, &r).layers[0].rect.unwrap();
+    assert_eq!((mine.w, mine.h), (9, 3));
+    let mut l = Layers::default();
+    apply(
+        &mut l,
+        LayerOp::Push(layer),
+        Some("long-helper"),
+        0,
+        &Limits::default(),
+    )
+    .unwrap();
+    let p = plan(&l, &m, &grid, &r);
+    let theirs = p.layers[0].rect.unwrap();
+    // "from long-helper" fits on its own row.
+    assert_eq!((theirs.w, theirs.h), (20, 4));
+    assert_eq!(p.layers[0].owner.actor(), Some("long-helper"));
 }
 
 #[test]

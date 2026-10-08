@@ -1,4 +1,4 @@
- Save Control S saves.
+
 Hold Shift with any motion to select as you
 move. Shift and Option
 together select whole words, and the
@@ -11,23 +11,23 @@ follow the way you typed: a word
 at a time while you type, and one step for
 a paste.
 
-## Search
+ Save Control S saves.
                                     v here
  guide.md                               1:1
 --- map
+
+
+
+
+
+
+
+
+
+
+
+
+
 ============================================
-
-
-
-
-
-
-
-
-
-
-
-
-
                                     cccccccc
 ssssssssssssssssssssssssssssssssssssssssssss

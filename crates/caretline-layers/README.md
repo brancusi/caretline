@@ -21,15 +21,22 @@ them.
   "panel:2"`) resolves only there; an unscoped one in the focused view first, and the answer
   says which view it came from.
 - **Content is the host's**: `{kind, data}`, measured by a `Renderer` the host registers,
-  once per candidate side with that side's room.
+  once per candidate side with that side's room and the layer's owner (`MeasureCtx`), so an
+  agent's attribution can be sized into its box.
   Every host should render the `hint` kind (`{"title"?, "text"}`).
 - **Placement is pure**: `plan(&layers, &anchors, &grid, &renderers)` returns where each
   box, strip, edge chip, arrow, ring and spotlight hole goes, and the click regions. Layers
   keep off each other's boxes, chips, anchors and arrows; an arrow says where it attaches to
-  its box, or why there is none (`no_arrow`); a box for an off-screen anchor docks against
-  its edge chip and touches it (`dock`).
+  its box, or why there is none (`no_arrow`), and its head is never on text; a box for an
+  off-screen anchor docks against its edge chip and touches it (`dock`).
+- **Avoid areas**: cells a host marks (`Grid::avoid`: a highlighted band, a table) or a layer
+  names (`Layer.avoid`: what its step talks about) are kept clear by boxes and arrows when
+  anything else fits; a box goes further out, within the grid's reach, to keep clear, and
+  `Planned.covers_avoid` says when it couldn't.
 - **Edits come from the engine**: `caretline::update_with_changes` returns each message's
-  `ChangeSet`, and `observe` maps text anchors through it.
+  `ChangeSet`, and `observe` maps text anchors through it: all of them for a host with one
+  document (`Edited::All`), or only those in the views that show the edited one
+  (`Edited::Views`).
 - **`ops`** parses `hint.show`, `layer.push` and friends from any JSON protocol, and
   `ops::schema()` is a JSON Schema for its requests and replies.
 - **Pixels** (feature `kitty`, off by default): `kitty::KittyState` turns a plan and the

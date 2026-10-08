@@ -1,4 +1,4 @@
- Save Control S saves.
+# Getting around
 
 This page is a short tour of the editor.
 Read it from top to bottom and
@@ -11,23 +11,23 @@ Hold Option and press an arrow key to jump
 a word at a time. The caret
 stops at the start of each word, so a long
 line is quick to cross.
-
+ Save Control S saves.
 ## Selecting                        v here
  guide.md                               1:1
 --- map
+
+
+
+
+
+
+
+
+
+
+
+
+
 ============================================
-
-
-
-
-
-
-
-
-
-
-
-
-
                                     cccccccc
 ssssssssssssssssssssssssssssssssssssssssssss

@@ -278,8 +278,8 @@ In-frame (7.1, mode A) the crate's frame pass runs these steps and then calls ea
 `render` at 100×40 costs 127 µs today. A bench guards the crate's numbers and the CLI's renderers
 together (9.2).
 
-As built (12): placement measures 6 µs for a box (four measures, one per side), 27 µs with
-an arrow and 37 µs for a spotlight with an arrow. A host skips even that when nothing changed by keeping the last plan
+As built (12): placement measures 6 µs for a box (four measures, one per side), 25 µs with
+an arrow and 37 µs for a spotlight with an arrow (12.5). A host skips even that when nothing changed by keeping the last plan
 with its inputs (12, "Unchanged inputs").
 
 ### 3.6 Pixel plumbing (feature `kitty`)
@@ -1582,3 +1582,92 @@ through each message's changes, a frame pass that draws the `hint` kind in cells
 `FrameResolver` over `view::locate`, region hits through `Frame::region_at`, and the `layer.*`
 and `hint.*` ops through `Host::op`. Then `caretline-tour` keeps `TourState` in
 `View::ext["tour"]` the same way (12.4), and the CLI's editor and `demo guide` adopt both.
+
+### 12.6 Host fixes: documents, arrow heads, strips, measuring for the owner, and avoid areas
+
+After 12.3, from a host that shows several documents. Where it differs from the sections above:
+
+- **An edit moves only its own document's anchors.** A `ChangeSet` belongs to one document,
+  but `observe` mapped every text anchor through it, so typing in `main` (page A) moved a
+  hint scoped to `panel:1` (page B), or dropped it where page B was shorter. `observe` and
+  `map_anchors` now take an `Edited`:
+  - `Edited::All`: every text anchor maps, scoped or not. For a host with one document,
+    however many views show it.
+  - `Edited::Views { views, unscoped }`: an anchor scoped to a view maps only when that view
+    is in `views` (the ids of every view showing the edited document); an unscoped anchor
+    maps only when `unscoped`. Unscoped anchors resolve in the focused view first, so they
+    belong to the focused view's document: the host sets `unscoped` when it edited that one.
+  - Anchors on another document are left as they are. A host with several documents scopes
+    its anchors, so each names the document it points into.
+
+  The old signature is gone rather than kept as "everything": every host now says which
+  document changed, and a single-document host writes `Edited::All`.
+- **Arrow heads never land on text.** In a tight list the head ended on a letter, a hyphen
+  inside a word, or in the gap between two words (`[ ]▶item`, `is▲quick`): the cell after
+  an anchor is often the space before the next word, and the row under it the next item. A
+  head now ends only on a **clear** cell beside the anchor: blank, with nothing beside it on
+  its row but the anchor itself.
+  - The router's goals are the clear cells on the side the box faces; when there are none,
+    or none the box can reach, the arrow ends on a clear cell on another side, pointing at
+    the anchor (the any-side fallback of 12.1, now held to clear cells and guided by the
+    distance to the nearest). Placement's bounds follow the same goals, so a box whose arrow
+    can end clear beats one whose can't.
+  - When every cell beside the anchor is text or between words, the arrow is **dropped**,
+    not drawn over the text: `Planned.route` is `None` and `no_arrow` is the new
+    `head_on_text`. The alternative, returning the route and letting the host decide, would
+    leave every host to draw an arrow that overwrites a character or reads as part of a
+    word; the box and the ring already mark the anchor.
+  - Cost: sides with a clear head are routed first (the winner is the least box whatever
+    the order, only how much is routed changes), a side with no clear head skips its facing
+    search and table, and a plan's routes share the router's memory. At 100×40 (release,
+    the least of ten runs alternating with the build before): a box with its arrow 22.4 µs
+    (was 27.3), a spotlight with an arrow 35.9 µs (was 37.6), a box alone 5.7 µs.
+  - Goldens: `word`, `agent` and `spotlight` at 80×24, and the CLI's
+    `demo-layers.scrolled.60x20`, place their boxes and arrows anew; every head that sat in
+    a word gap now sits on a blank row beside its anchor.
+- **A strip goes on the edge its anchor lies beyond.** A layer whose anchor lay below the
+  area fell back to a strip on the top row: with the area's last row protected, its edge
+  chip had no room, no box could dock, and the strip went to the far edge. The strip's edge
+  is now the one nearest the anchor: the bottom for an anchor below (the last free row, above
+  a protected row or the chip), the top for one above; an anchor on screen keeps 2.4's rule
+  (the top, unless it is on the top row). The 44×16 goldens with an anchor below show the
+  strip on the row above its chip, not on the top row.
+- **`measure` sees whose layer it is.** `Renderer::measure(&self, cx: &MeasureCtx) -> Size`,
+  with `MeasureCtx { data, avail, owner }` (`#[non_exhaustive]`, `MeasureCtx::new`), so a
+  host can size what it draws for an agent (its name in the border, a "from" line) inside
+  the box. Still pure: the same context, the same size. A closure of the data and the room
+  is still a renderer.
+- **Soft avoid areas.** `Grid.protect` is hard, and a box only shifted along its side next to
+  the anchor: once the rows next to an anchor were protected, a side failed instead of moving
+  out to blank rows, leaving a strip or no arrow, and nothing kept a box off the text a step
+  explains (a diff's highlighted band, the table rows under it). A host replanned three
+  times as a stopgap. Now:
+  - `Grid::avoid(rect, weight)` marks cells to keep off when anything else fits (a weight per
+    cell, the heavier where rects overlap), and `Layer.avoid: Vec<Anchor>` (wire `"avoid"`)
+    names the layer's own, resolved every frame like its anchor, at weight `AVOID` (20).
+  - A box's score adds 10 tenths per unit of avoid weight it covers, and ranking puts every
+    box that covers no avoid cell before any that covers one (then routed before unrouted,
+    then score). So whenever the search has a clear box, the plan's box is clear; a host
+    tunes the weights only among boxes that can't be. `Planned.covers_avoid` counts the
+    cells covered.
+  - Arrows: an avoid cell costs 4 per unit of weight on top of its own cost (80 at the
+    default: above a text cell's 16 and a gap's 6), and placement adds 10 per unit for each
+    crossed, as covering it would. The sliver rule never widens a box onto more avoid weight.
+  - Further out: each side tries its nearest four places as before; when none is clear of
+    text and avoid cells, it goes on out (below: further down; right: past the row's end),
+    clear places only, up to `Grid::with_reach(Reach { rows, cols })` (default 12 rows, 40
+    columns), stopping at the first row or column with a clear place. The distance cost
+    (5 tenths per cell, counted twice past the nearest) makes near and clear beat far and
+    clear; covering text (10 a cell) or avoid cells makes far and clear beat near and
+    covering. Far boxes are routed after near ones, and only when the cells to the nearest
+    head leave them a chance, so the extra corridor is searched only when it can win.
+  - Goldens: `avoid.diff` (a box above the highlighted band and clear of the paragraph its
+    step explains) and `avoid.table` (a box under a table whose arrow keeps to blank cells);
+    `offscreen.scrolled` at 80×24 now takes the clear place beside "## Search" rather than
+    covering the paragraph. A seeded property test checks that whenever a clear box is in
+    reach, the chosen one is clear, and that the plan is deterministic.
+  - Cost, at 100×40 (release, the least of ten runs alternating with the build before
+    12.5): a box with its arrow 25.1 µs (was 27.9 in the same runs), a spotlight with an
+    arrow 37.5 µs (38.2), a box alone 5.8 µs (5.9). The far scan checks only the summed
+    tables until it finds a clear place, and a far box whose nearest head is too far isn't
+    routed.

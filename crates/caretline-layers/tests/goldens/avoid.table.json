@@ -10,81 +10,85 @@
       "anchor": {
         "rects": [
           {
-            "x": 45,
-            "y": 7,
-            "w": 14,
+            "x": 0,
+            "y": 5,
+            "w": 42,
             "h": 1
           }
         ]
       },
       "rect": {
-        "x": 62,
-        "y": 2,
-        "w": 18,
-        "h": 7
+        "x": 40,
+        "y": 9,
+        "w": 40,
+        "h": 4
       },
       "mode": "box",
-      "side": "right",
+      "side": "below",
       "route": {
         "junction": [
-          62,
-          5
+          43,
+          9
         ],
         "attach": {
-          "edge": "left",
+          "edge": "top",
           "offset": 3
         },
         "steps": [
           {
-            "x": 61,
-            "y": 5,
+            "x": 43,
+            "y": 8,
+            "enter": "up",
+            "leave": "up"
+          },
+          {
+            "x": 43,
+            "y": 7,
+            "enter": "up",
+            "leave": "left"
+          },
+          {
+            "x": 42,
+            "y": 7,
             "enter": "left",
             "leave": "left"
           },
           {
-            "x": 60,
-            "y": 5,
+            "x": 41,
+            "y": 7,
             "enter": "left",
             "leave": "left"
           },
           {
-            "x": 59,
-            "y": 5,
+            "x": 40,
+            "y": 7,
             "enter": "left",
             "leave": "left"
           },
           {
-            "x": 58,
-            "y": 5,
+            "x": 39,
+            "y": 7,
             "enter": "left",
-            "leave": "down"
+            "leave": "up"
           },
           {
-            "x": 58,
+            "x": 39,
             "y": 6,
-            "enter": "down",
-            "leave": "down"
+            "enter": "up",
+            "leave": "up"
           }
         ]
-      },
-      "ring": [
-        {
-          "x": 45,
-          "y": 7,
-          "w": 14,
-          "h": 1
-        }
-      ]
+      }
     }
   ],
   "spots": [],
   "regions": [
     {
       "rect": {
-        "x": 62,
-        "y": 2,
-        "w": 18,
-        "h": 7
+        "x": 40,
+        "y": 9,
+        "w": 40,
+        "h": 4
       },
       "id": "L-1"
     }

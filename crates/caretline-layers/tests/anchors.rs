@@ -223,23 +223,27 @@ fn text_anchors_follow_edits_and_a_deleted_range_falls_to_the_next() {
     layer.anchor.push(Anchor::Block(3));
     push(&mut layers, layer, None);
 
-    assert!(map_anchors(&mut layers, &edit(&mut s, 0, typed("XX "))));
+    assert!(map_anchors(
+        &mut layers,
+        Edited::All,
+        &edit(&mut s, 0, typed("XX "))
+    ));
     assert_eq!(s.doc.text.to_string(), "XX alpha beta gamma");
     assert_eq!(layers.layers[0].anchor[0], Anchor::Text { from: 9, to: 13 });
     // Undo and redo move it back and forth.
     let n = s.doc.text.len_chars();
-    map_anchors(&mut layers, &edit(&mut s, n, Msg::Undo));
+    map_anchors(&mut layers, Edited::All, &edit(&mut s, n, Msg::Undo));
     assert_eq!(layers.layers[0].anchor[0], Anchor::Text { from: 6, to: 10 });
-    map_anchors(&mut layers, &edit(&mut s, 0, Msg::Redo));
+    map_anchors(&mut layers, Edited::All, &edit(&mut s, 0, Msg::Redo));
     assert_eq!(layers.layers[0].anchor[0], Anchor::Text { from: 9, to: 13 });
     // An insertion at its start or end stays outside it.
-    map_anchors(&mut layers, &edit(&mut s, 9, typed("YY")));
+    map_anchors(&mut layers, Edited::All, &edit(&mut s, 9, typed("YY")));
     assert_eq!(s.doc.text.to_string(), "XX alpha YYbeta gamma");
     assert_eq!(
         layers.layers[0].anchor[0],
         Anchor::Text { from: 11, to: 15 }
     );
-    map_anchors(&mut layers, &edit(&mut s, 15, typed("ZZ")));
+    map_anchors(&mut layers, Edited::All, &edit(&mut s, 15, typed("ZZ")));
     assert_eq!(
         layers.layers[0].anchor[0],
         Anchor::Text { from: 11, to: 15 }
@@ -248,6 +252,7 @@ fn text_anchors_follow_edits_and_a_deleted_range_falls_to_the_next() {
     // over.
     assert!(map_anchors(
         &mut layers,
+        Edited::All,
         &edit(&mut s, 0, replace(11, 15, ""))
     ));
     assert_eq!(s.doc.text.to_string(), "XX alpha YYZZ gamma");
@@ -269,9 +274,9 @@ fn text_anchors_follow_edits_and_a_deleted_range_falls_to_the_next() {
     );
     // A message that changes no text has no changes to map.
     let (_, none) = update_with_changes(&mut s, Msg::Tick { now_ms: 0 });
-    assert!(!observe(&mut layers, none.as_ref(), 0));
+    assert!(!observe(&mut layers, Edited::All, none.as_ref(), 0));
     let (_, changes) = update_with_changes(&mut s, replace(0, 2, ""));
-    assert!(observe(&mut layers, changes.as_ref(), 0));
+    assert!(observe(&mut layers, Edited::All, changes.as_ref(), 0));
     assert!(layers.layers.is_empty());
 }
 
@@ -288,8 +293,8 @@ fn observe_expires_layers_by_now_ms() {
         &Limits::default(),
     )
     .unwrap();
-    assert!(!observe(&mut layers, None, 1_499));
-    assert!(observe(&mut layers, None, 1_500));
+    assert!(!observe(&mut layers, Edited::All, None, 1_499));
+    assert!(observe(&mut layers, Edited::All, None, 1_500));
     assert!(layers.layers.is_empty());
 }
 

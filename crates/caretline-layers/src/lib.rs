@@ -18,7 +18,9 @@
 //!   positions), resolved to cells every frame by a [`Resolve`]: the host's [`AnchorMap`], a
 //!   caretline [`FrameResolver`] (feature `caretline`), or several with [`Chain`]. Text anchors
 //!   follow edits through the `ChangeSet` each editor message returns
-//!   (`caretline::update_with_changes`; [`observe`], [`map_anchors`]).
+//!   (`caretline::update_with_changes`; [`observe`], [`map_anchors`]). A `ChangeSet` belongs
+//!   to one document, so the host says which views show it ([`Edited`]): only anchors scoped
+//!   to those views (and unscoped ones, when it is the focused view's document) move.
 //! - **Views:** one document shown in several views gets a [`FrameResolver`] per view, each
 //!   with an id, offset and clip, the focused one marked. An anchor scoped to a view
 //!   ([`Anchor::scoped`], wire `"in"`) resolves only there; an unscoped one in the focused
@@ -61,15 +63,16 @@ mod resolve;
 mod route;
 
 #[cfg(feature = "caretline")]
-pub use frame::{FrameResolver, map_anchors, observe};
+pub use frame::{Edited, FrameResolver, map_anchors, observe};
 pub use geom::{Rect, Side};
 pub use model::{
     AgentDim, Anchor, Applied, BlockId, Content, HINT, Hint, Layer, LayerOp, Layers, Limits, Owner,
     Part, Pulse, Reason, Refusal, Ring, ScreenPos, Selector, Spotlight, apply, expire,
 };
 pub use place::{
-    Attach, CellKind, Edge, Grid, MAX_WIDTH, Mode, NARROW_COLS, NARROW_ROWS, NoArrow, Plan,
-    Planned, Region, Renderer, Renderers, Route, Size, Spot, Step, hit_regions, plan, width,
+    AVOID, Attach, CellKind, Edge, Grid, MAX_WIDTH, MeasureCtx, Mode, NARROW_COLS, NARROW_ROWS,
+    NoArrow, Plan, Planned, Reach, Region, Renderer, Renderers, Route, Size, Spot, Step,
+    hit_regions, plan, width,
 };
 pub use resolve::{AnchorKey, AnchorMap, Chain, Off, Resolve, Resolved};
 pub use route::Dir;

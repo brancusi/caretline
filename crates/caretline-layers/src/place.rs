@@ -32,12 +32,32 @@ impl Size {
     }
 }
 
+/// What a renderer measures: the layer's content data, the room it has on one side, and whose
+/// layer it is, so a host can size what it draws for the owner (an agent's name in the
+/// border, an attribution line) inside the box.
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct MeasureCtx<'a> {
+    /// The layer's content data.
+    pub data: &'a Value,
+    /// The most the box may be, borders included.
+    pub avail: Size,
+    /// Whose layer it is (`Owner::actor` for an agent's name).
+    pub owner: &'a Owner,
+}
+
+impl<'a> MeasureCtx<'a> {
+    pub fn new(data: &'a Value, avail: Size, owner: &'a Owner) -> MeasureCtx<'a> {
+        MeasureCtx { data, avail, owner }
+    }
+}
+
 /// What a host registers per content kind. Placement asks it how big a box is; drawing the box
-/// is the host's, outside this crate. `measure` must be pure: the same data and room, the same
-/// size.
+/// is the host's, outside this crate. `measure` must be pure: the same data, room and owner,
+/// the same size.
 pub trait Renderer {
-    /// The box for `data`, borders included, at most `avail`. A zero size means no box.
-    fn measure(&self, data: &Value, avail: Size) -> Size;
+    /// The box for `cx.data`, borders included, at most `cx.avail`. A zero size means no box.
+    fn measure(&self, cx: &MeasureCtx<'_>) -> Size;
     /// The edge chip shown where an off-screen anchor lies: its width (it is one row high;
     /// default 8). It gets the layer's data, the anchor that lies off screen and which way, so
     /// a host can size a label such as "↓ 2/11 here" to fit. Pure, like `measure`.
@@ -46,9 +66,10 @@ pub trait Renderer {
     }
 }
 
+/// A closure of the data and the room is a renderer that ignores the owner.
 impl<F: Fn(&Value, Size) -> Size> Renderer for F {
-    fn measure(&self, data: &Value, avail: Size) -> Size {
-        self(data, avail)
+    fn measure(&self, cx: &MeasureCtx<'_>) -> Size {
+        self(cx.data, cx.avail)
     }
 }
 
@@ -148,6 +169,11 @@ pub enum NoArrow {
     /// No way from any candidate box to the anchor round the other layers, holes, protected
     /// cells and wide graphemes.
     NoWay,
+    /// Every way to the anchor ends with its head on text (a letter, a hyphen inside a word,
+    /// or a word gap such as the space between `[ ]` and the word after it): every cell beside
+    /// the anchor is text or between words. The arrow is dropped rather than drawn over the
+    /// text; the box and the ring still mark the anchor.
+    HeadOnText,
 }
 
 /// A layer placed. The host draws its content in `rect` (a box or a one-row strip), the chip,
@@ -186,11 +212,20 @@ pub struct Planned {
     /// The host joins the two there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dock: Option<Attach>,
+    /// How many of its box's cells are avoid cells (the host's [`Grid::avoid`] or the layer's
+    /// own [`Layer::avoid`]): nonzero only when no box in reach kept off them all, so a host's
+    /// lint can flag it.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub covers_avoid: u16,
     /// The anchor's cells, if it has a ring.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ring: Vec<Rect>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pulse: Option<Pulse>,
+}
+
+fn is_zero(n: &u16) -> bool {
+    *n == 0
 }
 
 /// Every layer placed, in draw order (z, then push order).
@@ -260,6 +295,7 @@ pub fn plan(layers: &Layers, anchors: &dyn Resolve, grid: &Grid, renderers: &Ren
         .into_iter()
         .map(|l| (l, target(l, anchors, grid)))
         .collect();
+    let screen = Rect::new(0, 0, grid.width, grid.height);
     for (_, t) in &targets {
         if let Some(Target::At(r)) = t {
             taken.anchors.extend(r.rects.iter().copied());
@@ -270,7 +306,16 @@ pub fn plan(layers: &Layers, anchors: &dyn Resolve, grid: &Grid, renderers: &Ren
             out.missing.push(layer.id.clone());
             continue;
         };
-        plan_one(layer, t, grid, renderers, &mut taken, &mut out);
+        // The cells this layer keeps off: every avoid anchor that shows.
+        let avoid: Vec<Rect> = layer
+            .avoid
+            .iter()
+            .filter_map(|a| anchors.resolve(a))
+            .flat_map(|r| r.rects)
+            .map(|r| r.intersection(&screen))
+            .filter(|r| !r.is_empty())
+            .collect();
+        plan_one(layer, t, &avoid, grid, renderers, &mut taken, &mut out);
     }
     out
 }
@@ -278,9 +323,11 @@ pub fn plan(layers: &Layers, anchors: &dyn Resolve, grid: &Grid, renderers: &Ren
 /// The widest a box may be by default, borders included.
 pub const MAX_WIDTH: u16 = 52;
 
+#[allow(clippy::too_many_arguments)]
 fn plan_one(
     layer: &Layer,
     t: Target,
+    avoid: &[Rect],
     grid: &Grid,
     renderers: &Renderers,
     taken: &mut Taken,
@@ -307,6 +354,7 @@ fn plan_one(
         route: None,
         no_arrow: None,
         dock: None,
+        covers_avoid: 0,
         ring: Vec::new(),
         pulse: None,
     };
@@ -321,6 +369,8 @@ fn plan_one(
         Target::Screen(_) => None,
     };
 
+    // Set when the box's arrow could only end on text (`NoArrow::HeadOnText`).
+    let mut head_on_text = false;
     // An off-screen anchor gets an edge chip; the box docks against it.
     let mut dock: Option<(Rect, Side)> = None;
     if let (Some(o), Target::Off(_, which, _)) = (off, &t) {
@@ -352,7 +402,7 @@ fn plan_one(
         let whole = Size::new(max_w, area.h);
         // What the renderer gives for `avail`, never over the whole room; zero: no box.
         let measure = |avail: Size| {
-            let m = rend.measure(data, avail);
+            let m = rend.measure(&MeasureCtx::new(data, avail, &layer.owner));
             let s = (m.w.min(whole.w), m.h.min(whole.h));
             (s.0 > 0 && s.1 > 0).then_some(s)
         };
@@ -399,12 +449,21 @@ fn plan_one(
                 (Target::Screen(pos), _) => screen_size
                     .and_then(|size| screen_box(*pos, size, area, grid, taken, agent))
                     .map(|r| (r, None, None)),
-                (_, Some((chip, _))) => place(&sides, &[chip], grid, taken, agent, false, true)
-                    .map(|(r, s, _)| (r, Some(s), None)),
-                (Target::At(_), None) => {
-                    place(&sides, &anchor, grid, taken, agent, layer.arrow, false)
-                        .map(|(r, s, path)| (r, Some(s), path))
+                (_, Some((chip, _))) => {
+                    place(&sides, &[chip], avoid, grid, taken, agent, false, true)
+                        .map(|(r, s, _)| (r, Some(s), None))
                 }
+                (Target::At(_), None) => place(
+                    &sides,
+                    &anchor,
+                    avoid,
+                    grid,
+                    taken,
+                    agent,
+                    layer.arrow,
+                    false,
+                )
+                .map(|(r, s, path)| (r, Some(s), path)),
                 _ => None,
             };
         }
@@ -413,6 +472,7 @@ fn plan_one(
                 p.rect = Some(r);
                 p.mode = Some(Mode::Box);
                 p.side = side;
+                p.covers_avoid = avoid_cells(grid, avoid, &r);
                 out.regions.push(Region {
                     rect: r,
                     id: layer.id.clone(),
@@ -420,11 +480,40 @@ fn plan_one(
                 if let (true, Some(side)) = (routed, side) {
                     // The route placement found for this box, else (the sliver rule moved
                     // it) a fresh one.
+                    let to = nearest(&anchor, &r);
                     let path = path.or_else(|| {
-                        let field = CostField::new(grid, taken, &anchor, r);
-                        route::route(&field, r, side, nearest(&anchor, &r), area, u32::MAX, None)
-                            .path()
+                        let field = CostField::new(grid, taken, &anchor, avoid, r);
+                        route::route(
+                            &field,
+                            r,
+                            side,
+                            to,
+                            area,
+                            u32::MAX,
+                            None,
+                            &mut route::Scratch::default(),
+                        )
+                        .path()
                     });
+                    // None: would a way with its head on text have reached it?
+                    if path.is_none() {
+                        let field = CostField {
+                            loose: true,
+                            ..CostField::new(grid, taken, &anchor, avoid, r)
+                        };
+                        head_on_text = route::route(
+                            &field,
+                            r,
+                            side,
+                            to,
+                            area,
+                            u32::MAX,
+                            None,
+                            &mut route::Scratch::default(),
+                        )
+                        .path()
+                        .is_some();
+                    }
                     let edge = match side {
                         Side::Below => Edge::Top,
                         Side::Above => Edge::Bottom,
@@ -481,6 +570,8 @@ fn plan_one(
             NoArrow::NoBox
         } else if off.is_some() {
             NoArrow::Docked
+        } else if head_on_text {
+            NoArrow::HeadOnText
         } else {
             NoArrow::NoWay
         });
@@ -512,14 +603,18 @@ fn plan_one(
     out.layers.push(p);
 }
 
-/// The strip's row: the area's top, or its bottom when the anchor is on the top row or lies
-/// above; failing that (another layer, a hole or protected cells there), the nearest free row
-/// inward from it.
+/// The strip's row, on the edge nearest the anchor: the area's top for an anchor that lies
+/// above, its bottom for one below; for an anchor on screen (or left or right), the top,
+/// unless the anchor is on the top row. Failing that (its chip, another layer, a hole or
+/// protected cells there), the nearest free row inward from that edge.
 fn strip_rect(anchor: &[Rect], off: Option<&Off>, grid: &Grid, taken: &Taken) -> Rect {
     let area = grid.area;
     let row = |y: u16| Rect::new(area.x, y, area.w, 1);
-    let top_first = !(anchor.iter().any(|a| a.intersects(&row(area.y)))
-        || matches!(off, Some(Off::Above { .. })));
+    let top_first = match off {
+        Some(Off::Above { .. }) => true,
+        Some(Off::Below { .. }) => false,
+        _ => !anchor.iter().any(|a| a.intersects(&row(area.y))),
+    };
     let ys: Vec<u16> = if top_first {
         (area.y..area.bottom()).collect()
     } else {
@@ -589,7 +684,8 @@ pub enum CellKind {
 
 /// The host's screen as placement sees it: its size, where layers may go (`area`: the text
 /// rows, never the status row), the caret, cells no box may cover (a selection, a prompt),
-/// and which cells hold text.
+/// cells boxes and arrows keep off when they can ([`Grid::avoid`]), which cells hold text,
+/// and how far from its anchor a box may go to keep clear ([`Grid::with_reach`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grid {
     pub width: u16,
@@ -598,6 +694,28 @@ pub struct Grid {
     pub caret: Option<(u16, u16)>,
     pub protect: Vec<Rect>,
     kinds: Vec<CellKind>,
+    /// Each cell's avoid weight (empty while nothing is avoided).
+    avoid: Vec<u16>,
+    reach: Reach,
+}
+
+/// The default weight of an avoid cell ([`Grid::avoid`], [`Layer::avoid`]): what covering it
+/// costs a box, in text cells. Covering a text cell costs 1.
+pub const AVOID: u16 = 20;
+
+/// How far from its anchor a box may sit to keep off text and avoid cells, past the nearest
+/// few places it always tries: `rows` for a box above or below, `cols` for one beside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Reach {
+    pub rows: u16,
+    pub cols: u16,
+}
+
+impl Default for Reach {
+    /// 12 rows, 40 columns.
+    fn default() -> Reach {
+        Reach { rows: 12, cols: 40 }
+    }
 }
 
 /// A grapheme's width in cells, as caretline measures it.
@@ -629,7 +747,56 @@ impl Grid {
             caret: None,
             protect: Vec::new(),
             kinds: vec![CellKind::Blank; width as usize * height as usize],
+            avoid: Vec::new(),
+            reach: Reach::default(),
         }
+    }
+
+    /// Asks boxes and arrows to keep off `r`'s cells (a highlighted band, the rows a step talks
+    /// about): soft, unlike `protect`. A box covers one only when no box in reach keeps off
+    /// them all, and then the fewest and lightest; an arrow crosses one only round nothing
+    /// cheaper. `weight` is what covering a cell costs, in text cells ([`AVOID`] is a good
+    /// default); overlapping rects keep the heavier. A weight of 0 does nothing.
+    pub fn avoid(&mut self, r: Rect, weight: u16) {
+        let r = r.intersection(&Rect::new(0, 0, self.width, self.height));
+        if r.is_empty() || weight == 0 {
+            return;
+        }
+        if self.avoid.is_empty() {
+            self.avoid = vec![0; self.width as usize * self.height as usize];
+        }
+        for y in r.y..r.bottom() {
+            for x in r.x..r.right() {
+                let i = y as usize * self.width as usize + x as usize;
+                self.avoid[i] = self.avoid[i].max(weight);
+            }
+        }
+    }
+
+    /// [`Grid::avoid`], as a builder.
+    pub fn with_avoid(mut self, r: Rect, weight: u16) -> Grid {
+        self.avoid(r, weight);
+        self
+    }
+
+    /// A cell's avoid weight (0: not avoided).
+    pub fn avoid_weight(&self, x: u16, y: u16) -> u16 {
+        if self.avoid.is_empty() || x >= self.width || y >= self.height {
+            return 0;
+        }
+        self.avoid[y as usize * self.width as usize + x as usize]
+    }
+
+    /// How far a box may go from its anchor to keep clear ([`Reach`]; default 12 rows, 40
+    /// columns). Farther candidates are tried only for a side none of whose nearer ones is
+    /// clear of text and avoid cells, and cost more the farther they are.
+    pub fn with_reach(mut self, reach: Reach) -> Grid {
+        self.reach = reach;
+        self
+    }
+
+    pub fn reach(&self) -> Reach {
+        self.reach
     }
 
     /// Marks the cells a string drawn at (`x`, `y`) covers: text, and wide graphemes as such.
@@ -768,6 +935,13 @@ impl Taken {
                     CellKind::Blank if self.any_dim && self.dimmed[i] => route::DIMMED,
                     CellKind::Blank => route::BLANK,
                 };
+                // An avoid cell costs its weight on top, so arrows go round when they can.
+                if let Some(&a) = grid.avoid.get(i)
+                    && a > 0
+                    && costs[i] != NO_WAY
+                {
+                    costs[i] += ROUTE_AVOID * u32::from(a);
+                }
             }
         }
         for r in self
@@ -860,6 +1034,8 @@ struct Sums {
     text: Vec<u32>,
     /// `None` while nothing is dimmed.
     dim: Option<Vec<u32>>,
+    /// Avoid weights; `None` while the grid avoids nothing.
+    avoid: Option<Vec<u32>>,
 }
 
 impl Sums {
@@ -867,22 +1043,30 @@ impl Sums {
         let gw = grid.width as usize;
         let (w, h) = (gw + 1, grid.height as usize + 1);
         // Each row's running count plus the row above's table.
-        let table = |cell: &dyn Fn(usize) -> bool| {
+        let table = |cell: &dyn Fn(usize) -> u32| {
             let mut t = vec![0u32; w * h];
             for y in 0..h - 1 {
                 let mut run = 0u32;
                 let (above, row) = t.split_at_mut((y + 1) * w);
                 let above = &above[y * w..];
                 for x in 0..gw {
-                    run += u32::from(cell(y * gw + x));
+                    run += cell(y * gw + x);
                     row[x + 1] = run + above[x + 1];
                 }
             }
             t
         };
-        let text = table(&|i| grid.kinds[i] != CellKind::Blank);
-        let dim = taken.any_dim.then(|| table(&|i| taken.dimmed[i]));
-        Sums { w, text, dim }
+        let text = table(&|i| u32::from(grid.kinds[i] != CellKind::Blank));
+        let dim = taken
+            .any_dim
+            .then(|| table(&|i| u32::from(taken.dimmed[i])));
+        let avoid = (!grid.avoid.is_empty()).then(|| table(&|i| u32::from(grid.avoid[i])));
+        Sums {
+            w,
+            text,
+            dim,
+            avoid,
+        }
     }
 
     fn sum(t: &[u32], w: usize, r: &Rect) -> u32 {
@@ -902,40 +1086,118 @@ impl Sums {
     fn dim(&self, r: &Rect) -> u32 {
         self.dim.as_ref().map_or(0, |d| Self::sum(d, self.w, r))
     }
+
+    /// The avoid weight a box at `r` covers: the grid's cells, and the layer's own (`avoid`,
+    /// at [`AVOID`] each).
+    fn avoid(&self, r: &Rect, avoid: &[Rect]) -> u32 {
+        let grid = self.avoid.as_ref().map_or(0, |a| Self::sum(a, self.w, r));
+        let own: u32 = avoid
+            .iter()
+            .map(|a| {
+                let i = a.intersection(r);
+                i.w as u32 * i.h as u32 * AVOID as u32
+            })
+            .sum();
+        grid + own
+    }
+}
+
+/// What an arrow pays per unit of avoid weight for each cell it crosses, on top of the cell's
+/// own cost: at [`AVOID`], 80, five text cells.
+const ROUTE_AVOID: u32 = 4;
+
+/// The avoid weight of one cell: the grid's, or the layer's own.
+fn avoid_at(grid: &Grid, avoid: &[Rect], x: u16, y: u16) -> u32 {
+    let own = if avoid.iter().any(|a| a.contains(x, y)) {
+        AVOID
+    } else {
+        0
+    };
+    u32::from(grid.avoid_weight(x, y).max(own))
+}
+
+/// How many of `r`'s cells are avoid cells.
+fn avoid_cells(grid: &Grid, avoid: &[Rect], r: &Rect) -> u16 {
+    let mut n = 0u16;
+    for y in r.y..r.bottom() {
+        for x in r.x..r.right() {
+            if avoid_at(grid, avoid, x, y) > 0 {
+                n = n.saturating_add(1);
+            }
+        }
+    }
+    n
 }
 
 /// The router's view of the screen for one layer and one candidate box: the plan's costs,
 /// with the anchor's cells and the box blocked.
 struct CostField<'a> {
     costs: &'a [u32],
-    width: u16,
-    height: u16,
+    grid: &'a Grid,
     anchor: &'a [Rect],
+    /// The layer's own avoid cells.
+    avoid: &'a [Rect],
     own: Rect,
+    /// Any cell it may enter may hold the head (only to tell `head_on_text` from `no_way`).
+    loose: bool,
 }
 
 impl<'a> CostField<'a> {
-    fn new(grid: &Grid, taken: &'a Taken, anchor: &'a [Rect], own: Rect) -> CostField<'a> {
+    fn new(
+        grid: &'a Grid,
+        taken: &'a Taken,
+        anchor: &'a [Rect],
+        avoid: &'a [Rect],
+        own: Rect,
+    ) -> CostField<'a> {
         CostField {
             costs: taken.costs.as_deref().expect("costs built before routing"),
-            width: grid.width,
-            height: grid.height,
+            grid,
             anchor,
+            avoid,
             own,
+            loose: false,
         }
     }
 }
 
 impl Field for CostField<'_> {
     fn cost(&self, x: u16, y: u16) -> Option<u32> {
-        if x >= self.width || y >= self.height {
+        let g = self.grid;
+        if x >= g.width || y >= g.height {
             return None;
         }
-        let c = self.costs[y as usize * self.width as usize + x as usize];
+        let c = self.costs[y as usize * g.width as usize + x as usize];
         if c == NO_WAY || self.own.contains(x, y) || self.anchor.iter().any(|r| r.contains(x, y)) {
             return None;
         }
+        // The layer's own avoid cells, where the grid's weight (already in `c`) is lighter.
+        if !self.avoid.is_empty() && self.avoid.iter().any(|r| r.contains(x, y)) {
+            let gw = g.avoid_weight(x, y);
+            if gw < AVOID {
+                return Some(c + ROUTE_AVOID * u32::from(AVOID - gw));
+            }
+        }
         Some(c)
+    }
+
+    /// A head goes on a clear cell: blank, with no text beside it on its row but the anchor's
+    /// own. Never on a letter or a hyphen inside a word, nor in the gap between two words
+    /// (`[ ]▶item`, `is▲quick`), where it reads as part of the text.
+    fn head(&self, x: u16, y: u16) -> bool {
+        let g = self.grid;
+        if self.loose {
+            return true;
+        }
+        if g.kind(x, y) != CellKind::Blank {
+            return false;
+        }
+        let clear = |nx: Option<u16>| {
+            nx.is_none_or(|nx| {
+                g.kind(nx, y) == CellKind::Blank || self.anchor.iter().any(|r| r.contains(nx, y))
+            })
+        };
+        clear(x.checked_sub(1)) && clear(x.checked_add(1))
     }
 }
 
@@ -1050,14 +1312,21 @@ fn room(beside: &[Rect], side: Side, max_w: u16, area: Rect, flush: bool) -> Siz
 
 /// Picks a box beside `anchor` (design §2.4) from each side in order, with the size the
 /// renderer measured for that side's room: candidates shifted along the side to fit, scored
-/// by the text they cover, dimmed cells, the caret and the distance (and, with an arrow, the
-/// arrow's route); ties go to the earlier side. Then the sliver rule. `None` if nothing fits.
-/// With an arrow, also the chosen box's route when the sliver rule left the box where it was
-/// routed. `flush`: a docked box against its chip, touching it (next to it, and sharing at
-/// least one cell of its edge), not a cell or more away for an arrow.
+/// by the text and avoid cells they cover, dimmed cells, the caret and the distance (and,
+/// with an arrow, the arrow's route); ties go to the earlier side. Then the sliver rule.
+/// `None` if nothing fits. With an arrow, also the chosen box's route when the sliver rule
+/// left the box where it was routed. `flush`: a docked box against its chip, touching it
+/// (next to it, and sharing at least one cell of its edge), not a cell or more away for an
+/// arrow.
+///
+/// A box covering no avoid cell beats every box that covers one. Each side tries the nearest
+/// few places first; a side none of which is clear (of text and avoid cells) keeps going out,
+/// up to the grid's [`Reach`], until one is, each step farther costing more.
+#[allow(clippy::too_many_arguments)]
 fn place(
     sides: &[(Side, (u16, u16))],
     anchor: &[Rect],
+    avoid: &[Rect],
     grid: &Grid,
     taken: &Taken,
     agent: bool,
@@ -1070,9 +1339,10 @@ fn place(
     }
     let a = Rect::bounds(anchor);
     let sums = taken.sums();
+    let reach = grid.reach;
     // Where along the side: the junction over the anchor's middle, or the box at either edge.
     let mid = a.x as i32 + (a.w.min(16) as i32 - 1) / 2;
-    let mut cands: Vec<(u32, usize, usize, Rect, Side, u32)> = Vec::new();
+    let mut cands: Vec<Cand> = Vec::new();
     let mut seq = 0;
     for (si, &(side, (bw, bh))) in sides.iter().enumerate() {
         if bw > area.w || bh > area.h {
@@ -1094,12 +1364,19 @@ fn place(
             a.y as i32 - (bh as i32 - 2),
             a.y as i32 - bh as i32 / 2,
         ];
-        let mut add = |r: Rect, k: u16| {
+        // Whether a candidate clear of text and avoid cells was found on this side.
+        let clear = std::cell::Cell::new(false);
+        let mut add = |r: Rect, k: u16, far: bool| {
             seq += 1;
-            if (r.right() > area.right())
-                || (r.bottom() > area.bottom())
-                || !allowed(&r, grid, taken, anchor, agent)
-            {
+            if (r.right() > area.right()) || (r.bottom() > area.bottom()) {
+                return;
+            }
+            // Past the nearest places, only a box clear of text and avoid cells is worth its
+            // distance.
+            if far && (sums.text(&r) > 0 || sums.avoid(&r, avoid) > 0) {
+                return;
+            }
+            if !allowed(&r, grid, taken, anchor, agent) {
                 return;
             }
             // A docked box shares an edge with its chip.
@@ -1111,15 +1388,20 @@ fn place(
             {
                 return;
             }
-            // Scores are in tenths: text 10, dimmed 3, caret 500, distance 5 per cell.
+            // Scores are in tenths: text 10, avoid 10 per unit of weight, dimmed 3, caret 500,
+            // distance 5 per cell.
             let text = sums.text(&r);
+            let covered = sums.avoid(&r, avoid);
             let dim = sums.dim(&r);
             let caret = if grid.caret.is_some_and(|(x, y)| r.contains(x, y)) {
                 500
             } else {
                 0
             };
-            let score = text * 10 + dim * 3 + caret + (gap(&r, &a) + k as u32) * 5;
+            if text == 0 && covered == 0 {
+                clear.set(true);
+            }
+            let score = text * 10 + covered * 10 + dim * 3 + caret + (gap(&r, &a) + k as u32) * 5;
             // A first guess at the arrow: the words on the straight way from the box to the
             // anchor (the route itself is costed for the best few below).
             let way = match side {
@@ -1149,48 +1431,69 @@ fn place(
                 ),
             };
             let guess = sums.text(&way) * route::TEXT * 5;
-            cands.push((score + guess, si, seq, r, side, score));
+            cands.push(Cand {
+                guess: score + guess,
+                si,
+                seq,
+                rect: r,
+                side,
+                score,
+                avoid: covered > 0,
+                far,
+            });
         };
-        match side {
-            Side::Below | Side::Above => {
-                let near = u16::from(!flush);
-                for k in near..=near + if flush { 0 } else { 3 } {
-                    let y = if side == Side::Below {
-                        a.bottom() as i32 + k as i32
-                    } else {
-                        a.y as i32 - k as i32 - bh as i32
-                    };
-                    if y < area.y as i32 || y + bh as i32 > area.bottom() as i32 {
-                        continue;
+        // The nearest four places always; past them, while nothing on this side is clear, the
+        // clear places only.
+        let vertical = matches!(side, Side::Below | Side::Above);
+        let near: u16 = match (flush, vertical) {
+            (true, _) => 0,
+            (false, true) => 1,
+            (false, false) => 2,
+        };
+        let last = match (flush, vertical) {
+            (true, _) => near,
+            (false, true) => near + 3.max(reach.rows),
+            (false, false) => near + 3.max(reach.cols),
+        };
+        for k in near..=last {
+            let far = k > near + 3;
+            if far && clear.get() {
+                break;
+            }
+            if vertical {
+                let y = if side == Side::Below {
+                    a.bottom() as i32 + k as i32
+                } else {
+                    a.y as i32 - k as i32 - bh as i32
+                };
+                if y < area.y as i32 || y + bh as i32 > area.bottom() as i32 {
+                    if far {
+                        break;
                     }
-                    let mut seen = Vec::new();
-                    for &x in xs {
-                        let x = clamp_x(x);
-                        if !seen.contains(&x) {
-                            seen.push(x);
-                            add(Rect::new(x, y as u16, bw, bh), k - near);
-                        }
+                    continue;
+                }
+                for (j, &x) in xs.iter().enumerate() {
+                    let x = clamp_x(x);
+                    if !xs[..j].iter().any(|&o| clamp_x(o) == x) {
+                        add(Rect::new(x, y as u16, bw, bh), k - near, far);
                     }
                 }
-            }
-            Side::Right | Side::Left => {
-                let near = if flush { 0 } else { 2 };
-                for k in near..=near + if flush { 0 } else { 3 } {
-                    let x = if side == Side::Right {
-                        a.right() as i32 + k as i32
-                    } else {
-                        a.x as i32 - k as i32 - bw as i32
-                    };
-                    if x < area.x as i32 || x + bw as i32 > area.right() as i32 {
-                        continue;
+            } else {
+                let x = if side == Side::Right {
+                    a.right() as i32 + k as i32
+                } else {
+                    a.x as i32 - k as i32 - bw as i32
+                };
+                if x < area.x as i32 || x + bw as i32 > area.right() as i32 {
+                    if far {
+                        break;
                     }
-                    let mut seen = Vec::new();
-                    for y in ys {
-                        let y = clamp_y(y);
-                        if !seen.contains(&y) {
-                            seen.push(y);
-                            add(Rect::new(x as u16, y, bw, bh), k - near);
-                        }
+                    continue;
+                }
+                for (j, &y) in ys.iter().enumerate() {
+                    let y = clamp_y(y);
+                    if !ys[..j].iter().any(|&o| clamp_y(o) == y) {
+                        add(Rect::new(x as u16, y, bw, bh), k - near, far);
                     }
                 }
             }
@@ -1199,25 +1502,26 @@ fn place(
     if cands.is_empty() {
         return None;
     }
-    cands.sort_by_key(|c| (c.0, c.1, c.2));
+    cands.sort_by_key(|c| (c.avoid, c.guess, c.si, c.seq));
+    let keep = |r: Rect, side: Side| sliver(r, side, sums, grid, taken, anchor, avoid, agent);
     if arrow {
         // Every box re-scored with the arrow it would need: a box whose arrow must cross words
         // loses to one with a blank way, and any box whose arrow routes beats one whose arrow
         // can't. The winner is the least of them all, whatever order they're routed in, so
         // it doesn't depend on which boxes a first guess ranked together (`route_all`).
-        let b = route_all(&cands, anchor, grid, taken)?;
-        let r = sliver(b.rect, b.side, sums, grid, taken, anchor, agent);
+        let b = route_all(&cands, anchor, avoid, grid, taken)?;
+        let r = keep(b.rect, b.side);
         return Some((r, b.side, b.path.filter(|_| r == b.rect)));
     }
     let c = cands[0];
-    let r = sliver(c.3, c.4, sums, grid, taken, anchor, agent);
+    let r = keep(c.rect, c.side);
     // A docked box the sliver rule moved off its chip stays where it touched it.
-    let r = if flush && !touches(&r, &a, c.4) {
-        c.3
+    let r = if flush && !touches(&r, &a, c.side) {
+        c.rect
     } else {
         r
     };
-    Some((r, c.4, None))
+    Some((r, c.side, None))
 }
 
 /// Whether a box on `side` of `a` is next to it and shares at least one cell of its edge.
@@ -1230,13 +1534,29 @@ fn touches(r: &Rect, a: &Rect, side: Side) -> bool {
     }
 }
 
-/// A candidate box: (score with a first guess at its arrow, side index, order, box, side,
-/// score of the box alone).
-type Cand = (u32, usize, usize, Rect, Side, u32);
+/// A candidate box.
+#[derive(Debug, Clone, Copy)]
+struct Cand {
+    /// Its score with a first guess at its arrow.
+    guess: u32,
+    /// Its side's index in the order tried, and its order among all.
+    si: usize,
+    seq: usize,
+    rect: Rect,
+    side: Side,
+    /// The score of the box alone.
+    score: u32,
+    /// It covers avoid cells: it ranks after every box that covers none.
+    avoid: bool,
+    /// Past the nearest four places on its side (routed after the near ones).
+    far: bool,
+}
 
 /// A routed candidate.
 struct Scored {
-    /// No route: ranks after every box whose arrow routes.
+    /// Covers avoid cells: ranks after every box that doesn't.
+    avoid: bool,
+    /// No route: ranks after every box whose arrow routes (that covers as much).
     miss: bool,
     score: u32,
     si: usize,
@@ -1247,97 +1567,149 @@ struct Scored {
 }
 
 impl Scored {
-    fn key(&self) -> (bool, u32, usize, usize) {
-        (self.miss, self.score, self.si, self.seq)
+    fn key(&self) -> (bool, bool, u32, usize, usize) {
+        (self.avoid, self.miss, self.score, self.si, self.seq)
     }
 }
 
 /// Routes candidate boxes (sorted best first by box score and a guess at the arrow) and
-/// returns the least by (no route, score, side, order), whatever order they come in.
+/// returns the least by (covers avoid cells, no route, score, side, order), whatever order
+/// they come in.
 ///
-/// Boxes go by (side, anchor rect), the pair holding the best guess first. An arrow costs at
-/// least one blank cell per cell between its box and the anchor, so a box that couldn't beat
-/// the best so far even then is left out, and a pair with none left is skipped whole. For
-/// the rest, one search back from the anchor over the cells their routes may use gives each
-/// a closer bound (the search's cells cover each route's corridor, so it never
+/// Boxes go by (side, anchor rect, near or far), the near ones and sides an arrow can end on
+/// first. An arrow costs at least one blank cell per cell between its box and the anchor, so a
+/// box that couldn't beat the best so far even then is left out, and a group with none left is
+/// skipped whole. For the rest, one search back from the anchor over the cells their routes may
+/// use gives each a closer bound (the search's cells cover each route's corridor, so it never
 /// overestimates); they're routed cheapest bound first, a box whose bound can't win isn't
 /// routed, and a route's search stops once it can't win.
-fn route_all(cands: &[Cand], anchor: &[Rect], grid: &Grid, taken: &Taken) -> Option<Scored> {
+fn route_all(
+    cands: &[Cand],
+    anchor: &[Rect],
+    avoid: &[Rect],
+    grid: &Grid,
+    taken: &Taken,
+) -> Option<Scored> {
     let area = grid.area;
-    let near: Vec<Rect> = cands.iter().map(|c| nearest(anchor, &c.3)).collect();
-    // (side, anchor rect, the region its routes may use, its boxes), in order of first box.
-    // (side, anchor rect, its boxes), in order of their first box.
-    let mut pairs: Vec<(Side, Rect, Vec<usize>)> = Vec::new();
+    let near: Vec<Rect> = cands.iter().map(|c| nearest(anchor, &c.rect)).collect();
+    // (side, anchor rect, far, its boxes), in order of their first box.
+    let mut groups: Vec<(Side, Rect, bool, Vec<usize>)> = Vec::new();
     for (i, c) in cands.iter().enumerate() {
-        match pairs.iter_mut().find(|k| k.0 == c.4 && k.1 == near[i]) {
-            Some(k) => k.2.push(i),
-            None => pairs.push((c.4, near[i], vec![i])),
+        match groups
+            .iter_mut()
+            .find(|k| k.0 == c.side && k.1 == near[i] && k.2 == c.far)
+        {
+            Some(k) => k.3.push(i),
+            None => groups.push((c.side, near[i], c.far, vec![i])),
         }
     }
-    let open = CostField::new(grid, taken, anchor, Rect::default());
+    let open = CostField::new(grid, taken, anchor, avoid, Rect::default());
+    // Where a head may go beside each anchor rect, on any side.
+    let mut heads: Vec<(Rect, Vec<(u16, u16)>)> = Vec::new();
+    for g in &groups {
+        if !heads.iter().any(|h| h.0 == g.1) {
+            heads.push((g.1, route::heads(&open, g.1)));
+        }
+    }
+    let heads_of = |n: Rect| &heads.iter().find(|h| h.0 == n).expect("found above").1;
+    // Near boxes before far ones, and sides an arrow can end on first: a side with no head on
+    // it (every cell there is text, say) needs longer arrows round to another, which the boxes
+    // routed first usually beat. (The winner doesn't depend on the order; only how much is
+    // routed.)
+    groups.sort_by_key(|(side, n, far, _)| {
+        let no_head = !heads_of(*n)
+            .iter()
+            .any(|&(x, y)| route::faces(*side, *n, x, y));
+        (*far, no_head)
+    });
+    let mut scratch = route::Scratch::default();
     let mut best: Option<Scored> = None;
-    for (side, n, boxes) in pairs {
+    for (side, n, far, boxes) in groups {
         let boxes: Vec<usize> = boxes
             .into_iter()
             .filter(|&i| {
                 let c = &cands[i];
-                can_win(c.5 + gap(&c.3, &n).max(1) * route::BLANK * 5, c, &best)
+                if !can_win(
+                    c.score + gap(&c.rect, &n).max(1) * route::BLANK * 5,
+                    c,
+                    &best,
+                ) {
+                    return false;
+                }
+                // A far box's corridor is long: before searching it, the cells to the nearest
+                // head (one each, at least) must leave it a chance.
+                !far || {
+                    let field = CostField::new(grid, taken, anchor, avoid, c.rect);
+                    route::heads_bound(&field, c.rect, c.side, n, heads_of(n))
+                        .is_none_or(|lb| can_win(c.score + lb * 5, c, &best))
+                }
             })
             .collect();
         if boxes.is_empty() {
             continue;
         }
         let region = boxes.iter().fold(Rect::default(), |r, &i| {
-            r.union(&route::reach(cands[i].3, side, n, area))
+            r.union(&route::reach(cands[i].rect, side, n, area))
         });
         let goal = route::ToGoal::new(&open, side, n, region);
-        // At least one cell when the facing side is out of reach: the arrow may still end
-        // on another side.
+        // When the facing side is out of reach, the least way to a head on any side (the
+        // arrow may end there), else at least one cell.
         let mut few: Vec<(u32, usize)> = boxes
             .iter()
             .map(|&i| {
                 let c = &cands[i];
-                let field = CostField::new(grid, taken, anchor, c.3);
-                (c.5 + goal.bound(&field, c.3, c.4, n).unwrap_or(1) * 5, i)
+                let field = CostField::new(grid, taken, anchor, avoid, c.rect);
+                let lb = goal
+                    .bound(&field, c.rect, c.side, n)
+                    .or_else(|| route::heads_bound(&field, c.rect, c.side, n, heads_of(n)));
+                (c.score + lb.unwrap_or(1) * 5, i)
             })
             .collect();
-        few.sort_by_key(|&(lb, i)| (lb, cands[i].1, cands[i].2));
+        few.sort_by_key(|&(lb, i)| (lb, cands[i].si, cands[i].seq));
         for (lb, i) in few {
             let c = &cands[i];
             if !can_win(lb, c, &best) {
                 continue;
             }
-            // Against a box with a route, a route that would lose costs more than the room
-            // left.
+            // Against a box with a route (that covers as much), a route that would lose costs
+            // more than the room left.
             let limit = match best.as_ref() {
-                Some(b) if !b.miss => b.score.saturating_sub(c.5) / 5,
+                Some(b) if !b.miss && b.avoid == c.avoid => b.score.saturating_sub(c.score) / 5,
                 _ => u32::MAX,
             };
-            let field = CostField::new(grid, taken, anchor, c.3);
+            let field = CostField::new(grid, taken, anchor, avoid, c.rect);
+            let routed = route::route(
+                &field,
+                c.rect,
+                c.side,
+                n,
+                area,
+                limit,
+                Some(&goal),
+                &mut scratch,
+            );
             // Crossing a word is worse than covering one: a box hides text, an arrow mangles
-            // it.
-            let (miss, rc, path) = match route::route(&field, c.3, c.4, n, area, limit, Some(&goal))
-            {
+            // it. Crossing an avoid cell costs what covering it would, on top.
+            let (miss, rc, path) = match routed {
                 route::Routed::Over => continue,
                 route::Routed::NoWay => (true, 0, None),
-                route::Routed::Found(p) => (
-                    false,
-                    p.cost * 5
-                        + 300
-                            * p.cells
-                                .iter()
-                                .filter(|c| grid.kind(c.0, c.1) == CellKind::Text)
-                                .count() as u32,
-                    Some(p),
-                ),
+                route::Routed::Found(p) => {
+                    let (mut words, mut avoided) = (0u32, 0u32);
+                    for c in &p.cells {
+                        words += u32::from(grid.kind(c.0, c.1) == CellKind::Text);
+                        avoided += avoid_at(grid, avoid, c.0, c.1);
+                    }
+                    (false, p.cost * 5 + 300 * words + 10 * avoided, Some(p))
+                }
             };
             let scored = Scored {
+                avoid: c.avoid,
                 miss,
-                score: c.5 + rc,
-                si: c.1,
-                seq: c.2,
-                rect: c.3,
-                side: c.4,
+                score: c.score + rc,
+                si: c.si,
+                seq: c.seq,
+                rect: c.rect,
+                side: c.side,
                 path,
             };
             if best.as_ref().is_none_or(|b| scored.key() < b.key()) {
@@ -1351,11 +1723,12 @@ fn route_all(cands: &[Cand], anchor: &[Rect], grid: &Grid, taken: &Taken) -> Opt
 /// Whether a box whose arrow costs at least `lb` in all could still beat `best`.
 fn can_win(lb: u32, c: &Cand, best: &Option<Scored>) -> bool {
     best.as_ref()
-        .is_none_or(|b| (false, lb, c.1, c.2) < b.key())
+        .is_none_or(|b| (c.avoid, false, lb, c.si, c.seq) < b.key())
 }
 
 /// The sliver rule: a narrow gap with text between the box and the area's edge is closed by
-/// stretching the box to the edge, or else by moving it there.
+/// stretching the box to the edge, or else by moving it there, unless that covers more avoid
+/// weight.
 #[allow(clippy::too_many_arguments)]
 fn sliver(
     r: Rect,
@@ -1364,18 +1737,22 @@ fn sliver(
     grid: &Grid,
     taken: &Taken,
     anchor: &[Rect],
+    avoid: &[Rect],
     agent: bool,
 ) -> Rect {
     let _ = side;
     let area = grid.area;
     let mut r = r;
+    let ok = |n: &Rect, r: &Rect| {
+        allowed(n, grid, taken, anchor, agent) && sums.avoid(n, avoid) <= sums.avoid(r, avoid)
+    };
     let left = r.x - area.x;
     if left > 0 && left < SLIVER && sums.text(&Rect::new(area.x, r.y, left, r.h)) > 0 {
         let wide = Rect::new(area.x, r.y, r.w + left, r.h);
         let moved = Rect::new(area.x, r.y, r.w, r.h);
-        if allowed(&wide, grid, taken, anchor, agent) {
+        if ok(&wide, &r) {
             r = wide;
-        } else if allowed(&moved, grid, taken, anchor, agent) {
+        } else if ok(&moved, &r) {
             r = moved;
         }
     }
@@ -1383,9 +1760,9 @@ fn sliver(
     if right > 0 && right < SLIVER && sums.text(&Rect::new(r.right(), r.y, right, r.h)) > 0 {
         let wide = Rect::new(r.x, r.y, r.w + right, r.h);
         let moved = Rect::new(r.x + right, r.y, r.w, r.h);
-        if allowed(&wide, grid, taken, anchor, agent) {
+        if ok(&wide, &r) {
             r = wide;
-        } else if allowed(&moved, grid, taken, anchor, agent) {
+        } else if ok(&moved, &r) {
             r = moved;
         }
     }

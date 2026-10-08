@@ -407,6 +407,13 @@ pub struct Layer {
     pub ttl_ms: Option<u64>,
     /// Fallbacks, in order: the first that resolves is used.
     pub anchor: Vec<Anchor>,
+    /// What this layer's box and arrow keep off: the text it talks about, say. Resolved like
+    /// `anchor` every frame (every one that shows, not the first), so it follows scrolling and
+    /// edits. Covered only when nothing else fits, as the host's own avoid cells are
+    /// ([`Grid::avoid`](crate::Grid::avoid)), with the default weight
+    /// [`AVOID`](crate::AVOID).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub avoid: Vec<Anchor>,
     /// The box's content; none for a layer that only rings or dims.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<Content>,
@@ -446,6 +453,7 @@ impl Layer {
             since_ms: 0,
             ttl_ms: None,
             anchor: vec![anchor],
+            avoid: Vec::new(),
             content: None,
             arrow: false,
             ring: None,
@@ -459,6 +467,12 @@ impl Layer {
 
     pub fn with_content(mut self, c: Content) -> Layer {
         self.content = Some(c);
+        self
+    }
+
+    /// Keeps the box and arrow off these anchors' cells ([`Layer::avoid`]).
+    pub fn with_avoid(mut self, avoid: Vec<Anchor>) -> Layer {
+        self.avoid = avoid;
         self
     }
 
@@ -790,7 +804,12 @@ fn push(
     if layer.anchor.is_empty() {
         return refuse(Reason::Invalid, "a layer needs at least one anchor");
     }
-    if let Some(p) = layer.anchor.iter().find_map(Anchor::problem) {
+    if let Some(p) = layer
+        .anchor
+        .iter()
+        .chain(&layer.avoid)
+        .find_map(Anchor::problem)
+    {
         return refuse(Reason::Invalid, p);
     }
     if layer.content.is_none() && layer.ring.is_none() && layer.spotlight.is_none() {

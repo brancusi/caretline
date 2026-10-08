@@ -2,8 +2,9 @@
 //!
 //! Costs (design §3.4, with text made dearer): a blank cell 1, a dimmed cell 2, a blank cell
 //! between words 6, a text cell 16, so a route goes round words whenever a blank way exists
-//! within the corridor; a bend 3, and a third bend 20 more. Callouts, holes, protected cells, the anchor and both halves of a
-//! wide grapheme can't be crossed.
+//! within the corridor; a bend 3, and a third bend 20 more. Callouts, holes, protected cells,
+//! the anchor and both halves of a wide grapheme can't be crossed. The head ends only where
+//! the field allows ([`Field::head`]): placement keeps it off text and out of word gaps.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -57,6 +58,10 @@ impl Dir {
 pub(crate) trait Field {
     /// The cost of entering the cell, or `None` if it can't be crossed.
     fn cost(&self, x: u16, y: u16) -> Option<u32>;
+    /// Whether an arrow's head may end on the cell (default: any cell it may enter).
+    fn head(&self, _x: u16, _y: u16) -> bool {
+        true
+    }
 }
 
 /// What routing found: a path, no way through, or (with a limit) only routes dearer than it.
@@ -107,6 +112,18 @@ const RING: u32 = 64;
 const END: u32 = u32::MAX;
 
 impl<T: Copy + Ord> Buckets<T> {
+    /// Empty, keeping its memory.
+    fn clear(&mut self) {
+        self.nodes.clear();
+        self.head = [END; RING as usize];
+        self.tail = [END; RING as usize];
+        self.cur = 0;
+        self.len = 0;
+        self.started = false;
+        self.far.clear();
+        self.seq = 0;
+    }
+
     fn with_capacity(n: usize) -> Buckets<T> {
         Buckets {
             nodes: Vec::with_capacity(n),
@@ -177,6 +194,26 @@ impl<T: Copy + Ord> Buckets<T> {
     }
 }
 
+/// The router's working memory, kept between the routes of one plan so each search reuses it
+/// instead of allocating its own.
+pub(crate) struct Scratch {
+    cost_at: Vec<u32>,
+    best: Vec<u32>,
+    prev: Vec<u32>,
+    heap: Buckets<(u32, u32)>,
+}
+
+impl Default for Scratch {
+    fn default() -> Scratch {
+        Scratch {
+            cost_at: Vec::new(),
+            best: Vec::new(),
+            prev: Vec::new(),
+            heap: Buckets::with_capacity(0),
+        }
+    }
+}
+
 /// Whether an arrow ends at a cell: just outside `anchor`'s edge facing `side`.
 fn is_goal(side: Side, anchor: Rect, x: u16, y: u16) -> bool {
     match side {
@@ -187,16 +224,85 @@ fn is_goal(side: Side, anchor: Rect, x: u16, y: u16) -> bool {
     }
 }
 
-/// The least an arrow can cost from each cell of `region` to `anchor`'s side: one search back
-/// from the goal, shared by every candidate box on that side. Boxes and bends are left out, so
-/// it never overestimates; the router uses it as its heuristic and placement as a bound.
+/// The cells beside `anchor` (just outside an edge, not a corner) where the field lets an
+/// arrow's head end: where a route that can't end on the facing side may end instead.
+pub(crate) fn heads(field: &impl Field, anchor: Rect) -> Vec<Cell> {
+    let mut v = Vec::new();
+    let mut add = |x: Option<u16>, y: Option<u16>| {
+        if let (Some(x), Some(y)) = (x, y)
+            && field.cost(x, y).is_some()
+            && field.head(x, y)
+        {
+            v.push((x, y));
+        }
+    };
+    for x in anchor.x..anchor.right() {
+        add(Some(x), anchor.y.checked_sub(1));
+        add(Some(x), Some(anchor.bottom()));
+    }
+    for y in anchor.y..anchor.bottom() {
+        add(anchor.x.checked_sub(1), Some(y));
+        add(Some(anchor.right()), Some(y));
+    }
+    v
+}
+
+/// Whether a head at (`x`, `y`) is on `anchor`'s `side`: where an arrow from a box on that side
+/// ends first.
+pub(crate) fn faces(side: Side, anchor: Rect, x: u16, y: u16) -> bool {
+    is_goal(side, anchor, x, y)
+}
+
+/// Cells from (`x`, `y`) to the nearest of `heads`, itself included (each costs at least 1).
+fn cells_to_heads(heads: &[Cell], x: u16, y: u16) -> u32 {
+    heads
+        .iter()
+        .map(|h| (h.0.abs_diff(x) + h.1.abs_diff(y)) as u32)
+        .min()
+        .unwrap_or(0)
+}
+
+/// The least a route from `boxr` on `side` that ends at one of `heads` can cost: its first
+/// cell, its offset and a cell for each step on. `None` if there are no heads.
+pub(crate) fn heads_bound(
+    field: &impl Field,
+    boxr: Rect,
+    side: Side,
+    anchor: Rect,
+    heads: &[Cell],
+) -> Option<u32> {
+    if heads.is_empty() {
+        return None;
+    }
+    starts(boxr, side, anchor)
+        .into_iter()
+        .filter_map(|((x, y), _, extra)| {
+            Some(field.cost(x, y)? + extra + cells_to_heads(heads, x, y))
+        })
+        .min()
+}
+
+/// The least an arrow can cost from each cell of `region` to a head the field allows on
+/// `anchor`'s side: one search back from the heads, shared by every candidate box on that
+/// side. Boxes and bends are left out, so it never overestimates; the router uses it as its
+/// heuristic and placement as a bound.
 pub(crate) struct ToGoal {
     region: Rect,
+    /// Empty when no head may go on that side: nothing in the region reaches it.
     dist: Vec<u32>,
 }
 
 impl ToGoal {
     pub(crate) fn new(field: &impl Field, side: Side, anchor: Rect, region: Rect) -> ToGoal {
+        let side_heads = heads(field, anchor)
+            .into_iter()
+            .any(|(x, y)| is_goal(side, anchor, x, y) && region.contains(x, y));
+        if !side_heads {
+            return ToGoal {
+                region,
+                dist: Vec::new(),
+            };
+        }
         let (w, h) = (region.w as usize, region.h as usize);
         let mut cost = vec![NONE; w * h];
         let mut dist = vec![NONE; w * h];
@@ -206,7 +312,7 @@ impl ToGoal {
                 let (x, y) = (region.x + cx as u16, region.y + cy as u16);
                 if let Some(c) = field.cost(x, y) {
                     cost[cy * w + cx] = c;
-                    if is_goal(side, anchor, x, y) {
+                    if is_goal(side, anchor, x, y) && field.head(x, y) {
                         dist[cy * w + cx] = 0;
                         heap.push(0, (cy * w + cx) as u32);
                     }
@@ -247,6 +353,9 @@ impl ToGoal {
     fn get(&self, x: u16, y: u16) -> Option<Option<u32>> {
         if !self.region.contains(x, y) {
             return None;
+        }
+        if self.dist.is_empty() {
+            return Some(None);
         }
         let d = self.dist
             [(y - self.region.y) as usize * self.region.w as usize + (x - self.region.x) as usize];
@@ -346,7 +455,10 @@ fn starts(boxr: Rect, side: Side, anchor: Rect) -> Vec<(Cell, Cell, u32)> {
 /// a caller scoring boxes needs no route that can't win. `u32::MAX` for none.
 ///
 /// When no route reaches the facing side (the box sits past the anchor's end, say, with the
-/// anchor at the area's edge), the arrow may end beside the anchor on any side, pointing at it.
+/// anchor at the area's edge, or every cell on that side is text), the arrow may end beside
+/// the anchor on any side, pointing at it. `to_goal` is the facing side's [`ToGoal`], when the
+/// caller has one: a box it says can't reach that side goes straight to the fallback.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn route(
     field: &impl Field,
     boxr: Rect,
@@ -355,9 +467,18 @@ pub(crate) fn route(
     area: Rect,
     limit: u32,
     to_goal: Option<&ToGoal>,
+    scratch: &mut Scratch,
 ) -> Routed {
-    match search(field, boxr, side, anchor, area, limit, to_goal, false) {
-        Routed::NoWay => search(field, boxr, side, anchor, area, limit, None, true),
+    let facing = to_goal.is_none_or(|t| t.bound(field, boxr, side, anchor).is_some());
+    let r = if facing {
+        search(
+            field, boxr, side, anchor, area, limit, to_goal, false, scratch,
+        )
+    } else {
+        Routed::NoWay
+    };
+    match r {
+        Routed::NoWay => search(field, boxr, side, anchor, area, limit, None, true, scratch),
         r => r,
     }
 }
@@ -384,6 +505,7 @@ fn search(
     limit: u32,
     to_goal: Option<&ToGoal>,
     any_side: bool,
+    scratch: &mut Scratch,
 ) -> Routed {
     if boxr.w < 3 || boxr.h < 3 || anchor.is_empty() {
         return Routed::NoWay;
@@ -414,11 +536,20 @@ fn search(
         };
         (x.abs_diff(gx) + y.abs_diff(gy)) as u32
     };
+    // Ending on any side: only where a head may go, and cells to the nearest of them.
+    let heads = if any_side {
+        let h = heads(field, anchor);
+        if h.is_empty() {
+            return Routed::NoWay;
+        }
+        h
+    } else {
+        Vec::new()
+    };
     // Or, better, the least cost on ([`ToGoal`]); `None`: the goal can't be reached from there.
-    // (Ending on any side, nothing is known: 0.)
     let h = |x: u16, y: u16| -> Option<u32> {
         if any_side {
-            return Some(0);
+            return Some(cells_to_heads(&heads, x, y));
         }
         match to_goal.and_then(|t| t.get(x, y)) {
             Some(d) => d.map(|d| d.max(cells_to(x, y))),
@@ -429,7 +560,14 @@ fn search(
     let ch = corridor.h as usize;
     let n = cw * ch * 4;
     // Each corridor cell's cost, asked of the field once.
-    let mut cost_at = vec![NONE; cw * ch];
+    let Scratch {
+        cost_at,
+        best,
+        prev,
+        heap,
+    } = scratch;
+    cost_at.clear();
+    cost_at.resize(cw * ch, NONE);
     for cy in 0..ch {
         for cx in 0..cw {
             if let Some(c) = field.cost(corridor.x + cx as u16, corridor.y + cy as u16) {
@@ -442,10 +580,14 @@ fn search(
     let idx = |x: u16, y: u16, d: Dir| {
         ((y - corridor.y) as usize * cw + (x - corridor.x) as usize) * 4 + d.index()
     };
-    let mut best = vec![u32::MAX; n];
-    let mut prev = vec![u32::MAX; n];
+    best.clear();
+    best.resize(n, u32::MAX);
+    // Read only along a found route, every cell of which set it: no need to clear.
+    if prev.len() < n {
+        prev.resize(n, u32::MAX);
+    }
     // Entries (state, g) by `f`: cheapest estimate first, first pushed among equals.
-    let mut heap: Buckets<(u32, u32)> = Buckets::with_capacity(n);
+    heap.clear();
     // The starts, least `f` first (in their order among equals), so keys never go back.
     let mut first: Vec<(u32, u32, u32)> = Vec::with_capacity(starts.len());
     for &((x, y), _, extra) in &starts {
@@ -461,6 +603,7 @@ fn search(
         let Some(hh) = h(x, y) else { continue };
         if g < best[i] {
             best[i] = g;
+            prev[i] = u32::MAX;
             first.push((g + hh, i as u32, g));
         }
     }
@@ -486,7 +629,7 @@ fn search(
             is_goal_any(anchor, x, y, d)
         } else {
             d == arrive && goal(x, y)
-        };
+        } && field.head(x, y);
         if arrived {
             found = Some((i, g));
             break;
@@ -586,12 +729,22 @@ mod tests {
                 area,
                 u32::MAX,
                 None,
-                false
+                false,
+                &mut Scratch::default()
             ),
             Routed::NoWay
         ));
-        let Routed::Found(p) = route(&field, boxr, Side::Below, anchor, area, u32::MAX, None)
-        else {
+        let mut scratch = Scratch::default();
+        let Routed::Found(p) = route(
+            &field,
+            boxr,
+            Side::Below,
+            anchor,
+            area,
+            u32::MAX,
+            None,
+            &mut scratch,
+        ) else {
             panic!("no route");
         };
         let &(x, y, din, dout) = p.cells.last().unwrap();

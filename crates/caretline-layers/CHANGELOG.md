@@ -32,10 +32,10 @@
   agents) the caret, never splitting a wide grapheme; a one-row strip on narrow areas or when
   nothing fits; edge chips for off-screen anchors; arrow routes as cells (A*, round words);
   ring cells; spotlight holes; click regions and `Plan::hit`. Pure and serializable.
-  At 100×40 (release), a box costs about 6 µs, a box with its arrow about 27 µs, and a
-  spotlight with an arrow about 37 µs (with per-side measuring, below): routing costs are
-  built once per plan, candidate boxes are routed only when a lower bound says they can win,
-  and the winner's route is reused.
+  At 100×40 (release), a box costs about 6 µs, a box with its arrow about 25 µs, and a
+  spotlight with an arrow about 37 µs (with per-side measuring and clear arrow heads,
+  below): routing costs are built once per plan, candidate boxes are routed only when a
+  lower bound says they can win, and the winner's route is reused.
 - Layers placed together keep apart: no box, chip or strip covers another layer's box, chip,
   anchor or arrow (every layer's anchor is known before any box is placed), and no arrow
   runs under a box; chips on one edge slide along it to a free place.
@@ -85,10 +85,26 @@
   `in`), `layer`, `content`, `hint` and `owner`. A test checks the ops tests' requests (those
   `parse` refuses must fail it too), real replies, and the design's protocol examples
   against it.
-- `Renderer::measure(data, avail)` is called once per candidate side with that side's real
-  room (below and above: the rows past the arrow's gap, at most the width cap; right and
-  left: the columns past the gap, at most the cap), so a renderer can return a narrow, tall
-  box for a narrow side. A side with no room isn't measured.
+- `Renderer::measure` is called once per candidate side with that side's real room,
+  `MeasureCtx::avail` (below and above: the rows past the arrow's gap, at most the width
+  cap; right and left: the columns past the gap, at most the cap), so a renderer can return
+  a narrow, tall box for a narrow side. A side with no room isn't measured.
+
+- Soft avoid areas. `Grid::avoid(rect, weight)` (and `with_avoid`) marks cells a box and
+  its arrow keep off when anything else fits: a highlighted band, a table. `Layer.avoid`
+  (wire `"avoid": [...]`, also on `hint.show`; in the schema) names anchors whose cells the
+  layer keeps off, resolved every frame like `anchor`, so "don't cover what this step talks
+  about" follows scrolling and edits. A box covering no avoid cell beats every box that
+  covers one; among those that must, the least weight wins (`AVOID` = 20 text cells by
+  default). Arrows pay 4 per unit of weight per avoid cell on top of its cost, so they go
+  round avoid cells and words whenever their corridor has a way. A side none of whose
+  nearest four places is clear of text and avoid cells (or whose nearest are protected)
+  keeps going out, clear places only, up to the grid's `Reach` (default 12 rows, 40
+  columns; `Grid::with_reach`), each step farther costing more, the arrow bridging the gap.
+  `Planned.covers_avoid` counts the avoid cells a box covered (0, and left out of the JSON,
+  when it kept clear), for a host's lint. At 100×40 (release, least of ten runs alternating
+  with the build before these fixes): a box with its arrow 25.1 µs (was 27.9), a spotlight
+  with an arrow 37.5 µs (was 38.2), a box alone 5.8 µs.
 
 ### Changed (breaking within 0.1.0's development)
 
@@ -108,8 +124,44 @@
   spotlight with an arrow 36.6 µs (was 42.7), a box alone 5.6 µs (was 4.2: four measures,
   one per side, with the test host's measure).
 
+- `observe` and `map_anchors` take an `Edited` saying which views show the document that
+  changed: `observe(&mut layers, edited, changes, now_ms)`, `map_anchors(&mut layers,
+  edited, &changes)`. `Edited::All` maps every text anchor (a host with one document);
+  `Edited::Views { views, unscoped }` maps anchors scoped to one of `views`, and unscoped
+  ones only when `unscoped` (the edited document is the focused view's).
+- `Renderer::measure(&self, cx: &MeasureCtx) -> Size` (was `measure(data, avail)`).
+  `MeasureCtx { data, avail, owner }` adds whose layer it is, so a host can size an agent's
+  attribution (its name in the border, a "from" line) inside the box. Still pure: the same
+  context gives the same size. A closure `Fn(&Value, Size) -> Size` is still a renderer (it
+  ignores the owner). `MeasureCtx` is `#[non_exhaustive]`; build one with `MeasureCtx::new`.
+
 ### Fixed
 
+- An edit to one document no longer moves anchors in another. A `ChangeSet` belongs to one
+  document, but `observe` mapped every text anchor through it, so typing in `main` (page A)
+  shifted a hint scoped to `panel:1` (page B), or dropped it when page B was shorter. Anchors
+  scoped to views that don't show the edited document are now left alone (`Edited`).
+- A box no longer stays next to its anchor covering text when a clear place lies a few rows
+  further out: the `offscreen.scrolled` 80×24 golden's box moves from over the "Search"
+  paragraph to the blank space beside "## Search" (see soft avoid areas, above).
+- An arrow's head never lands on text. In a tight list it ended on a letter, a hyphen inside
+  a word, or the gap between two words (`[ ]▶item`, `is▲quick`). The head now ends only on
+  a clear cell beside the anchor: blank, with nothing beside it on its row but the anchor.
+  Routing and placement hold to it (a box whose arrow can end clear beats one whose can't),
+  and an arrow that can't end on the side its box faces ends on another. When every cell
+  beside the anchor is text, the arrow is dropped and `Planned.no_arrow` is the new
+  `head_on_text` (`NoArrow::HeadOnText`); the box and ring still mark the anchor. Goldens:
+  `word`, `agent` and `spotlight` at 80×24 and the CLI's `demo-layers.scrolled.60x20` place
+  their boxes and arrows anew, each head on a blank row beside the anchor. At 100×40
+  (release, least of ten runs alternating with the previous build): a box with its arrow
+  22.4 µs (was 27.3), a spotlight with an arrow 35.9 µs (was 37.6), a box alone 5.7 µs
+  (unchanged): sides with a clear head are routed first, a side with none skips its search,
+  and the router reuses its memory across a plan's routes.
+- A strip for an off-screen anchor goes on the edge the anchor lies beyond: the bottom for
+  one below (the last free row, so above a protected last row or the edge chip), the top for
+  one above. A layer whose anchor lay below fell back to the top row, away from it and its
+  chip. The 44×16 golden strips for anchors below moved from the top row to the row above
+  their chip.
 - A docked box (its anchor off screen) now always touches its own edge chip: it sits next
   to the chip and shares part of its edge, and `Planned.dock` names a cell of that shared
   edge. It used to take any candidate along the edge (one at the area's far side won where

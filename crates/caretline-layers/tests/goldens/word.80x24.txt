@@ -1,16 +1,16 @@
 # Getting around
 
-This page is a short tour of the editor. Read it from top to bottom and
-try each key as you go: nothing here can break.
+This page is a short tour of the editor. Read it from top to b+----------------+
+try each key as you go: nothing here can break.               | Jump by word   |
+                                                              | Option and an  |
+## Moving by words                                        +---+ arrow key move |
+                                                          v   | one word at a  |
+Hold Option and press an arrow key to jump a word at a time. T| time.          |
+stops at the start of each word, so a long line is quick to cr+----------------+
 
-## Moving by words
+## Selecting
 
-Hold Option and press an arrow key to jump a word at a time. The caret
-stops at the start of each word, so a long line is^quick to cross.
-                            +---------------------+----------------------------+
-## Selecting                | Jump by word                                     |
-                            | Option and an arrow key move one word at a time. |
-Hold Shift with any motion t+--------------------------------------------------+
+Hold Shift with any motion to select as you move. Shift and Option
 together select whole words, and the selection grows from where you began.
 
 ## Undo
@@ -25,17 +25,17 @@ Press Control F to search. Matches light up as you type, and Enter jumps
 --- map
 
 
+                                                              ##################
+                                                              ##################
+                                                              ##################
+                                                          >>>>##################
+                                                          >   ##################
+                                             **************   ##################
+                                                              ##################
 
 
 
 
-
-                                             **************
-                                                  >
-                            ####################################################
-                            ####################################################
-                            ####################################################
-                            ####################################################
 
 
 

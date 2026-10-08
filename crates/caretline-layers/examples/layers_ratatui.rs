@@ -63,14 +63,18 @@ impl HintBox {
 }
 
 impl Renderer for HintBox {
-    fn measure(&self, data: &Value, avail: Size) -> Size {
-        let inner = avail.w.saturating_sub(4).max(8) as usize;
-        let lines = HintBox::lines(data, inner);
+    fn measure(&self, cx: &MeasureCtx) -> Size {
+        let inner = cx.avail.w.saturating_sub(4).max(8) as usize;
+        let lines = HintBox::lines(cx.data, inner);
+        // An agent's box is wide enough for its name in the top border (` ◆ helper `, drawn
+        // below), so the attribution is never cut.
+        let label = cx.owner.actor().map_or(0, |a| a.chars().count() + 5);
         let w = lines
             .iter()
             .map(|l| l.chars().count())
             .max()
             .unwrap_or(0)
+            .max(label)
             .min(inner);
         Size::new(w as u16 + 4, lines.len() as u16 + 2)
     }
