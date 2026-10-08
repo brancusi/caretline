@@ -75,7 +75,7 @@ impl Tour {
         let mut missing = Vec::new();
         for s in &mut self.steps {
             for l in &mut s.layers {
-                for a in &mut l.anchor {
+                for a in l.anchor.iter_mut().chain(l.avoid.iter_mut()) {
                     if let StepAnchor::Find { text, view } = a {
                         match find(text, view.as_deref()) {
                             Some(found) => {
@@ -186,6 +186,12 @@ struct StepWire {
     place: Option<Place>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     capture: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "some_anchors",
+        skip_serializing_if = "Option::is_none"
+    )]
+    avoid: Option<Vec<StepAnchor>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     narration: Option<Narration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -208,11 +214,12 @@ impl TryFrom<StepWire> for Step {
             || w.kind.is_some()
             || w.data.is_some()
             || w.place.is_some()
-            || w.capture.is_some();
+            || w.capture.is_some()
+            || w.avoid.is_some();
         let mut layers = match (w.layers, short) {
             (Some(_), true) => {
                 return Err(format!(
-                    "step {:?}: `layers` or the single-layer fields (anchor, kind, data, place, capture), not both",
+                    "step {:?}: `layers` or the single-layer fields (anchor, kind, data, place, capture, avoid), not both",
                     w.id
                 ));
             }
@@ -231,6 +238,7 @@ impl TryFrom<StepWire> for Step {
                     data: w.data.unwrap_or(Value::Null),
                     place: w.place.unwrap_or_default(),
                     capture: w.capture.unwrap_or(false),
+                    avoid: w.avoid.unwrap_or_default(),
                 }]
             }
             (None, false) => Vec::new(),
@@ -263,6 +271,7 @@ impl From<Step> for StepWire {
             data: None,
             place: None,
             capture: None,
+            avoid: None,
             narration: s.narration,
             host: s.host,
             advance: s.advance,
@@ -293,6 +302,14 @@ pub struct StepLayer {
     /// A modal step (the host routes keys to the walkthrough).
     #[serde(default, skip_serializing_if = "is_false")]
     pub capture: bool,
+    /// What the layer's box and arrow should keep off (caretline-layers' `Layer.avoid`): one
+    /// anchor or a list, `find` included ([`Tour::resolve_finds`] resolves them too).
+    #[serde(
+        default,
+        deserialize_with = "anchors",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub avoid: Vec<StepAnchor>,
 }
 
 /// A layer's anchor as authored: any [`Anchor`], or `{find = "text", in? = "view"}`, a text

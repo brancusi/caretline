@@ -83,6 +83,12 @@ fn layer(
     out.ring = l.place.ring.clone();
     out.spotlight = l.place.spotlight.clone();
     out.capture = l.capture;
+    out.avoid = l
+        .avoid
+        .iter()
+        .filter_map(StepAnchor::anchor)
+        .cloned()
+        .collect();
     out.hide_off_screen = l.place.hide_off_screen;
     out.place = l.place.sides.clone();
     out.max_width = l.place.max_width;

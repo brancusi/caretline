@@ -219,7 +219,8 @@ pub fn schema() -> Value {
         "kind": {"type": "string"},
         "data": {"description": "The kind's data, opaque here."},
         "place": {"$ref": "#/$defs/place"},
-        "capture": {"type": "boolean"}
+        "capture": {"type": "boolean"},
+        "avoid": anchors
     });
     let mut layer_props = step_layer_props.clone();
     layer_props["id"] = json!({"type": "string"});

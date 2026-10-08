@@ -1672,6 +1672,5 @@ differs from the sections above:
     arrow 37.5 µs (38.2), a box alone 5.8 µs (5.9). The far scan checks only the summed
     tables until it finds a clear place, and a far box whose nearest head is too far isn't
     routed.
-  - `caretline-tour`'s step layers don't carry `avoid` yet (a step's `layers` entry refuses
-    unknown fields); a walkthrough host keeps a step's text clear with `Grid::avoid` in the
-    scene it draws.
+  - `caretline-tour`'s step layers carry `avoid` (anchors, `find` included), passed to the
+    layer's `avoid`; `Grid::avoid` still marks what a host wants kept clear on every step.

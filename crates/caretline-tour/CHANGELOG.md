@@ -4,6 +4,9 @@
 
 ### Added
 
+- `StepLayer.avoid` (and `avoid` as a single-layer field on a step): anchors the layer's box
+  and arrow keep off (caretline-layers' `Layer.avoid`), one or a list, `find` included
+  (`Tour::resolve_finds` resolves them); in `ops::schema()`. Left out of JSON when empty.
 - A step layer with no `kind` and no `data` has no content: a ring or a spotlight alone, no
   box (`Layer.content` is `None`, as caretline-layers models one). `check` no longer reports
   `hint_data` for it, and a nudge doesn't give it content.
@@ -14,7 +17,7 @@
   randomness, I/O, terminal or async.
 - The format: `Tour { id, version, title, kind, reoffer, steps, meta }` (wire `step`, TOML's
   `[[step]]`), `Step { id, layers, narration, host, advance, skip_if, nudge, next }`,
-  `StepLayer { id, anchor, kind, data, place, capture }`, `Narration { title?, text }`,
+  `StepLayer { id, anchor, kind, data, place, capture, avoid }`, `Narration { title?, text }`,
   `Branch { if?, goto }`, `Nudge { after_ms, data }`, `Place`. `parse_toml` and `parse_json`
   are strict: unknown fields are refused everywhere but the opaque `data` and `host`. The
   single-layer shorthand on a step (`anchor`, `kind`, `data`, `place`, `capture`) reads as

@@ -433,3 +433,43 @@ data = { text = "Hi." }
     .unwrap();
     assert!(step_layers(&with, 0, false)[0].content.is_some());
 }
+
+#[test]
+fn avoid_reaches_the_layer_and_finds_resolve_in_it() {
+    let mut t = parse_toml(
+        r#"
+id = "v"
+
+[[step]]
+id = "a"
+anchor = { host = { kind = "row", key = "r1" } }
+data = { text = "This row." }
+avoid = [{ host = { kind = "diff", key = "/Lines/0" } }, { find = "Total" }]
+
+[[step]]
+id = "b"
+
+[[step.layers]]
+anchor = { block = 3 }
+data = { text = "Here." }
+avoid = { block = 4 }
+"#,
+    )
+    .unwrap();
+    assert_eq!(t.steps[0].layers[0].avoid.len(), 2);
+    // The find inside avoid resolves like an anchor's.
+    let missing = t.resolve_finds(|text, _| (text == "Total").then_some(Anchor::Block(9)));
+    assert!(missing.is_empty(), "{missing:?}");
+    let a = step_layers(&t, 0, false);
+    assert_eq!(a[0].avoid.len(), 2);
+    assert_eq!(a[0].avoid[1], Anchor::Block(9));
+    let b = step_layers(&t, 1, false);
+    assert_eq!(b[0].avoid, vec![Anchor::Block(4)]);
+    // It round-trips, and stays out of the JSON when empty.
+    let back: Tour = serde_json::from_value(serde_json::to_value(&t).unwrap()).unwrap();
+    assert_eq!(back, t);
+    let plain =
+        parse_json(r#"{"id":"p","step":[{"id":"a","anchor":{"block":1},"data":{"text":"x"}}]}"#)
+            .unwrap();
+    assert!(!serde_json::to_string(&plain).unwrap().contains("avoid"));
+}
