@@ -69,6 +69,14 @@ fn accepted() -> Vec<(&'static str, Value)> {
     vec![
         (
             "hint.show",
+            json!({"anchor": {"caret": true}, "text": "This row.", "head": "on_anchor_rows"}),
+        ),
+        (
+            "layer.push",
+            json!({"layer": {"anchor": [{"caret": true}], "arrow": true, "head": "on_anchor_rows"}}),
+        ),
+        (
+            "hint.show",
             json!({"id": 4, "actor": "claude", "anchor": {"host": {"kind": "row", "key": "def"}},
                    "title": "Stale", "text": "This row hasn't synced.", "ttl_ms": 8000, "place": ["right", "below"]}),
         ),
@@ -121,6 +129,14 @@ fn accepted() -> Vec<(&'static str, Value)> {
 /// Requests `parse` refuses (those of tests/ops.rs, and more).
 fn refused() -> Vec<(&'static str, Value)> {
     vec![
+        (
+            "hint.show",
+            json!({"anchor": {"caret": true}, "text": "x", "head": "other_rows"}),
+        ),
+        (
+            "layer.push",
+            json!({"layer": {"anchor": [{"caret": true}], "head": "other_rows"}}),
+        ),
         ("hint.show", json!({"anchor": {"caret": true}})),
         (
             "hint.show",

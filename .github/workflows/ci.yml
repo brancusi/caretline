@@ -39,6 +39,9 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+      - name: Layers conformance and host integrations
+        run: cargo test --workspace --features caretline-layers/conformance --locked
+
       - name: Scope (the engine names no host concept)
         # crates/caretline/tests/scope.rs: no task, status, journal, vault, thc... in the engine's
         # own sources. What a line means belongs to the host (docs/embedding.md).

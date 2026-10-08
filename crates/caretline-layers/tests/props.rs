@@ -44,6 +44,9 @@ fn random_layers(rng: &mut Rng, chars: usize) -> Layers {
         ));
         if rng.chance(2) {
             layer = layer.with_arrow();
+            if rng.chance(2) {
+                layer = layer.with_head(HeadRule::OnAnchorRows);
+            }
         }
         if rng.chance(2) {
             layer = layer.with_ring();
@@ -150,6 +153,13 @@ fn random_plans_keep_every_invariant() {
                 assert!(!grid.splits(&c), "seed {seed}: chip splits a wide grapheme");
             }
             if let Some(rt) = &l.route {
+                if layers.get(&l.id).unwrap().head == HeadRule::OnAnchorRows {
+                    let head = rt.steps.last().expect("a routed arrow has a head");
+                    assert!(
+                        anchor.iter().any(|r| head.y >= r.y && head.y < r.bottom()),
+                        "seed {seed}: head {head:?} is off its anchor's rows {anchor:?}"
+                    );
+                }
                 for s in &rt.steps {
                     assert!(
                         area.contains(s.x, s.y),

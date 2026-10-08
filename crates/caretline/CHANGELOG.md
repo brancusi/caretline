@@ -4,6 +4,9 @@
 
 ### Added
 
+- Companion crates `caretline-layers` (placement, tracking, pixel transport and host
+  conformance checks for overlays) and `caretline-tour` (walkthroughs as data, reducers,
+  predicates and protocol ops). Both stay pure; hosts keep their state and draw.
 - `OutlineConfig::nest_joins` (`with_nest_joins`, `"nest_joins": true` in JSON, left out while
   false): Tab closes the blank row above every block it nests directly under the block above
   it (that block becomes its parent), in the same undo step; Shift-Tab adds none back, so
