@@ -150,9 +150,15 @@ fn one(doc: &mut Document, change: &ExtChange) -> Result<Option<ChangeSet>, Stri
         )));
     }
     if let ExtChange::SetData { id, data } = change {
-        doc.marks
+        let was = doc
+            .marks
             .set_data(*id, data.clone())
             .ok_or(format!("no mark {}", id.0))?;
+        if was != *data {
+            if let Some(pos) = doc.marks.pos(*id) {
+                doc.touched.record_at(pos);
+            }
+        }
         doc.derived.marks_changed();
         return Ok(None);
     }
@@ -203,8 +209,10 @@ fn one(doc: &mut Document, change: &ExtChange) -> Result<Option<ChangeSet>, Stri
             )))
         }
         ExtChange::SetGap { id, gap } => {
-            block(*id)?;
-            doc.marks.set_gap(*id, *gap);
+            let b = block(*id)?;
+            if doc.marks.set_gap(*id, *gap) != Some(*gap) {
+                doc.touched.record_at(b.start);
+            }
             doc.derived.marks_changed();
             Ok(None)
         }
@@ -271,8 +279,8 @@ fn one(doc: &mut Document, change: &ExtChange) -> Result<Option<ChangeSet>, Stri
 }
 
 /// Replacing `[from, to)` with `new`, as the least change: the chars both share at the start
-/// and the end stay, so carets and undo steps there are untouched.
-fn least(
+/// and the end stay, so carets, marks and undo steps there are untouched.
+pub(crate) fn least(
     text: crate::helix::RopeSlice,
     from: usize,
     to: usize,
@@ -325,14 +333,16 @@ fn edit(
     let cs = txn.changes().clone();
     let old = doc.text.clone();
     cs.apply(&mut doc.text);
-    doc.touched.record(&cs);
-    doc.derived.edited(&cs);
+    doc.touched.record(&cs, old.slice(..));
+    doc.derived.edited(&cs, old.slice(..));
     doc.marks.map(old.slice(..), doc.text.slice(..), &cs);
+    let naive = doc.marks.clone();
     fix(&mut doc.marks, doc.text.slice(..));
     doc.derived.marks_changed();
     if doc.outline.is_some() {
         crate::outline::mint_missing(doc);
     }
+    doc.touched.record_marks(&naive, &doc.marks);
     cs
 }
 

@@ -537,13 +537,13 @@ impl OutlineCache {
     }
 
     /// The text changed by `cs` (applied to the text the memo describes).
-    pub(crate) fn edited(&mut self, cs: &crate::helix::ChangeSet) {
+    pub(crate) fn edited(&mut self, cs: &crate::helix::ChangeSet, old: RopeSlice) {
         let m = self.memo();
         if let Some(now) = m.now.take() {
             m.before = Some((now, m.len, None));
         }
         if let Some((_, _, range)) = &mut m.before {
-            *range = Some(crate::state::changed_span(*range, cs));
+            *range = crate::state::changed_span(*range, cs, old).or(*range);
         }
     }
 
@@ -775,6 +775,7 @@ impl State {
     pub fn enable_outline(&mut self, cfg: OutlineConfig) {
         self.doc.outline = Some(cfg);
         self.doc.derived.clear();
+        self.doc.touch_all();
         mint_missing(&mut self.doc);
         rules::normalize(
             self,

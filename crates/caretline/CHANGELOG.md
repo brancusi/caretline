@@ -124,6 +124,18 @@
 
 ### Fixed
 
+- `Document::take_touched` reports the blocks that changed, no more and no fewer. A host's
+  edit (`Msg::Edit`, a host command or input rule's `Edit`) that rewrites more text than it
+  changes, such as the whole text without an empty last block, used to touch every block it
+  spanned and drop their marks, so their ids changed too: it is now applied as the least
+  change, the way `Msg::External`'s `replace` already was, and blocks it leaves as they were
+  keep their ids. On a 5,000-block page, dropping the empty last block now touches one block,
+  not the page. A touched range never counts text a change puts back as it was. In an outline
+  document the range is widened to whole blocks and takes in every block that changed without
+  a change to its own chars, which it used to miss: a mark's blank row or payload set from
+  elsewhere (`set_gap`, `set_data`) or by a pin, a new mark, the block before a line that
+  started or stopped starting a block, the next block's default blank row, and the lines a
+  code fence takes in or lets go. `enable_outline` touches everything.
 - A click (`Msg::Click`, `view::hit`) on the right half of a wide grapheme puts the caret after
   it, not before.
 - The engine no longer enables serde_json's `preserve_order` for every crate that depends on it

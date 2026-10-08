@@ -153,6 +153,37 @@ that isn't a block start) falls back to a whole derivation. Debug builds check e
 incremental result against the whole derivation. `Document::take_touched` gives a host the
 same changed range, so a host mirroring blocks re-reads only those.
 
+### Touched ranges
+
+The range is as small as the change, whatever path the change took:
+
+- **Text put back as it was doesn't count.** Each change's chars are compared with the chars
+  it replaced, and what both share at the start and the end is left out. A host's edit
+  (`Msg::Edit`, a command or input rule's `Edit`) is also applied as the least change, as
+  `Msg::External`'s `replace` and `text.set` are, so an edit that rewrites the whole text to
+  drop one block touches that block and keeps every other block's mark.
+- **Marks count.** A blank row or payload set from elsewhere, a pin, a new mark: the block it
+  starts is touched.
+- **Whole blocks.** In an outline document the range is widened to the blocks it meets and
+  compared with the outline when the host last asked: the block before the change's first line
+  is taken in when that line started or stopped starting a block, and past the change every
+  block until one is as it was (the next block's default blank row, the lines a code fence
+  takes in). The comparison stops at the first unchanged block, so it costs about the blocks
+  that changed.
+
+On a 5,000-block page with the caret on an empty last block (release build,
+`cargo test --release --test touched -- --nocapture`):
+
+| Message | Touched before | Touched now |
+|---|---|---|
+| `move.doc_start` | nothing | nothing |
+| the empty block dropped by a host edit of the whole text | 5,000 blocks | 1 block |
+| the same as a small edit, `remove_block` or `replace` from elsewhere | 1 block | 1 block |
+
+`tests/touched.rs` checks the property behind it: over random documents, edits, caret moves,
+host edits and changes from elsewhere, every block whose text, kind, depth, tag, blank row or
+mark changed is inside the touched range.
+
 ## Known gaps
 
 | Gap | Impact | Plan |
