@@ -394,3 +394,42 @@ narration = { text = "Hi." }
     // Other unknown top-level fields are still refused.
     assert!(parse_json(r#"{"id":"m","author":"x","step":[{"id":"a"}]}"#).is_err());
 }
+
+#[test]
+fn a_layer_with_no_kind_and_no_data_has_no_content() {
+    let t = parse_toml(
+        r#"
+id = "r"
+
+[[step]]
+id = "a"
+narration = { text = "Look here." }
+anchor = { host = { kind = "row", key = "r1" } }
+place = { ring = true, spotlight = true }
+"#,
+    )
+    .unwrap();
+    // It checks clean: no `hint_data` for a layer that has no content at all.
+    assert!(
+        check(&t).iter().all(|p| p.code != "hint_data"),
+        "{:?}",
+        check(&t)
+    );
+    let layers = step_layers(&t, 0, false);
+    assert_eq!(layers.len(), 1);
+    assert!(layers[0].content.is_none());
+    assert!(layers[0].ring.is_some() && layers[0].spotlight.is_some());
+    // With a kind or data it has content, as before.
+    let with = parse_toml(
+        r#"
+id = "r"
+
+[[step]]
+id = "a"
+anchor = { host = { kind = "row", key = "r1" } }
+data = { text = "Hi." }
+"#,
+    )
+    .unwrap();
+    assert!(step_layers(&with, 0, false)[0].content.is_some());
+}

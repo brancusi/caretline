@@ -140,7 +140,7 @@ error, except inside `data` and `host`, which are opaque. The same walkthrough i
 | `id` | Defaults to `<step id>/<index>`: `rows/0`, `edit/0` |
 | `anchor` | One anchor, or a list of fallbacks in order. Any [`caretline-layers` anchor](layers.md#anchors) (`{block}`, `{text}`, `{caret}`, `{host = {kind, key}}`, `{screen}`, with `in` for one view), or `{find = "text", in? = "view"}` |
 | `kind` | Defaults to the walkthrough's `kind` |
-| `data` | What the layer's box shows, for the kind's renderer. A `hint` takes `{title?, text}` |
+| `data` | What the layer's box shows, for the kind's renderer. A `hint` takes `{title?, text}`. With neither `kind` nor `data`, the layer has no content: a ring or a spotlight alone, no box |
 | `place` | `{sides, max_width, arrow, ring, spotlight, hide_off_screen}` (`ring` and `spotlight` take `true` or their object; `max_w` and `connector` are read as `max_width` and `arrow`), or just a list of sides |
 | `capture` | A modal step: the host routes keys to the walkthrough |
 

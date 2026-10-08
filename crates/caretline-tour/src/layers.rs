@@ -36,6 +36,11 @@ pub fn step_layers(tour: &Tour, i: usize, nudged: bool) -> Vec<Layer> {
             if anchor.is_empty() {
                 return None;
             }
+            // No kind and no data: a layer with no content (a ring or a spotlight alone, no
+            // box), as caretline-layers models one. A nudge doesn't give it content.
+            if l.kind.is_none() && l.data.is_null() {
+                return Some(layer(l, anchor, None));
+            }
             let kind = l.kind.clone().unwrap_or_else(|| tour.kind.clone());
             let mut data = l.data.clone();
             if let Some(Value::Object(n)) = nudge {
@@ -51,14 +56,14 @@ pub fn step_layers(tour: &Tour, i: usize, nudged: bool) -> Vec<Layer> {
                     Value::Object(m) => m,
                     Value::Null => Map::new(),
                     other => {
-                        return Some(layer(l, anchor, kind, other));
+                        return Some(layer(l, anchor, Some(Content { kind, data: other })));
                     }
                 };
                 m.insert("at".into(), (i + 1).into());
                 m.insert("of".into(), tour.steps.len().into());
                 data = Value::Object(m);
             }
-            Some(layer(l, anchor, kind, data))
+            Some(layer(l, anchor, Some(Content { kind, data })))
         })
         .collect()
 }
@@ -66,15 +71,14 @@ pub fn step_layers(tour: &Tour, i: usize, nudged: bool) -> Vec<Layer> {
 fn layer(
     l: &crate::StepLayer,
     anchor: Vec<caretline_layers::Anchor>,
-    kind: String,
-    data: Value,
+    content: Option<Content>,
 ) -> Layer {
     let mut out = Layer::new(caretline_layers::Anchor::Caret);
     out.id = l.id.clone();
     out.owner = Owner::Guide;
     out.z = GUIDE_Z;
     out.anchor = anchor;
-    out.content = Some(Content { kind, data });
+    out.content = content;
     out.arrow = l.place.arrow;
     out.ring = l.place.ring.clone();
     out.spotlight = l.place.spotlight.clone();

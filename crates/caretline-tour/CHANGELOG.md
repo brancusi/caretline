@@ -4,6 +4,9 @@
 
 ### Added
 
+- A step layer with no `kind` and no `data` has no content: a ring or a spotlight alone, no
+  box (`Layer.content` is `None`, as caretline-layers models one). `check` no longer reports
+  `hint_data` for it, and a nudge doesn't give it content.
 - `Tour.meta`: the host's own metadata about a walkthrough (author, dates, audience…),
   opaque like a step's `host`; left out when absent. Other unknown top-level fields are
   still refused.

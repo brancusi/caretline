@@ -151,7 +151,9 @@ pub fn check(tour: &Tour) -> Vec<Problem> {
                     ));
                 }
             }
-            if l.kind.as_deref().unwrap_or(&tour.kind) == caretline_layers::HINT
+            let contentless = l.kind.is_none() && l.data.is_null();
+            if !contentless
+                && l.kind.as_deref().unwrap_or(&tour.kind) == caretline_layers::HINT
                 && serde_json::from_value::<caretline_layers::Hint>(l.data.clone()).is_err()
             {
                 out.push(lp(
