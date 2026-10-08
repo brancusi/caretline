@@ -7,7 +7,7 @@ use crate::helix::history::State as HistoryState;
 use crate::helix::line_ending::line_end_char_index;
 use crate::helix::transaction::Operation;
 use crate::helix::{ChangeSet, Range, RopeSlice, Selection, SmallVec, Tendril, Transaction};
-use crate::layout::{ensure_caret_visible, Layout};
+use crate::layout::{follow_caret, Cause, Layout};
 use crate::marks::{ClipMark, Clipboard, Mark, MarkDelta, Marks};
 use crate::msg::{By, Dir, Effect, Msg};
 use crate::state::{
@@ -120,11 +120,17 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
             state.view.status.clone(),
         )
     });
-    if !passive && !matches!(msg, Msg::Click { extend: true, .. }) {
+    if !passive && !matches!(msg, Msg::Click { extend: true, .. } | Msg::Drag { .. }) {
         state.view.word_drag = None;
     }
     let selection_before = state.view.selection.clone();
     let scrolls_freely = matches!(msg, Msg::ScrollView { .. });
+    // A caret placed at a screen position: the view stays while the caret is in it.
+    let hit = matches!(
+        msg,
+        Msg::Click { .. } | Msg::Drag { .. } | Msg::SelectWordAt { .. } | Msg::SelectBlock { .. }
+    );
+    let scroll_before = state.view.scroll;
 
     let pins = if outline_on {
         crate::outline::rules::pins_for(state, &msg)
@@ -185,7 +191,14 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
     if state.view.free {
         crate::layout::clamp_scroll(state);
     } else {
-        ensure_caret_visible(state);
+        let cause = if hit {
+            Cause::Hit
+        } else if state.view.scroll != scroll_before {
+            Cause::Scrolled
+        } else {
+            Cause::Caret
+        };
+        follow_caret(state, cause);
     }
     effects
 }
@@ -283,6 +296,18 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
                 (false, _) => Range::point(pos),
             };
             state.view.selection = Selection::single(range.anchor, range.head);
+        }
+        Msg::Drag { col, row } => {
+            let row = drag_edge(state, row);
+            plain(
+                state,
+                Msg::Click {
+                    col,
+                    row,
+                    extend: true,
+                },
+                effects,
+            );
         }
         Msg::SelectWordAt { pos } => {
             let pos = pos.min(state.doc.text.len_chars());
@@ -455,6 +480,42 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
             let line = text.lines().next().unwrap_or("").to_string();
             state.view.status = (!line.is_empty()).then_some(line);
         }
+    }
+}
+
+/// A drag at screen row `row`: on the first text row with rows above the view, scrolls the
+/// view up one row; on the last text row (or past it) with rows below, down one row. Returns
+/// the text row the drag extends to (inside the view).
+fn drag_edge(state: &mut State, row: u16) -> u16 {
+    let h = state.text_rows();
+    if h == 0 {
+        return row;
+    }
+    let last = h - 1;
+    let down = row as usize >= last && (row > 0 || h > 1);
+    let up = row == 0 && !down;
+    if !up && !down {
+        return row;
+    }
+    let layout = Layout::new(state);
+    let top = layout.top(&state.view.scroll);
+    let more = if up {
+        layout.step_rows(top, -1).1 == -1
+    } else {
+        layout.rows_between(top, layout.end(), h) > last as isize
+    };
+    if more {
+        let (top, _) = layout.step_rows(top, if up { -1 } else { 1 });
+        state.view.scroll = Scroll {
+            line: top.line,
+            row: top.row,
+            col: state.view.scroll.col,
+        };
+    }
+    if up {
+        0
+    } else {
+        last as u16
     }
 }
 

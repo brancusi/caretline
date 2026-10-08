@@ -78,7 +78,7 @@ commands.
 | No-wrap mode | Yes | `config.soft_wrap = false` scrolls sideways |
 | Clipboard | Yes, as effects | `copy`/`cut` return `clipboard_set`; the runtime talks to the system clipboard |
 | Saving | Yes, as effects | `save` returns `write_file`; the runtime writes and answers `saved` or `save_failed` |
-| Mouse | Yes | Click, shift-click, drag and wheel, as `click` and `scroll` messages |
+| Mouse | Yes | Click, shift-click, drag and wheel, as `click`, `drag` and `scroll` messages |
 | Serializable state | Yes | `State` round-trips through JSON, history and goal column included |
 | Deterministic replay | Yes | A trace (state + messages) replays to the identical state and frame |
 | Headless snapshots | Yes | `--snapshot WxH` as plain text or ANSI |

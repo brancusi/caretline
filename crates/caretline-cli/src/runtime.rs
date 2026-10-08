@@ -594,10 +594,10 @@ fn terminal_msgs(state: &State, ev: Event) -> Vec<Msg> {
                         extend,
                     }]
                 }
-                MouseEventKind::Drag(MouseButton::Left) => vec![Msg::Click {
+                // At the first or last text row (or past it) a drag scrolls a row.
+                MouseEventKind::Drag(MouseButton::Left) => vec![Msg::Drag {
                     col: m.column,
-                    row: m.row.min(text_rows.saturating_sub(1)),
-                    extend: true,
+                    row: m.row,
                 }],
                 MouseEventKind::ScrollUp => vec![Msg::Scroll { rows: -3 }],
                 MouseEventKind::ScrollDown => vec![Msg::Scroll { rows: 3 }],

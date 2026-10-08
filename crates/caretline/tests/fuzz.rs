@@ -283,3 +283,91 @@ fn select_all_delete_then_undo() {
         );
     }
 }
+
+/// The view stays put unless it must move: an edit that leaves the primary caret inside the
+/// view's margins (`scrolloff`) never scrolls, even when it shortens the document, and a
+/// click inside the view never scrolls, whatever the margins or the follow policy; a drag
+/// scrolls only on an edge row, one row.
+#[test]
+fn the_view_stays_for_edits_and_clicks_inside_it() {
+    use caretline::layout::Layout;
+    use caretline::Follow;
+    let (mut edits, mut clicks) = (0, 0);
+    for seed in 0..SEEDS {
+        let mut rng = StdRng::seed_from_u64(0x5ca1_ab1e ^ seed);
+        let text: Vec<String> = (0..rng.random_range(1..8))
+            .map(|_| gen::text(&mut rng))
+            .collect();
+        let text = text.join("\n\n\n");
+        let width = rng.random_range(8..60);
+        let height = rng.random_range(3..16);
+        let mut state = State::new(&text, None, Viewport { width, height });
+        state.view.config.scrolloff = rng.random_range(0..5);
+        let typewriter = rng.random_range(0..4) == 0;
+        if typewriter {
+            state.view.config.follow = Follow::Typewriter {
+                percent: rng.random_range(0..=100),
+            };
+        }
+        for step in 0..STEPS {
+            let msg = match rng.random_range(0..5) {
+                0 => Msg::Click {
+                    col: rng.random_range(0..width),
+                    row: rng.random_range(0..state.text_rows() as u16),
+                    extend: rng.random_bool(0.3),
+                },
+                1 => Msg::Drag {
+                    col: rng.random_range(0..width),
+                    row: rng.random_range(0..state.text_rows() as u16 + 2),
+                },
+                _ => gen::msg(&mut rng, &state),
+            };
+            if matches!(msg, Msg::Resize { .. }) {
+                continue;
+            }
+            let before = state.view.scroll;
+            update(&mut state, msg.clone());
+            let ctx = format!("seed {seed} step {step} {msg:?}");
+            let h = state.text_rows();
+            let layout = Layout::new(&state);
+            // The old top in the new text (a top row past its line's new end clamps).
+            let top = layout.top(&before);
+            let now = (state.view.scroll.line, state.view.scroll.row);
+            match msg {
+                Msg::Click { row, .. } if (row as usize) < h => {
+                    clicks += 1;
+                    assert_eq!(now, (top.line, top.row), "{ctx}: a click scrolled");
+                }
+                // A drag scrolls only on an edge row, and then one row.
+                Msg::Drag { row, .. } => {
+                    let r = row as usize;
+                    let new = layout.top(&state.view.scroll);
+                    let moved = if new < top {
+                        -layout.rows_between(new, top, h)
+                    } else {
+                        layout.rows_between(top, new, h)
+                    };
+                    if r > 0 && r + 1 < h {
+                        assert_eq!(moved, 0, "{ctx}: a drag inside scrolled");
+                    } else {
+                        assert!(moved.abs() <= 1, "{ctx}: a drag scrolled {moved} rows");
+                    }
+                }
+                ref m if is_edit(m) && !typewriter => {
+                    let so = (state.view.config.scrolloff as usize).min((h - 1) / 2) as isize;
+                    let (caret, _) = layout.pos_coords(state.caret());
+                    let dist = layout.rows_between(top, caret, h * 2);
+                    if (so..h as isize - so).contains(&dist) {
+                        edits += 1;
+                        assert_eq!(now, (top.line, top.row), "{ctx}: an edit scrolled");
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    assert!(
+        edits > 1000 && clicks > 1000,
+        "{edits} edits, {clicks} clicks"
+    );
+}

@@ -82,6 +82,11 @@
   or `rev` and the fields `reply(ctx, frame, request)` returns. A refusal is an `op_failed`
   error; ops nobody knows are still `unknown_op`. `hello` adds the host's ops to `ops` and
   lists them in `host_ops`. `Host::op_names` returns them.
+- `Msg::Drag { col, row }` (`{"msg":"drag","col":4,"row":0}`): the pointer dragged to a
+  screen cell. It extends the selection as `Click` with `extend` does; on the first text row
+  with text above the view it scrolls the view up one row, on the last text row (or past it)
+  with text below down one row, and extends to the row brought in. The `caretline` editor
+  sends its drags as this.
 
 ### Breaking
 
@@ -107,6 +112,7 @@
   `ConfigInput::default()` and set its fields. This release also adds fields to them
   (`Config::single_line`, `ConfigInput::single_line`, `ViewConfig::page_overlap`), which broke
   struct literals anyway. The next release is a minor bump (0.4).
+- `Msg` has a new variant, `Drag`: an exhaustive `match` on `Msg` needs an arm for it.
 
 ### Fixed
 
@@ -121,6 +127,16 @@
   holds in plain and prose (outline) wrapping, for long words and word boundaries alike. Only
   a grapheme wider than the whole column still overflows, alone on its row (the view clips
   it), and spaces that hang past a prose row's end are unchanged.
+- An edit that shortens the document (Backspace on an empty last line) no longer pulls the view
+  up when the caret stays in it: the view keeps its top and shows empty rows below the end.
+  The view is kept off them only when it moves to bring the caret into sight (a jump, a page,
+  a resize that hides the caret), never back above where it was while following the caret
+  down. `ensure_caret_visible` follows the same rule.
+- A caret placed by the pointer (`Msg::Click`, with or without `extend`, `SelectWordAt`,
+  `SelectBlock`) inside the view no longer scrolls it by `scrolloff` (or re-centres a
+  `Follow::Typewriter` view): the text stays under the pointer. The next key follows the caret
+  as before, and a click below the text rows still scrolls to the caret. Selecting by dragging
+  past an edge scrolls with the new `Msg::Drag`.
 
 ## 0.3.0 (2026-10-07)
 

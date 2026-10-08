@@ -126,6 +126,28 @@ A view follows the caret by its `config.follow`: `margin` (the least scroll that
 share of the height). `scroll_view` scrolls without moving the caret and leaves the view
 `free` until the next caret motion or edit.
 
+The view moves only when asked to or when the caret would otherwise leave it:
+
+- **Keys and edits** follow the caret by the policy, `scrolloff` included. An edit that leaves
+  the caret where the policy wants it doesn't scroll, even when it shortens the document: the
+  view keeps its top and shows empty rows below the end, as VS Code and Sublime do.
+- **A view that moves** to bring the caret into sight (opening, a jump such as `doc_end`, a
+  resize that hides the caret) stops with the last row at the bottom, never past it, and
+  never moves back above where it was while following the caret down.
+- **Explicit scrolling** goes past the end no further than before: `scroll` and `scroll_view`
+  stop with the last row at the bottom (or where the view already was), and a page motion's
+  view is kept off empty rows below the end like a jump.
+- **A caret placed by the pointer** (`click`, with or without `extend`, `drag`,
+  `select_word_at`, `select_block`) keeps the view while it lands inside it, whatever
+  `scrolloff` or the follow policy say, so the text stays under the pointer; `typewriter`
+  re-centres on the next key, not on a click. A `click` below the text rows puts the caret
+  below the view, which follows it as for a key.
+- **A drag at an edge** scrolls one row per `drag` message: on the first text row with text
+  above the view, up; on the last text row (or past it) with text below, down. The selection
+  extends to the row brought in. Both edges behave the same, so a runtime only forwards the
+  pointer's row. A runtime sends a `drag` per pointer move, so a pointer held still at the
+  edge doesn't keep scrolling (that would take a timer the engine doesn't have).
+
 ## Changes from elsewhere
 
 `Msg::External { changes }` applies changes made outside the editor: another device, a
@@ -453,7 +475,8 @@ After handling any message, `update` always:
 2. recomputes `dirty`,
 3. closes the edit run if history moved past it, and
 4. scrolls so the primary caret is visible, by the view's follow policy (unless the view was
-   scrolled freely and the caret hasn't moved since).
+   scrolled freely and the caret hasn't moved since, or the caret was placed by the pointer
+   inside the view; see [Documents and views](#documents-and-views)).
 
 `update_doc` then rebases every other view through the text changes.
 
