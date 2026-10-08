@@ -158,7 +158,7 @@ change. Pass them to `observe` after every message:
 
 ```rust
 use caretline::{update_with_changes, Msg, State, Viewport};
-use caretline_layers::{apply, observe, Anchor, Content, Layer, LayerOp, Layers, Limits};
+use caretline_layers::{apply, observe, Anchor, Content, Edited, Layer, LayerOp, Layers, Limits};
 
 let mut editor = State::new("hello world", None, Viewport { width: 40, height: 6 });
 let mut layers = Layers::default();
@@ -167,13 +167,26 @@ let now_ms = 0;
 apply(&mut layers, LayerOp::Push(hint), None, now_ms, &Limits::default()).unwrap();
 
 let (_effects, changes) = update_with_changes(&mut editor, Msg::InsertText { text: "big ".into() });
-observe(&mut layers, changes.as_ref(), now_ms); // maps text anchors, drops expired layers
+// One document: every text anchor is in it. Maps them and drops expired layers.
+observe(&mut layers, Edited::All, changes.as_ref(), now_ms);
 assert_eq!(layers.layers[0].anchor[0], Anchor::Text { from: 10, to: 15 });
 ```
 
 The start of a range sticks after an insertion there, the end before one. A range whose text
 was deleted is dropped and the next fallback takes over; a layer with no anchor left goes.
-`map_anchors(&mut layers, &changes)` does the mapping alone.
+`map_anchors(&mut layers, edited, &changes)` does the mapping alone.
+
+**Which anchors an edit moves.** A `ChangeSet` belongs to one document, so `observe` and
+`map_anchors` take an `Edited` that says which anchors point into the document that changed:
+
+| `Edited` | Moves | For |
+|---|---|---|
+| `Edited::All` | Every text anchor, scoped or not | A host with one document, in one view or several |
+| `Edited::Views { views, unscoped }` | Anchors scoped to one of `views`; unscoped anchors only when `unscoped` | A host with several documents: `views` are the ids of every view showing the edited document, and `unscoped` is `true` when it is the focused view's document (unscoped anchors resolve in the focused view first, so they belong to it) |
+
+Anchors on another document are left as they are. A host that shows several documents scopes
+its anchors ([`in`](#one-document-several-views)), so each names the document it points
+into.
 
 ## One document, several views
 
@@ -211,9 +224,15 @@ let anchors = Chain(vec![&host_anchors, &main, &panel]);
 - **Which view answered.** `Resolved.view` (wire `in`) names the resolver that answered, so
   `Planned.anchor` and the replies of `ops::reply` and `ops::resolved` say where the layer
   landed: `{"rects": […], "in": "panel:2"}`.
-- **Edits through any view.** Every view shows the same document, so the `ChangeSet` of an
-  edit made through any of them (`update_doc_with_changes`) maps every text anchor, scoped
-  or not, in `observe` and `map_anchors`.
+- **Edits through any view.** Every view of a document shows the same text, so the
+  `ChangeSet` of an edit made through any of them (`update_doc_with_changes`) maps the
+  anchors scoped to all of them. Say which views show the edited document:
+  `Edited::Views { views: &["main", "panel:2"], unscoped: true }` (or `Edited::All` when the
+  host has only this document).
+- **Several documents.** When `panel:1` shows another document, an edit to the main one
+  passes `Edited::Views { views: &["main"], unscoped: true }`, and a hint scoped to `panel:1`
+  stays where it is; an edit made in `panel:1` passes `Edited::Views { views: &["panel:1"],
+  unscoped: false }` when `main` is focused.
 
 ## Content and `Renderer::measure`
 
@@ -221,32 +240,39 @@ Content is `{kind, data}`, as opaque to the crate as mark payloads are to the en
 registers a **`Renderer`** per kind. Placement needs only its size:
 
 ```rust
-use caretline_layers::{Renderer, Renderers, Size, HINT};
-use serde_json::Value;
+use caretline_layers::{MeasureCtx, Renderer, Renderers, Size, HINT};
 
 struct HintBox;
 
 impl Renderer for HintBox {
-    // The box for `data`, borders included, at most `avail`. A zero size means no box.
-    fn measure(&self, data: &Value, avail: Size) -> Size {
-        let text = data["text"].as_str().unwrap_or("");
-        let w = (text.chars().count() as u16 + 4).min(avail.w);
-        Size::new(w, 3)
+    // The box for `cx.data`, borders included, at most `cx.avail`. A zero size means no box.
+    fn measure(&self, cx: &MeasureCtx) -> Size {
+        let text = cx.data["text"].as_str().unwrap_or("");
+        // An agent's layer gets a "from <actor>" row, so the attribution fits in the box.
+        let by = cx.owner.actor().map(|a| a.chars().count() + 5);
+        let w = (text.chars().count().max(by.unwrap_or(0)) as u16 + 4).min(cx.avail.w);
+        Size::new(w, 3 + u16::from(by.is_some()))
     }
 }
 
 let renderers = Renderers::new().register(HINT, HintBox);
 ```
 
-`measure` is called once for each side placement tries, with that side's room as `avail`:
+`MeasureCtx` carries the layer's content `data`, the room `avail`, and its `owner`
+(`Owner::actor()` for an agent's name), so a host sizes whatever it draws for the owner
+inside the box: a name in the border, an attribution line. Build one with
+`MeasureCtx::new(data, avail, owner)` (in a renderer's own tests, say).
+
+`measure` is called once for each side placement tries, with that side's room as `cx.avail`:
 below and above, the rows between the anchor (past the arrow's gap) and the area's edge, at
 most the width cap (`max_width`, never over two-thirds of the area) wide; right and left, the
 columns past the gap, at most the cap. A side with no room isn't measured. Honour `avail`: a
 renderer that wraps its text to `avail.w` gives a narrow, tall box where only a narrow side is
 free, and a box that keeps its size whatever room it gets is placed as before.
 
-`measure` must be pure: the same data and room give the same size, or a replay places boxes
-differently. A closure `Fn(&Value, Size) -> Size` is a renderer too. A layer whose kind has no
+`measure` must be pure: the same data, room and owner give the same size, or a replay places
+boxes differently. A closure `Fn(&Value, Size) -> Size` (the data and the room) is a renderer
+too. A layer whose kind has no
 renderer is placed without a box and listed in `Plan.unrendered`.
 
 **`chip(data, anchor, off)`** sizes the edge chip shown where an off-screen anchor lies (one row
@@ -254,14 +280,14 @@ high; 8 by 1 by default). It gets the layer's data, the anchor that lies off scr
 way (`Off`), so a host can size a label such as `↓ 2/11 here` to fit. It must be pure too:
 
 ```rust
-use caretline_layers::{Anchor, Off, Renderer, Size};
+use caretline_layers::{Anchor, MeasureCtx, Off, Renderer, Size};
 use serde_json::Value;
 
 struct HintBox;
 
 impl Renderer for HintBox {
-    fn measure(&self, _data: &Value, avail: Size) -> Size {
-        Size::new(avail.w.min(30), 3)
+    fn measure(&self, cx: &MeasureCtx) -> Size {
+        Size::new(cx.avail.w.min(30), 3)
     }
     fn chip(&self, _data: &Value, _anchor: &Anchor, off: Off) -> Size {
         let arrow = match off {
@@ -306,12 +332,12 @@ The **`Plan`** (serializable) holds, per layer in draw order (`Planned`):
 
 | Field | What the host draws |
 |---|---|
-| `rect`, `mode`, `side` | The box (`mode: box`, beside the anchor on `side`) or a one-row strip (`mode: strip`: the area is under 48 columns or 12 rows, or no box fits) |
+| `rect`, `mode`, `side` | The box (`mode: box`, beside the anchor on `side`) or a one-row strip (`mode: strip`: the area is under 48 columns or 12 rows, or no box fits). A strip goes on the edge nearest its anchor: the area's bottom for one that lies below (the last free row, so above the chip or a protected last row), its top for one above, and for one on screen the top, unless the anchor is on the top row |
 | `anchor` | Where the anchor resolved: rects, or `off` (above, below, left, right), and `in`, the view that answered |
 | `chip` | The edge chip on the edge an off-screen anchor lies beyond |
 | `dock` | A box for an off-screen anchor docks against its own chip: it sits next to the chip and shares part of its edge, and `dock` (`Attach { edge, offset }`) names a cell of that shared edge on the box's border, so the host joins the two there. When no box can touch the chip, the layer is a strip |
-| `route` | The arrow: `junction` on the box's border and the same place as `attach` (`Attach { edge, offset }`: which edge, and how many cells along it from the corner), then `steps`, one cell each with the direction it enters and leaves; the last is the head. Lay out the border round `attach`: a title never sits where the arrow leaves |
-| `no_arrow` | Why a layer that asked for an arrow has none: `docked` (the anchor is off screen; the chip points the way), `screen` (a screen position), `no_box` (a strip, or no box), `no_way` (no route round the other layers, holes, protected cells and wide graphemes) |
+| `route` | The arrow: `junction` on the box's border and the same place as `attach` (`Attach { edge, offset }`: which edge, and how many cells along it from the corner), then `steps`, one cell each with the direction it enters and leaves; the last is the head. Lay out the border round `attach`: a title never sits where the arrow leaves. The head is always on a clear cell beside the anchor: blank, with nothing beside it on its row but the anchor, never on a letter, a hyphen inside a word or the gap between two words |
+| `no_arrow` | Why a layer that asked for an arrow has none: `docked` (the anchor is off screen; the chip points the way), `screen` (a screen position), `no_box` (a strip, or no box), `no_way` (no route round the other layers, holes, protected cells and wide graphemes), `head_on_text` (every cell beside the anchor is text or between words, as in the middle of a tight list: the arrow is dropped rather than drawn over the text; the box and ring still mark the anchor) |
 | `ring` | The anchor's cells to mark |
 | `owner`, `agent` | Whose layer it is (`Owner::actor()` gives an agent's name), and whether it is an agent's: what the host attributes it by |
 
@@ -335,7 +361,7 @@ falls back to a strip when nothing fits.
 With an arrow, the least-scoring box of every candidate wins; boxes are routed a side at a time,
 and a box that couldn't win even with the cheapest arrow is never routed. Placement is quick
 enough for every frame: at 100×40 (release build) a box costs about 6 µs (a measure per side),
-a box with its arrow about 27 µs, and a spotlight with an arrow about 37 µs.
+a box with its arrow about 22 µs, and a spotlight with an arrow about 36 µs.
 
 ## Ops for your protocol
 
@@ -382,8 +408,9 @@ The crate has no clock, randomness, I/O, terminal or async, and the host keeps i
 - **Time from your messages.** Pass the `now_ms` your messages carry, never a wall-clock read
   inside a reducer, so expiry and rate limits replay.
 - **Feed every message.** Call `observe` with the changes `update_with_changes` returned for
-  each message (`None` for one that edited nothing still expires layers), so text anchors stay
-  on their text.
+  each message (`None` for one that edited nothing still expires layers), and the `Edited`
+  that says which views show the document it changed, so text anchors stay on their text and
+  anchors in other documents stay put.
 - **Resolve and plan every frame.** Rects, routes, holes and regions are derived; store none of
   them.
 - **Pure renderers.** `measure` depends only on its arguments. Replaying needs the same
@@ -436,7 +463,8 @@ Each frame it:
    `Limits::agent_defaults()` or its own.
 
 3. **Plans**, with its `hint` renderer registered (a bordered box: the wrapped text plus four
-   columns and two rows):
+   columns and two rows, and for an agent's layer at least as wide as the `◆ <actor>` label
+   it draws in the border, from `MeasureCtx::owner`):
 
    ```rust
    let renderers = Renderers::new().register(HINT, HintBox);

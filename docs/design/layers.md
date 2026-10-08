@@ -278,8 +278,8 @@ In-frame (7.1, mode A) the crate's frame pass runs these steps and then calls ea
 `render` at 100×40 costs 127 µs today. A bench guards the crate's numbers and the CLI's renderers
 together (9.2).
 
-As built (12): placement measures 6 µs for a box (four measures, one per side), 27 µs with
-an arrow and 37 µs for a spotlight with an arrow. A host skips even that when nothing changed by keeping the last plan
+As built (12): placement measures 6 µs for a box (four measures, one per side), 22 µs with
+an arrow and 36 µs for a spotlight with an arrow (12.5). A host skips even that when nothing changed by keeping the last plan
 with its inputs (12, "Unchanged inputs").
 
 ### 3.6 Pixel plumbing (feature `kitty`)
@@ -1485,3 +1485,58 @@ After 1b, for hosts that show one document in several views. Where it differs fr
   validates the requests `parse` accepts (and fails the ones it refuses), real replies, and
   the protocol examples in 7.4 against it with a small validator for the keywords it uses
   (no new dependency).
+
+### 12.5 Host fixes: documents, arrow heads, strips and measuring for the owner
+
+After 12.3, from a host that shows several documents. Where it differs from the sections above:
+
+- **An edit moves only its own document's anchors.** A `ChangeSet` belongs to one document,
+  but `observe` mapped every text anchor through it, so typing in `main` (page A) moved a
+  hint scoped to `panel:1` (page B), or dropped it where page B was shorter. `observe` and
+  `map_anchors` now take an `Edited`:
+  - `Edited::All`: every text anchor maps, scoped or not. For a host with one document,
+    however many views show it.
+  - `Edited::Views { views, unscoped }`: an anchor scoped to a view maps only when that view
+    is in `views` (the ids of every view showing the edited document); an unscoped anchor
+    maps only when `unscoped`. Unscoped anchors resolve in the focused view first, so they
+    belong to the focused view's document: the host sets `unscoped` when it edited that one.
+  - Anchors on another document are left as they are. A host with several documents scopes
+    its anchors, so each names the document it points into.
+
+  The old signature is gone rather than kept as "everything": every host now says which
+  document changed, and a single-document host writes `Edited::All`.
+- **Arrow heads never land on text.** In a tight list the head ended on a letter, a hyphen
+  inside a word, or in the gap between two words (`[ ]▶item`, `is▲quick`): the cell after
+  an anchor is often the space before the next word, and the row under it the next item. A
+  head now ends only on a **clear** cell beside the anchor: blank, with nothing beside it on
+  its row but the anchor itself.
+  - The router's goals are the clear cells on the side the box faces; when there are none,
+    or none the box can reach, the arrow ends on a clear cell on another side, pointing at
+    the anchor (the any-side fallback of 12.1, now held to clear cells and guided by the
+    distance to the nearest). Placement's bounds follow the same goals, so a box whose arrow
+    can end clear beats one whose can't.
+  - When every cell beside the anchor is text or between words, the arrow is **dropped**,
+    not drawn over the text: `Planned.route` is `None` and `no_arrow` is the new
+    `head_on_text`. The alternative, returning the route and letting the host decide, would
+    leave every host to draw an arrow that overwrites a character or reads as part of a
+    word; the box and the ring already mark the anchor.
+  - Cost: sides with a clear head are routed first (the winner is the least box whatever
+    the order, only how much is routed changes), a side with no clear head skips its facing
+    search and table, and a plan's routes share the router's memory. At 100×40 (release,
+    the least of ten runs alternating with the build before): a box with its arrow 22.4 µs
+    (was 27.3), a spotlight with an arrow 35.9 µs (was 37.6), a box alone 5.7 µs.
+  - Goldens: `word`, `agent` and `spotlight` at 80×24, and the CLI's
+    `demo-layers.scrolled.60x20`, place their boxes and arrows anew; every head that sat in
+    a word gap now sits on a blank row beside its anchor.
+- **A strip goes on the edge its anchor lies beyond.** A layer whose anchor lay below the
+  area fell back to a strip on the top row: with the area's last row protected, its edge
+  chip had no room, no box could dock, and the strip went to the far edge. The strip's edge
+  is now the one nearest the anchor: the bottom for an anchor below (the last free row, above
+  a protected row or the chip), the top for one above; an anchor on screen keeps 2.4's rule
+  (the top, unless it is on the top row). The 44×16 goldens with an anchor below show the
+  strip on the row above its chip, not on the top row.
+- **`measure` sees whose layer it is.** `Renderer::measure(&self, cx: &MeasureCtx) -> Size`,
+  with `MeasureCtx { data, avail, owner }` (`#[non_exhaustive]`, `MeasureCtx::new`), so a
+  host can size what it draws for an agent (its name in the border, a "from" line) inside
+  the box. Still pure: the same context, the same size. A closure of the data and the room
+  is still a renderer.

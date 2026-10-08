@@ -32,10 +32,10 @@
   agents) the caret, never splitting a wide grapheme; a one-row strip on narrow areas or when
   nothing fits; edge chips for off-screen anchors; arrow routes as cells (A*, round words);
   ring cells; spotlight holes; click regions and `Plan::hit`. Pure and serializable.
-  At 100×40 (release), a box costs about 6 µs, a box with its arrow about 27 µs, and a
-  spotlight with an arrow about 37 µs (with per-side measuring, below): routing costs are
-  built once per plan, candidate boxes are routed only when a lower bound says they can win,
-  and the winner's route is reused.
+  At 100×40 (release), a box costs about 6 µs, a box with its arrow about 22 µs, and a
+  spotlight with an arrow about 36 µs (with per-side measuring and clear arrow heads,
+  below): routing costs are built once per plan, candidate boxes are routed only when a
+  lower bound says they can win, and the winner's route is reused.
 - Layers placed together keep apart: no box, chip or strip covers another layer's box, chip,
   anchor or arrow (every layer's anchor is known before any box is placed), and no arrow
   runs under a box; chips on one edge slide along it to a free place.
@@ -85,10 +85,10 @@
   `in`), `layer`, `content`, `hint` and `owner`. A test checks the ops tests' requests (those
   `parse` refuses must fail it too), real replies, and the design's protocol examples
   against it.
-- `Renderer::measure(data, avail)` is called once per candidate side with that side's real
-  room (below and above: the rows past the arrow's gap, at most the width cap; right and
-  left: the columns past the gap, at most the cap), so a renderer can return a narrow, tall
-  box for a narrow side. A side with no room isn't measured.
+- `Renderer::measure` is called once per candidate side with that side's real room,
+  `MeasureCtx::avail` (below and above: the rows past the arrow's gap, at most the width
+  cap; right and left: the columns past the gap, at most the cap), so a renderer can return
+  a narrow, tall box for a narrow side. A side with no room isn't measured.
 
 ### Changed (breaking within 0.1.0's development)
 
