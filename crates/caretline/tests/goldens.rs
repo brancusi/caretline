@@ -725,6 +725,41 @@ fn narrow_viewports_turn_wrapping_off_and_scroll_sideways() {
     assert_eq!(cursor(&s), Some((7, 0)));
 }
 
+#[test]
+fn a_wide_grapheme_at_the_wrap_edge_starts_the_next_row() {
+    // Width 12. `日` would start at column 11 and end at 13: it starts the next row (with
+    // its short word), and so does the emoji after a long word that ends at column 11.
+    // No row is wider than 12 cells.
+    let mut s = state_wh("▮abcd efgh i日本 xy\nabcdefghijk🙂z", 12, 6);
+    assert_eq!(
+        frame(&s),
+        "abcd efgh\ni日本 xy\nabcdefghijk\n🙂z\n\n test.m 1:1\n"
+    );
+    for row in frame(&s).lines() {
+        assert!(caretline::view::display_width(row) <= 12, "{row:?}");
+    }
+    // Vertical motion walks the new rows: each wrapped grapheme starts its row.
+    keys(&mut s, "<down>");
+    assert_eq!(show(&s), "abcd efgh ▮i日本 xy\nabcdefghijk🙂z");
+    assert_eq!(cursor(&s), Some((0, 1)));
+    keys(&mut s, "<down><down>");
+    assert_eq!(show(&s), "abcd efgh i日本 xy\nabcdefghijk▮🙂z");
+    assert_eq!(cursor(&s), Some((0, 3)));
+    keys(&mut s, "<right>");
+    assert_eq!(cursor(&s), Some((2, 3)));
+    // A click on the right half of the wrapped `日` (row 1, columns 1-2) lands after it.
+    send(
+        &mut s,
+        [Msg::Click {
+            col: 2,
+            row: 1,
+            extend: false,
+        }],
+    );
+    assert_eq!(show(&s), "abcd efgh i日▮本 xy\nabcdefghijk🙂z");
+    assert_eq!(cursor(&s), Some((3, 1)));
+}
+
 // ---------------------------------------------------------------------------------------
 // Paste
 

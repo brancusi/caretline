@@ -203,6 +203,70 @@ fn the_right_half_of_a_wide_character_is_after_it() {
 }
 
 #[test]
+fn prose_rows_never_cross_the_column_at_a_wide_grapheme() {
+    // Host request #5: column 72 at depth 0, 68 at depth 1. A long word that ends one cell
+    // short of the column, then an emoji: the emoji starts the next row instead of ending a
+    // cell past the column. With one `a` fewer the emoji fits exactly. The same for CJK: a
+    // long word with `日` one cell short of the column breaks before it.
+    let a = |n| "a".repeat(n);
+    let md = format!(
+        "- {}🙂 tail words here\n  - {}🙂 tail words here\n- {}🙂 tail\n- 段落の文章は{}日本 end\n",
+        a(71),
+        a(67),
+        a(70),
+        a(59)
+    );
+    let s = laid_out(&md, 80, 12);
+    let f = view(&s);
+    assert_eq!(
+        f.to_text(),
+        format!(
+            "  •   {}\n      🙂 tail words here\n      •   {}\n          🙂 tail words here\n  •   {}🙂\n      tail\n  •   段落の文章は{}\n      日本 end\n\n\n\n\n",
+            a(71),
+            a(67),
+            a(70),
+            a(59)
+        )
+    );
+    // Content starts at 6 (depth 0) or 10 (depth 1); its column ends at 78 either way.
+    for (y, row) in f.to_text().lines().enumerate() {
+        assert!(
+            caretline::view::display_width(row.trim_end()) <= 78,
+            "row {y} {row:?}"
+        );
+    }
+    // Hit-testing and the caret agree with the rows: the emoji is the first cell of row 1.
+    let first = s.doc.text.line_to_char(0) + 2 + 71;
+    assert_eq!(hit(&s.doc, &s.view, 6, 1), Hit::Text { pos: first });
+    assert_eq!(
+        hit(&s.doc, &s.view, 7, 1),
+        Hit::Text { pos: first + 1 },
+        "the right half of the emoji: after it"
+    );
+    let mut c = s.clone();
+    update(
+        &mut c,
+        Msg::Click {
+            col: 6,
+            row: 1,
+            extend: false,
+        },
+    );
+    assert_eq!(c.caret(), first);
+    assert_eq!(view(&c).cursor, Some((6, 1)));
+    // Up from the emoji's row goes to the row above, same column.
+    update(
+        &mut c,
+        Msg::Move {
+            dir: Dir::Backward,
+            by: By::VisualLine,
+            extend: false,
+        },
+    );
+    assert_eq!(view(&c).cursor, Some((6, 0)));
+}
+
+#[test]
 fn hit_tells_hang_marks_gap_and_text() {
     let s = laid_out(TRIP, 50, 16);
     let ids = ids(&s);

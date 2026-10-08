@@ -31,6 +31,12 @@ Each file's header lists what changed from upstream. In short:
   one-line document checks for line breaks an undo could bring back.
 - `DocumentFormatter` gains `resume_at_row` and `indent_level`, so layout can restart inside a
   long soft-wrapped line at a row it already knows.
+- `DocumentFormatter`'s soft wrap checks a grapheme's start column plus its width against the
+  viewport width, so a wide grapheme (an emoji, a CJK character, a tab) that would cross a
+  row's end starts the next row instead of overflowing it by a cell. A word that starts a row
+  breaks there instead of moving to a fresh row, and a grapheme wider than the whole row is
+  placed alone on its row. `hang_spaces` adds prose wrapping: whitespace after a word that
+  reaches the row's end hangs past it, and words end at whitespace only.
 - The selection, transaction and history types derive serde, so editor state serializes.
   `Range::old_visual_position` and `Selection::primary_index` may be left out when
   deserializing.
