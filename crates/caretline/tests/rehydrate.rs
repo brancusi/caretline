@@ -133,10 +133,7 @@ fn replaying_a_trace_gives_the_live_state() {
             live.dispatch(msg);
         }
     }
-    live.dispatch(Msg::Resize {
-        width: 18,
-        height: 5,
-    });
+    live.dispatch(Msg::resize(18, 5));
     live.dispatch(Msg::Paste {
         text: Some("pasted\ntext".into()),
     });

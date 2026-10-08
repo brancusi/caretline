@@ -105,6 +105,9 @@ pub struct Frame {
     pub rows: Vec<RowInfo>,
     /// The names of the [`Role::Named`] roles, by index.
     pub roles: Vec<String>,
+    /// The view's cell size in device pixels, when known ([`crate::View::cell_px`]): for a host
+    /// that draws pixels over these cells.
+    pub cell_px: Option<crate::state::CellPx>,
 }
 
 impl Frame {
@@ -123,6 +126,7 @@ impl Frame {
             cursor: None,
             rows: Vec::with_capacity(height as usize),
             roles: Vec::new(),
+            cell_px: None,
         }
     }
 
@@ -299,6 +303,7 @@ pub fn render(doc: &Document, view: &View) -> Frame {
     let width = view.viewport.width.max(1);
     let height = view.viewport.height.max(1);
     let mut frame = Frame::new(width, height);
+    frame.cell_px = view.cell_px;
     let text_rows = view.text_rows().min(height as usize);
     let layout = Layout::of(doc, view);
     let top = layout.top(&view.scroll);

@@ -1347,10 +1347,7 @@ mod tests {
                     13 => Msg::Scroll {
                         rows: (next() % 21) as i32 - 10,
                     },
-                    14 => Msg::Resize {
-                        width: [11, 17, 40, 80, 8][next() as usize % 5],
-                        height: 12,
-                    },
+                    14 => Msg::resize([11, 17, 40, 80, 8][next() as usize % 5], 12),
                     _ => Msg::Move {
                         dir: Dir::Backward,
                         by: By::Grapheme,

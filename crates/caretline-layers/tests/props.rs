@@ -170,21 +170,9 @@ fn random_plans_keep_every_invariant() {
         // Resize there and back: the same frame gives the same plan.
         let (w2, h2) = (20 + rng.below(140) as u16, 6 + rng.below(44) as u16);
         let mut s2 = s.clone();
-        update(
-            &mut s2,
-            Msg::Resize {
-                width: w2,
-                height: h2,
-            },
-        );
+        update(&mut s2, Msg::resize(w2, h2));
         plan_for(&s2, &layers);
-        update(
-            &mut s2,
-            Msg::Resize {
-                width: w,
-                height: h,
-            },
-        );
+        update(&mut s2, Msg::resize(w, h));
         if view(&s2) == view(&s) {
             assert_eq!(
                 plan_for(&s2, &layers).0,

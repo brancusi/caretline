@@ -433,9 +433,16 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
                 effects.push(Effect::Quit);
             }
         }
-        Msg::Resize { width, height } => {
+        Msg::Resize {
+            width,
+            height,
+            cell_px,
+        } => {
             state.view.viewport.width = width.max(1);
             state.view.viewport.height = height.max(1);
+            if let Some(c) = cell_px.filter(|c| c.w > 0 && c.h > 0) {
+                state.view.cell_px = Some(c);
+            }
         }
         Msg::Tick { now_ms } | Msg::Frame { now_ms } => {
             state.doc.now_ms = now_ms;

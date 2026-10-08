@@ -17,7 +17,7 @@ fn field_wh(notation: &str, width: u16) -> State {
     s.doc.config.single_line = true;
     s.view.config.status_bar = false;
     s.sanitize();
-    update(&mut s, Msg::Resize { width, height: 1 });
+    update(&mut s, Msg::resize(width, 1));
     s
 }
 

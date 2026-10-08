@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::external::ExtChange;
 use crate::marks::MarkId;
 use crate::outline::NewBlock;
+use crate::state::CellPx;
 
 /// Which way a motion goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,9 +112,15 @@ pub enum Msg {
         err: String,
     },
     Quit,
+    /// The view's size in cells, and the size of one cell in device pixels when the runtime
+    /// knows it ([`crate::View::cell_px`]). A resize without `cell_px` keeps the one the view
+    /// has, so a runtime that learns the pixels later (a terminal's reply) sends them then, and
+    /// old traces replay unchanged. Build one with [`Msg::resize`] when there are no pixels.
     Resize {
         width: u16,
         height: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_px: Option<CellPx>,
     },
     /// The current time. Typing runs (one undo step) are measured with it.
     Tick {
@@ -227,6 +234,15 @@ pub enum Msg {
 }
 
 impl Msg {
+    /// A resize to `width`x`height` cells that keeps the view's cell pixel size.
+    pub fn resize(width: u16, height: u16) -> Msg {
+        Msg::Resize {
+            width,
+            height,
+            cell_px: None,
+        }
+    }
+
     /// Messages that never end an edit run or clear the status: the clock, a resize, a
     /// save's result, a status message, a change from elsewhere, a host value's operation.
     pub fn is_passive(&self) -> bool {

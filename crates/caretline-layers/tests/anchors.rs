@@ -84,13 +84,7 @@ fn outline() -> State {
         s.doc.marks.mint(p);
     }
     s.enable_outline(OutlineConfig::default());
-    update(
-        &mut s,
-        Msg::Resize {
-            width: 40,
-            height: 10,
-        },
-    );
+    update(&mut s, Msg::resize(40, 10));
     s
 }
 

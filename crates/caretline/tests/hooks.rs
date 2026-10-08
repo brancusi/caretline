@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use caretline::trace::{replay_trace_with, TraceLine};
 use caretline::{
-    update, update_doc_with_changes, update_with_changes, ChangeSet, Effect, ExtChange, ExtFns,
-    ExtOut, Host, Msg, Session, State, View, Viewport,
+    update, update_doc_with_changes, update_with_changes, CellPx, ChangeSet, Effect, ExtChange,
+    ExtFns, ExtOut, Host, Msg, Session, State, View, Viewport,
 };
 use serde_json::{json, Value};
 
@@ -389,4 +389,82 @@ fn observe_runs_on_every_view_holding_the_key() {
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].0, cs);
     assert!(!seen[0].1);
+}
+
+// --------------------------------------------------------------------------------------
+// E6: the cell pixel size is a message
+
+#[test]
+fn resize_carries_the_cell_size_into_the_state_and_the_frame() {
+    let mut s = State::new("hello", None, vp());
+    assert_eq!(caretline::view(&s).cell_px, None);
+    let px = CellPx::new(8, 16);
+    update(
+        &mut s,
+        Msg::Resize {
+            width: 30,
+            height: 6,
+            cell_px: Some(px),
+        },
+    );
+    assert_eq!(s.view.cell_px, Some(px));
+    assert_eq!(caretline::view(&s).cell_px, Some(px));
+    // A resize without pixels keeps them.
+    update(&mut s, Msg::resize(20, 5));
+    assert_eq!((s.view.viewport.width, s.view.cell_px), (20, Some(px)));
+    // In the state's JSON, and back.
+    let json = s.to_json();
+    assert!(json.contains(r#""cell_px""#), "{json}");
+    assert_eq!(State::from_json(&json).unwrap().view.cell_px, Some(px));
+    assert!(!State::new("", None, vp()).to_json().contains("cell_px"));
+    // Rendering at another size (the protocol's `render`) keeps them too.
+    let session = Session::new(s);
+    assert_eq!(session.render(50, 9).cell_px, Some(px));
+}
+
+#[test]
+fn resize_json_without_cell_px_is_unchanged() {
+    let line = r#"{"msg":"resize","width":30,"height":6}"#;
+    let m: Msg = serde_json::from_str(line).unwrap();
+    assert_eq!(m, Msg::resize(30, 6));
+    assert_eq!(serde_json::to_string(&m).unwrap(), line);
+    let with = Msg::Resize {
+        width: 30,
+        height: 6,
+        cell_px: Some(CellPx::new(9, 18)),
+    };
+    let json = serde_json::to_string(&with).unwrap();
+    assert_eq!(
+        json,
+        r#"{"msg":"resize","width":30,"height":6,"cell_px":{"w":9,"h":18}}"#
+    );
+    assert_eq!(serde_json::from_str::<Msg>(&json).unwrap(), with);
+}
+
+#[test]
+fn an_old_trace_with_resize_still_replays() {
+    // As written before the cell size was a message.
+    let trace = concat!(
+        r#"{"state":{"text":"hello world","viewport":{"width":80,"height":24}}}"#,
+        "\n",
+        r#"{"msg":{"msg":"resize","width":12,"height":4}}"#,
+        "\n",
+        r#"{"msg":{"msg":"move","dir":"forward","by":"doc_end"}}"#,
+        "\n",
+    );
+    let (s, _, n) = replay_trace_with(trace, &Host::new()).unwrap();
+    assert_eq!(n, 2);
+    assert_eq!((s.view.viewport.width, s.view.viewport.height), (12, 4));
+    assert_eq!(s.view.cell_px, None);
+    assert_eq!(s.caret(), 11);
+    // A new trace with the cell size replays it.
+    let mut session = Session::new(State::new("x", None, vp()));
+    session.apply(Msg::Resize {
+        width: 40,
+        height: 8,
+        cell_px: Some(CellPx::new(16, 34)),
+    });
+    let (s, _, _) = replay_trace_with(&session.trace_jsonl(), &Host::new()).unwrap();
+    assert_eq!(s.view.cell_px, Some(CellPx::new(16, 34)));
+    assert_eq!(caretline::view(&s), session.frame());
 }

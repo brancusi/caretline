@@ -727,13 +727,7 @@ pub(crate) fn snapshot(kind: Kind, w: u16, h: u16, keys: Option<&str>) -> Result
         pane_rows(h)
     };
     if hub.session.state().view.viewport.height != h - rows {
-        dispatch_demo(
-            &mut hub,
-            vec![Msg::Resize {
-                width: w,
-                height: h - rows,
-            }],
-        );
+        dispatch_demo(&mut hub, vec![Msg::resize(w, h - rows)]);
     }
     Ok(demo
         .overlay()

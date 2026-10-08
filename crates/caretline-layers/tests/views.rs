@@ -95,6 +95,7 @@ fn screen(main: &Frame, panel: &Frame) -> Frame {
             })
             .collect(),
         roles: Vec::new(),
+        cell_px: None,
     };
     for y in 0..main.height {
         for x in 0..main.width {

@@ -381,7 +381,7 @@ fn run() -> Result<(), String> {
     };
     if let Some(size) = &args.size {
         let (width, height) = parse_size(size)?;
-        apply(&mut state, Msg::Resize { width, height })?;
+        apply(&mut state, Msg::resize(width, height))?;
     }
     let msgs = if let Some(path) = &args.msgs {
         parse_msgs(&read_input(path)?)?
@@ -396,7 +396,7 @@ fn run() -> Result<(), String> {
     if let Some(size) = &args.snapshot {
         let (width, height) = parse_size(size)?;
         if (width, height) != (state.view.viewport.width, state.view.viewport.height) {
-            apply(&mut state, Msg::Resize { width, height })?;
+            apply(&mut state, Msg::resize(width, height))?;
         }
     }
     drop(apply);

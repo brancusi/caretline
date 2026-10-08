@@ -149,6 +149,21 @@ impl Viewport {
     }
 }
 
+/// The size of one cell in device pixels (a terminal's `CSI 16 t` answer), for a host that
+/// draws pixels over the cells. It reaches the state only through [`crate::Msg::Resize`], so
+/// whatever a host draws from it is a function of the state and replays the same anywhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CellPx {
+    pub w: u16,
+    pub h: u16,
+}
+
+impl CellPx {
+    pub const fn new(w: u16, h: u16) -> CellPx {
+        CellPx { w, h }
+    }
+}
+
 /// Where the view starts: a document line, the visual row within it (when the line is
 /// wrapped), and a column offset (only when wrapping is off).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,6 +331,11 @@ pub struct View {
     /// ([`crate::Host::ext`]). Left out of the JSON when empty.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub ext: BTreeMap<String, serde_json::Value>,
+    /// The size of one cell in device pixels, when the runtime knows it: set by
+    /// [`crate::Msg::Resize`] and copied to every [`crate::Frame`]. The engine never reads it.
+    /// Left out of the JSON when unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell_px: Option<CellPx>,
     /// Where long lines' rows start: a layout memo, not part of the view's value.
     #[serde(skip)]
     pub(crate) wrap: WrapCache,
@@ -351,6 +371,7 @@ impl View {
             layout: None,
             frame_clock: 0,
             ext: BTreeMap::new(),
+            cell_px: None,
             wrap: WrapCache::default(),
         }
     }
@@ -653,6 +674,8 @@ pub struct StateInput {
     pub frame_clock: u16,
     #[serde(default)]
     pub ext: BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
+    pub cell_px: Option<CellPx>,
 }
 
 /// The deserialized form of the `config` inside a [`StateInput`]: the document's and the
@@ -763,6 +786,7 @@ impl From<StateInput> for State {
             layout: input.layout,
             frame_clock: input.frame_clock,
             ext: input.ext,
+            cell_px: input.cell_px,
             wrap: WrapCache::default(),
         };
         let mut state = State { doc, view };
@@ -832,6 +856,8 @@ struct StateOut<'a> {
     frame_clock: u16,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     ext: &'a BTreeMap<String, serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cell_px: Option<CellPx>,
 }
 
 #[derive(Serialize)]
@@ -950,6 +976,7 @@ impl State {
             layout: &v.layout,
             frame_clock: v.frame_clock,
             ext: &v.ext,
+            cell_px: v.cell_px,
         }
     }
 }

@@ -13,7 +13,7 @@ pub fn state_wh(notation: &str, width: u16, height: u16) -> State {
     let mut state = State::new(&text, Some("test.md".into()), Viewport { width, height });
     state.view.selection = Selection::single(anchor, head);
     // A resize message settles the view around the caret.
-    update(&mut state, Msg::Resize { width, height });
+    update(&mut state, Msg::resize(width, height));
     state
 }
 
@@ -238,7 +238,7 @@ pub mod gen {
             90 => Msg::Quit,
             91..=93 => {
                 let (width, height) = size(rng);
-                Msg::Resize { width, height }
+                Msg::resize(width, height)
             }
             _ => Msg::Tick {
                 now_ms: state.doc.now_ms + rng.random_range(0..3000),

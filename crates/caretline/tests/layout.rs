@@ -27,13 +27,7 @@ fn laid_out(md: &str, w: u16, h: u16) -> State {
     );
     s.view.config.status_bar = false;
     s.view.layout = Some(OutlineLayout::default().with_hang_glyphs(true));
-    update(
-        &mut s,
-        Msg::Resize {
-            width: w,
-            height: h,
-        },
-    );
+    update(&mut s, Msg::resize(w, h));
     s
 }
 
@@ -404,13 +398,7 @@ fn a_view_lays_out_into_any_size() {
     let s0 = laid_out(TRIP, 50, 16);
     for (w, h) in [(1u16, 1u16), (8, 3), (12, 4), (40, 10), (200, 60)] {
         let mut s = s0.clone();
-        update(
-            &mut s,
-            Msg::Resize {
-                width: w,
-                height: h,
-            },
-        );
+        update(&mut s, Msg::resize(w, h));
         s.view.selection = Selection::point(s.doc.text.len_chars());
         update(&mut s, Msg::Tick { now_ms: 1 });
         let f = view(&s);
@@ -470,10 +458,7 @@ fn random_editing_in_a_laid_out_view() {
                         .insert(id, rng.random_range(0..3));
                     Msg::Tick { now_ms: step }
                 }
-                14 => Msg::Resize {
-                    width: rng.random_range(14..70),
-                    height: rng.random_range(3..20),
-                },
+                14 => Msg::resize(rng.random_range(14..70), rng.random_range(3..20)),
                 _ => Msg::Outdent,
             };
             update(&mut s, msg.clone());

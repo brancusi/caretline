@@ -43,6 +43,13 @@
   a typing run or clear the status) and is accepted on read-only views; with no reducer for
   the key the status says so. Traces record it like any message and replay it with
   `trace::replay_trace_with(input, &host)`. `Host::ext_keys` lists the keys.
+- **The cell pixel size is a message**: `CellPx { w, h }` (device pixels), `Msg::Resize`'s
+  optional `cell_px` (`{"msg":"resize","width":80,"height":24,"cell_px":{"w":8,"h":16}}`), kept
+  in `View::cell_px` (`"cell_px"` in the state's JSON, left out while unknown) and copied to
+  `Frame::cell_px`. A resize without it keeps the view's. Whatever a host draws in pixels is
+  then a function of the state, and replays the same on any machine. The `caretline` binary
+  sends the size its terminal probe finds (and a later `CSI 16 t` answer) this way.
+- `Msg::resize(width, height)`: a resize that keeps the cell pixel size.
 
 ### Breaking
 
@@ -51,6 +58,12 @@
   so hosts still build messages with struct literals; a field added to a variant stays a
   breaking change (with `#[serde(default)]`, so recorded JSON still parses). This release
   adds `Msg::Ext`.
+- `Msg::Resize` has a third field, `cell_px: Option<CellPx>`. Code that builds it writes
+  `Msg::resize(width, height)` (or adds `cell_px: None`); a pattern that names its fields adds
+  `..`. Its JSON is unchanged without pixels (`#[serde(default)]`, left out when `None`), so
+  old traces and clients replay and parse as before.
+- `Frame` has a new public field, `cell_px`: a `Frame` built with a struct literal adds
+  `cell_px: None`.
 
 - `Config`, `ConfigInput`, `ViewConfig`, `OutlineConfig` and `OutlineLayout` are
   `#[non_exhaustive]`, so adding a setting is no longer a breaking change. Outside the crate

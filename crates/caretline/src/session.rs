@@ -438,6 +438,7 @@ impl Session {
         view.read_only = old.view.read_only;
         view.frame_clock = old.view.frame_clock;
         view.ext = old.view.ext.clone();
+        view.cell_px = old.view.cell_px;
         view.status = status.or_else(|| old.view.status.clone());
         let mut ranges: Vec<Range> = Vec::with_capacity(highlights.len() + 1);
         if let Some(c) = caret {
@@ -465,13 +466,7 @@ impl Session {
         let mut s = self.state_of(id)?;
         if let Some((w, h)) = size {
             if (s.view.viewport.width, s.view.viewport.height) != (w, h) {
-                update(
-                    &mut s,
-                    Msg::Resize {
-                        width: w,
-                        height: h,
-                    },
-                );
+                update(&mut s, Msg::resize(w, h));
             }
         }
         Some(view(&s))
@@ -490,7 +485,7 @@ impl Session {
             return view(&self.state);
         }
         let mut sized = self.state.clone();
-        update(&mut sized, Msg::Resize { width, height });
+        update(&mut sized, Msg::resize(width, height));
         view(&sized)
     }
 }
