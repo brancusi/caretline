@@ -23,6 +23,7 @@ keys or messages, and the expected result. No terminal, no timing, no mocks.
 | [`caretline/tests/common/mod.rs`](../crates/caretline/tests/common/mod.rs) | Shared helpers: caret notation, `golden`, `keys`, `send`, `frame`, random generators |
 | `caretline/src/helix/**` | Helix's own unit tests, vendored with the code |
 | [`caretline-cli/tests/cli.rs`](../crates/caretline-cli/tests/cli.rs) | The binary: fixtures render to their saved snapshots, traces replay, `--keys` and `--dump-state` round-trip, effects are reported and never performed |
+| [`caretline-cli/tests/common/mod.rs`](../crates/caretline-cli/tests/common/mod.rs) | Shared by the binary's and the MCP server's tests: child processes and scratch directories that clean up after themselves, a pseudo-terminal, deadlines (see [Tests that start processes](#tests-that-start-processes)) |
 
 Run them:
 
@@ -46,6 +47,28 @@ cargo test -p caretline --features serde_json/arbitrary_precision
 
 `cargo test -p caretline` on its own runs with neither; `cargo test --workspace` runs it with
 `preserve_order`, which the binaries enable for their own output.
+
+## Tests that start processes
+
+The binary's tests and the MCP server's start real processes: editors on a pseudo-terminal,
+`caretline serve` on a socket, `caretline-mcp`. Through the helpers in
+[`caretline-cli/tests/common`](../crates/caretline-cli/tests/common/mod.rs), none outlives its
+test:
+
+- A `Proc`, a `Pty` and an `Mcp` kill and reap their child when dropped, and a `Scratch`
+  directory is removed, so a failed assertion cleans up as a pass does.
+- `Drop` doesn't run when the test process is killed, so each child is also tied to it: an
+  editor on a pseudo-terminal gets SIGHUP when the test's end closes, `caretline-mcp` and
+  `serve` on stdio see their stdin end, and `serve --socket` runs with `--exit-with-parent`.
+  The scratch directories of test processes that are gone are swept at the next run.
+- A child's stdout and stderr go to pipes the test owns, never the test's own, so nothing
+  left behind can hold a `cargo test | …` pipe open. Its stderr is printed if the test fails.
+
+Waits are for output, not on a clock: a pseudo-terminal wakes the waiting test as output
+arrives, and requests wait for their response. Each wait still has a deadline, so a hang
+fails with the screen it got to. Deadlines are nominal times multiplied by
+`CARETLINE_TEST_TIMEOUT_SCALE` (default 6, so a nominal 10 s is a minute), which leaves room
+for a loaded machine; set it to 1 to find a slow wait, or higher on a slow CI runner.
 
 ## Caret notation
 

@@ -352,12 +352,17 @@ Within protocol version 1, results only gain fields. Ignore fields you don't kno
 | Command | Transport | Clients | Ends when |
 |---|---|---|---|
 | `caretline serve [FILE] [--state S] [--size WxH]` | stdin and stdout | One | stdin closes (after the last response is written) |
-| `caretline serve … --socket PATH` | Unix socket | Many | The process is stopped (SIGTERM, SIGINT or SIGHUP) |
+| `caretline serve … --socket PATH` | Unix socket | Many | The process is stopped (SIGTERM, SIGINT or SIGHUP), or with `--exit-with-parent` the process that started it is gone |
 | `caretline FILE --listen [PATH]` | Unix socket, beside the live terminal editor | Many | The editor quits |
 
 - `serve --trace T.jsonl` appends the initial state and every change to a trace, which
   `caretline --replay` reads. `serve --no-clock` stops the [real-time ticks](#time).
   `--trace-limit LINES` bounds the in-memory trace (see [Traces](#traces)).
+- `serve --exit-with-parent` ties the server to the process that started it: once that
+  process is gone (even killed outright, with no chance to clean up), the server removes its
+  socket and exits. It is checked every 100 ms, since macOS has no parent-death signal. Use
+  it when a test or a supervisor starts the server and it must not outlive them; without it,
+  a server started in the background keeps running after its shell exits.
 - `--no-status-bar` (on `serve`, the editor and `--new-state`) sets `config.status_bar` to
   false: every row shows text, for embedders and panels with their own chrome.
 - `--listen` with no path uses `$TMPDIR/caretline-<pid>.sock`, or

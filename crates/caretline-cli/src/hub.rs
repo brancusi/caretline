@@ -349,6 +349,25 @@ pub fn remove_on_signal(paths: &[&Path]) {
     }
 }
 
+/// Exits, removing `paths`, once the process that started this one is gone (it was
+/// reparented). Polled every 100 ms: macOS has no parent-death signal. A parent already gone
+/// when this is called (the parent is pid 1) counts as gone.
+pub fn exit_with_parent(paths: Vec<PathBuf>) {
+    let parent = unsafe { libc::getppid() };
+    thread::spawn(move || {
+        loop {
+            let now = unsafe { libc::getppid() };
+            if now != parent || now == 1 {
+                for p in &paths {
+                    let _ = std::fs::remove_file(p);
+                }
+                std::process::exit(0);
+            }
+            thread::sleep(std::time::Duration::from_millis(100));
+        }
+    });
+}
+
 /// Binds `path` and accepts clients on a thread, each one feeding `tx`. A leftover socket
 /// file nobody answers on is replaced; a live one is an error.
 pub fn listen(path: &Path, tx: Sender<Input>) -> Result<Listening, String> {

@@ -1,165 +1,23 @@
-//! Shared test helpers: the caretline binary, a live editor on a pseudo-terminal (borrowed
-//! from caretline-cli's tests/live.rs), and a minimal MCP client over the server's stdio.
-#![allow(dead_code)]
+//! Shared test helpers: the caretline binary, a live editor on a pseudo-terminal, and a
+//! minimal MCP client over the server's stdio. The pseudo-terminal, child processes, scratch
+//! directories and deadlines are caretline-cli's (its tests/common), which say how a child
+//! is cleaned up even when the test process is killed.
+#![allow(dead_code, unused_imports)]
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-use std::os::unix::process::CommandExt;
+#[path = "../../../caretline-cli/tests/common/mod.rs"]
+mod proc;
+
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::{Arc, Mutex, Once};
-use std::time::{Duration, Instant};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Once;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 
+pub use proc::{Captured, Proc, Pty, Scratch, alive, eventually, patience};
 use serde_json::{Value, json};
 
 pub const ROWS: u16 = 12;
 pub const COLS: u16 = 60;
-
-pub struct Pty {
-    pub master: std::fs::File,
-    pub out: Arc<Mutex<Vec<u8>>>,
-    pub child: std::process::Child,
-}
-
-impl Drop for Pty {
-    fn drop(&mut self) {
-        if matches!(self.child.try_wait(), Ok(None)) {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-        }
-    }
-}
-
-impl Pty {
-    pub fn spawn(mut c: Command) -> Pty {
-        let (mut m, mut s) = (0, 0);
-        let mut ws = libc::winsize {
-            ws_row: ROWS,
-            ws_col: COLS,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        };
-        assert_eq!(
-            unsafe {
-                libc::openpty(
-                    &mut m,
-                    &mut s,
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    &mut ws,
-                )
-            },
-            0
-        );
-        let slave = unsafe { OwnedFd::from_raw_fd(s) };
-        c.env("TERM", "xterm-256color");
-        let sfd = slave.as_raw_fd();
-        c.stdin(slave.try_clone().unwrap())
-            .stdout(slave.try_clone().unwrap())
-            .stderr(slave);
-        unsafe {
-            c.pre_exec(move || {
-                libc::setsid();
-                libc::ioctl(sfd, libc::TIOCSCTTY as _, 0);
-                Ok(())
-            });
-        }
-        let child = c.spawn().unwrap();
-        let master = unsafe { std::fs::File::from_raw_fd(m) };
-        let out = Arc::new(Mutex::new(Vec::new()));
-        let (mut r, o) = (master.try_clone().unwrap(), out.clone());
-        let mut w = master.try_clone().unwrap();
-        std::thread::spawn(move || {
-            let mut b = [0u8; 65536];
-            while let Ok(n) = r.read(&mut b) {
-                if n == 0 {
-                    break;
-                }
-                // Answer the keyboard-protocol query (no kitty support) so start-up is quick.
-                if b[..n].windows(4).any(|x| x == b"\x1b[?u") {
-                    let _ = w.write_all(b"\x1b[?62;22c");
-                }
-                o.lock().unwrap().extend_from_slice(&b[..n]);
-            }
-        });
-        Pty { master, out, child }
-    }
-
-    pub fn send(&mut self, b: &[u8]) {
-        self.master.write_all(b).unwrap();
-    }
-
-    pub fn screen(&self) -> String {
-        screen(&self.out.lock().unwrap(), ROWS as usize, COLS as usize).join("\n")
-    }
-
-    pub fn wait(&self, what: &str, ok: impl Fn(&str) -> bool) -> String {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            let s = self.screen();
-            if ok(&s) {
-                return s;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "timed out waiting for {what}; screen:\n{s}"
-            );
-            std::thread::sleep(Duration::from_millis(20));
-        }
-    }
-}
-
-/// The screen a byte stream draws: cursor moves (`CSI r;c H`), clears and text.
-fn screen(out: &[u8], rows: usize, cols: usize) -> Vec<String> {
-    let mut grid = vec![vec![' '; cols]; rows];
-    let (mut r, mut c) = (0usize, 0usize);
-    let s = String::from_utf8_lossy(out);
-    let mut it = s.chars().peekable();
-    while let Some(ch) = it.next() {
-        match ch {
-            '\x1b' => match it.next() {
-                Some('[') => {
-                    let mut params = String::new();
-                    while let Some(&n) = it.peek() {
-                        it.next();
-                        if ('@'..='~').contains(&n) {
-                            if n == 'H' {
-                                let mut p = params
-                                    .trim_start_matches('?')
-                                    .split(';')
-                                    .map(|x| x.parse::<usize>().unwrap_or(1));
-                                r = p.next().unwrap_or(1).saturating_sub(1);
-                                c = p.next().unwrap_or(1).saturating_sub(1);
-                            } else if n == 'J' && params == "2" {
-                                grid = vec![vec![' '; cols]; rows];
-                            }
-                            break;
-                        }
-                        params.push(n);
-                    }
-                }
-                Some(']') => {
-                    while let Some(n) = it.next() {
-                        if n == '\x07' || (n == '\x1b' && it.peek() == Some(&'\\')) {
-                            break;
-                        }
-                    }
-                }
-                _ => {}
-            },
-            '\r' => c = 0,
-            '\n' => r += 1,
-            ch if ch >= ' ' => {
-                if r < rows && c < cols {
-                    grid[r][c] = ch;
-                }
-                c += 1;
-            }
-            _ => {}
-        }
-    }
-    grid.into_iter().map(|l| l.into_iter().collect()).collect()
-}
 
 /// The `caretline` binary (another package's), built once per test run. `CARETLINE_BIN`
 /// overrides it.
@@ -190,12 +48,9 @@ pub fn caretline() -> PathBuf {
 }
 
 /// A short scratch directory (socket paths must stay short), used as TMPDIR so the editors
-/// a test starts are the only ones its server discovers.
-pub fn scratch(name: &str) -> PathBuf {
-    let dir = PathBuf::from("/tmp").join(format!("clm-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+/// a test starts are the only ones its server discovers. Removed when dropped.
+pub fn scratch(name: &str) -> Scratch {
+    Scratch::new(&format!("m-{name}"))
 }
 
 /// A live editor on `file` in a pseudo-terminal, listening on `dir/ed.sock`.
@@ -207,16 +62,19 @@ pub fn live_editor(dir: &Path, file: &Path) -> Pty {
         .arg("--no-mouse")
         .env("TMPDIR", dir)
         .current_dir(dir);
-    let pty = Pty::spawn(c);
+    let pty = Pty::spawn(c, ROWS, COLS);
     pty.wait("the editor", |s| s.contains("listening on"));
     pty
 }
 
-/// An MCP client over a child's stdio: JSON-RPC requests, one per line.
+/// An MCP client over a child's stdio: JSON-RPC requests, one per line. The server exits
+/// when its stdin ends, so it goes with the test process however that ends; dropping this
+/// kills and reaps it.
 pub struct Mcp {
     pub child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    lines: Receiver<String>,
+    stderr: Captured,
     next: u64,
 }
 
@@ -224,6 +82,12 @@ impl Drop for Mcp {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if std::thread::panicking() {
+            let err = self.stderr.text();
+            if !err.is_empty() {
+                eprintln!("caretline-mcp stderr:\n{err}");
+            }
+        }
     }
 }
 
@@ -236,15 +100,29 @@ impl Mcp {
             .current_dir(dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap();
         let stdin = child.stdin.take().unwrap();
+        let stderr = Captured::default();
+        stderr.drain(child.stderr.take().unwrap());
+        // Lines arrive on a channel, so a request can give up after a deadline instead of
+        // blocking forever on a server that hangs.
+        let (tx, lines) = std::sync::mpsc::channel();
         let stdout = BufReader::new(child.stdout.take().unwrap());
+        std::thread::spawn(move || {
+            for line in stdout.lines() {
+                let Ok(line) = line else { break };
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
         let mut m = Mcp {
             child,
             stdin,
-            stdout,
+            lines,
+            stderr,
             next: 1,
         };
         let init = m.request(
@@ -277,12 +155,23 @@ impl Mcp {
             json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
         )
         .unwrap();
+        // A watch waits up to its own timeout_ms before answering; this is on top.
+        let wait = patience(10) + std::time::Duration::from_millis(params_timeout(&params));
+        let deadline = std::time::Instant::now() + wait;
         loop {
-            let mut line = String::new();
-            assert!(
-                self.stdout.read_line(&mut line).unwrap() > 0,
-                "the server closed stdout"
-            );
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            let line = match self.lines.recv_timeout(left) {
+                Ok(line) => line,
+                Err(RecvTimeoutError::Timeout) => {
+                    panic!(
+                        "no answer to {method} in {wait:?}; stderr:\n{}",
+                        self.stderr.text()
+                    )
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    panic!("the server closed stdout; stderr:\n{}", self.stderr.text())
+                }
+            };
             let v: Value = serde_json::from_str(&line).unwrap_or_else(|e| panic!("{e}: {line}"));
             if v["id"] == json!(id) {
                 return v;
@@ -309,11 +198,29 @@ impl Mcp {
     }
 }
 
-/// Waits until `f` holds.
-pub fn eventually(what: &str, mut f: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !f() {
-        assert!(Instant::now() < deadline, "timed out waiting for {what}");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+/// A tool call's `timeout_ms`, if it has one.
+fn params_timeout(params: &Value) -> u64 {
+    params["arguments"]["timeout_ms"].as_u64().unwrap_or(0)
+}
+
+/// A `watch` timeout of `ms` nominal milliseconds, scaled: for a watch that should see a
+/// change, not one that should time out.
+pub fn watch_ms(ms: u64) -> u64 {
+    patience(1).as_millis() as u64 * ms / 1000
+}
+
+/// `caretline serve FILE --socket SOCK`, tied to the test process (`--exit-with-parent`).
+pub fn serve(file: &Path, sock: &Path) -> Proc {
+    let p = Proc::spawn(
+        Command::new(caretline())
+            .arg("serve")
+            .arg(file)
+            .arg("--socket")
+            .arg(sock)
+            .arg("--exit-with-parent"),
+    );
+    eventually("the socket", || {
+        std::os::unix::net::UnixStream::connect(sock).is_ok()
+    });
+    p
 }

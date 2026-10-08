@@ -1,6 +1,8 @@
 //! A real MCP client (the official Rust SDK's) against the server: the handshake, the tool
 //! list and a tool call, in the current protocol version and the last one with `initialize`.
 
+mod common;
+
 use rmcp::ServiceExt;
 use rmcp::model::{
     CallToolRequestParams, ClientCapabilities, ClientConfig, Implementation, ProtocolVersion,
@@ -22,15 +24,16 @@ const TOOLS: [&str; 11] = [
     "close",
 ];
 
-async fn session(config: ClientConfig) {
-    let dir = std::env::temp_dir().join(format!("clm-hs-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+async fn session(name: &str, config: ClientConfig) {
+    let dir = common::scratch(name);
     let mut cmd = tokio::process::Command::new(env!("CARGO_BIN_EXE_caretline-mcp"));
-    cmd.env("TMPDIR", &dir);
-    let client = config
-        .serve(TokioChildProcess::new(cmd).unwrap())
-        .await
-        .expect("handshake");
+    cmd.env("TMPDIR", &*dir).kill_on_drop(true);
+    // The server's stderr isn't the test's: a leftover server would hold its output open.
+    let (child, _) = TokioChildProcess::builder(cmd)
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let client = config.serve(child).await.expect("handshake");
 
     let info = client.peer_info().expect("server info");
     assert_eq!(
@@ -112,10 +115,13 @@ async fn session(config: ClientConfig) {
 
 #[tokio::test]
 async fn the_sdk_client_in_the_current_protocol() {
-    session(ClientConfig::new(
-        ClientCapabilities::default(),
-        Implementation::new("sdk-test", "0"),
-    ))
+    session(
+        "hs-current",
+        ClientConfig::new(
+            ClientCapabilities::default(),
+            Implementation::new("sdk-test", "0"),
+        ),
+    )
     .await;
 }
 
@@ -126,5 +132,5 @@ async fn the_sdk_client_with_initialize() {
         Implementation::new("sdk-test", "0"),
     )
     .with_protocol_version(ProtocolVersion::V_2025_11_25);
-    session(config).await;
+    session("hs-init", config).await;
 }

@@ -246,7 +246,7 @@ fn watch_reports_the_persons_typing() {
     });
     let w = mcp.ok(
         "watch",
-        json!({"session": s, "since_rev": r, "timeout_ms": 10000}),
+        json!({"session": s, "since_rev": r, "timeout_ms": watch_ms(10000)}),
     );
     let _pty = typist.join().unwrap();
     assert_eq!(w["timed_out"], false, "{w}");
@@ -320,14 +320,7 @@ fn a_served_engine_on_a_socket_and_read_only_mode() {
     let file = dir.join("doc.txt");
     std::fs::write(&file, "one two\n").unwrap();
     let sock = dir.join("serve.sock");
-    let mut serve = Command::new(caretline())
-        .arg("serve")
-        .arg(&file)
-        .arg("--socket")
-        .arg(&sock)
-        .spawn()
-        .unwrap();
-    eventually("the socket", || sock.exists());
+    let _serve = serve(&file, &sock);
 
     let mut mcp = Mcp::start(&dir, &[]);
     let s = mcp.ok("open", json!({"socket": sock}))["session"].clone();
@@ -366,11 +359,9 @@ fn a_served_engine_on_a_socket_and_read_only_mode() {
     other.ok("edit", json!({"session": s3, "if_rev": rr, "ops": [{"kind": "insert", "at": {"line": 1, "col": 1}, "text": "0 "}]}));
     let w = mcp.ok(
         "watch",
-        json!({"session": s, "since_rev": r, "timeout_ms": 5000}),
+        json!({"session": s, "since_rev": r, "timeout_ms": watch_ms(5000)}),
     );
     assert_eq!(w["changes"][0]["who"], "another client", "{w}");
-    let _ = serve.kill();
-    let _ = serve.wait();
 }
 
 #[test]
@@ -444,4 +435,27 @@ fn the_persons_undo_and_the_agents_edits() {
     pty.send(b"\x1a");
     pty.wait("undo", |sc| sc.contains("KEEP") && !sc.contains("cdKEEP"));
     assert_eq!(mcp.ok("read", json!({"session": s}))["text"], "KEEP\n");
+}
+
+#[test]
+fn a_failing_test_leaves_no_editor_server_or_directory() {
+    let mut seen = None;
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let dir = scratch("panic");
+        let file = dir.join("doc.txt");
+        std::fs::write(&file, "x\n").unwrap();
+        let pty = live_editor(&dir, &file);
+        let serve = serve(&file, &dir.join("serve.sock"));
+        let mcp = Mcp::start(&dir, &[]);
+        let pids = [pty.child.id(), serve.id(), mcp.child.id()];
+        assert!(pids.iter().all(|p| alive(*p)));
+        seen = Some((pids, dir.to_path_buf()));
+        panic!("a failed assertion, on purpose");
+    }));
+    assert!(failed.is_err());
+    let (pids, dir) = seen.unwrap();
+    for pid in pids {
+        assert!(!alive(pid), "{pid} outlived the test");
+    }
+    assert!(!dir.exists(), "the directory is left");
 }
