@@ -80,7 +80,8 @@ pub use msg::{By, Dir, Effect, Msg};
 pub use outline::{BlockInfo, Kind, NewBlock, Outline, OutlineConfig};
 pub use session::Session;
 pub use state::{
-    CellPx, Config, Document, ExternalUndo, Follow, Scroll, State, View, ViewConfig, Viewport,
+    CellPx, Config, Document, ExternalUndo, Follow, Scroll, ScrollPastEnd, State, View, ViewConfig,
+    Viewport,
 };
 pub use update::{replay, update, update_with_changes};
 pub use view::{view, Cell, CellFlags, Frame, Region, Role};

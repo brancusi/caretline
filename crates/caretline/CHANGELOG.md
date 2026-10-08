@@ -28,6 +28,15 @@
 - `Layout::click_at`: where a click puts the caret.
 - `ViewConfig::page_overlap`: rows of the previous screen a page motion keeps on screen (a page
   moves the text rows less this). Default 0, as before.
+- `ViewConfig::scroll_past_end` (`with_scroll_past_end`) and `ScrollPastEnd`: how far the view
+  may scroll past the document's last row, like an editor's "scroll beyond last line".
+  `Off` (the default, as before), `Margin` (as many empty rows as `scrolloff`, so the caret
+  keeps its margin while writing at the end of a long page), `Rows(n)` or `Half`. Following
+  the caret, page motions, `Scroll` and `ScrollView` go that far past the end and no further;
+  an edit that leaves the caret in place still never pulls the view back, a click still keeps
+  it, and `Follow::Typewriter` is unchanged. In JSON `"scroll_past_end": "margin"`, `"half"`
+  or `{"rows": 3}`, left out while off (`ConfigInput::scroll_past_end` reads it).
+  `ScrollPastEnd::rows(h, scrolloff)` gives the count for a view.
 - `Config::single_line` (`"config": {"single_line": true}`, left out of JSON while false): a
   one-line text field. The text never holds a line break: `InsertNewline` and `SoftBreak`
   change nothing; line breaks typed, pasted, edited in by a host or an input rule, or put in

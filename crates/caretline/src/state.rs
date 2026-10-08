@@ -98,6 +98,10 @@ pub struct ViewConfig {
     /// page moves the text rows less this.
     #[serde(default, skip_serializing_if = "is_zero_u16")]
     pub page_overlap: u16,
+    /// How far the view may scroll past the document's last row (an editor's "scroll beyond
+    /// last line"). [`ScrollPastEnd::Off`], the default, keeps the last row at the bottom.
+    #[serde(default, skip_serializing_if = "ScrollPastEnd::is_default")]
+    pub scroll_past_end: ScrollPastEnd,
 }
 
 impl Default for ViewConfig {
@@ -107,6 +111,7 @@ impl Default for ViewConfig {
             scrolloff: 2,
             follow: Follow::Margin,
             page_overlap: 0,
+            scroll_past_end: ScrollPastEnd::Off,
         }
     }
 }
@@ -116,6 +121,7 @@ setters!(ViewConfig {
     with_scrolloff => scrolloff: u16,
     with_follow => follow: Follow,
     with_page_overlap => page_overlap: u16,
+    with_scroll_past_end => scroll_past_end: ScrollPastEnd,
 });
 
 /// How a view follows the caret after a message.
@@ -132,6 +138,47 @@ pub enum Follow {
 impl Follow {
     fn is_default(&self) -> bool {
         *self == Follow::Margin
+    }
+}
+
+/// How far a view may scroll past the document's last row: the empty rows it may show below
+/// the end. In JSON `"off"`, `"margin"`, `"half"` or `{"rows": 3}`.
+///
+/// It moves the limit, not the follow policy: following the caret down still keeps
+/// `scrolloff` rows below it, and now it may do so at the end of the document too, as far as
+/// this allows. A page motion, `Msg::Scroll` and `Msg::ScrollView` go as far past the end as
+/// it allows and no further.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScrollPastEnd {
+    /// The last row stops at the bottom of the view (the caret at the end of the document
+    /// sits on the last row).
+    #[default]
+    Off,
+    /// As many rows as the view's `scrolloff` (capped as the margin is): the caret keeps its
+    /// margin at the end of the document too.
+    Margin,
+    /// Up to this many rows (at most the view's height less one).
+    Rows(u16),
+    /// Up to half the view's height.
+    Half,
+}
+
+impl ScrollPastEnd {
+    fn is_default(&self) -> bool {
+        *self == ScrollPastEnd::Off
+    }
+
+    /// The empty rows a view of `h` text rows, with a `scrolloff` margin, may show below the
+    /// document's last row: never more than `h - 1`, so the last row stays in sight.
+    pub fn rows(self, h: usize, scrolloff: u16) -> usize {
+        let rows = match self {
+            ScrollPastEnd::Off => 0,
+            ScrollPastEnd::Margin => (scrolloff as usize).min(h.saturating_sub(1) / 2),
+            ScrollPastEnd::Rows(n) => n as usize,
+            ScrollPastEnd::Half => h / 2,
+        };
+        rows.min(h.saturating_sub(1))
     }
 }
 
@@ -700,6 +747,8 @@ pub struct ConfigInput {
     pub line_ending: Option<LineEnding>,
     pub status_bar: Option<bool>,
     pub follow: Option<Follow>,
+    #[serde(default)]
+    pub scroll_past_end: Option<ScrollPastEnd>,
     pub external_undo: Option<ExternalUndo>,
     #[serde(default)]
     pub single_line: Option<bool>,
@@ -747,6 +796,7 @@ impl From<StateInput> for State {
             scrolloff: c.scrolloff.unwrap_or(vd.scrolloff),
             follow: c.follow.unwrap_or_default(),
             page_overlap: c.page_overlap.unwrap_or(vd.page_overlap),
+            scroll_past_end: c.scroll_past_end.unwrap_or_default(),
         };
         let history = input.history.unwrap_or_default();
         let saved_revision = input
@@ -878,6 +928,8 @@ struct ConfigOut<'a> {
     follow: Follow,
     #[serde(skip_serializing_if = "is_zero_u16")]
     page_overlap: u16,
+    #[serde(skip_serializing_if = "ScrollPastEnd::is_default")]
+    scroll_past_end: ScrollPastEnd,
     #[serde(skip_serializing_if = "ExternalUndo::is_default")]
     external_undo: &'a ExternalUndo,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -963,6 +1015,7 @@ impl State {
                 status_bar: v.config.status_bar,
                 follow: v.config.follow,
                 page_overlap: v.config.page_overlap,
+                scroll_past_end: v.config.scroll_past_end,
                 external_undo: &d.config.external_undo,
                 single_line: d.config.single_line,
             },
