@@ -365,6 +365,7 @@ returns an `Edit` or the reason it can't run (shown in the status bar, nothing c
 | `status` | A one-line message for the view |
 | `effects` | Your own effects, returned from `update` as `Effect::Host { name, data }` |
 | `keep_gaps` | Every block keeps its blank row (a change of shape never moves another block) |
+| `then_default` | An input rule's only: after the edit, the engine handles the message as it would have, in the same undo step ([below](#adjusting-what-enter-does)) |
 
 An unknown name changes nothing and says so; a read-only view refuses a command like any edit.
 Bind keys to commands in your app's keymap: caretline's [default keymap](keys.md) binds only
@@ -376,6 +377,42 @@ An input rule sees each editing message (typing, Enter, Backspace, paste…) bef
 and may return an `Edit` to apply instead, as CodeMirror's input handlers do. Use one for a
 shorthand typed in the text. caretline has no transaction filters: the structure a host needs
 enforced (a prefix the caret never enters) is data, [tags](markdown.md#tags).
+
+#### Adjusting what Enter does
+
+A rule that wants the engine's own action, slightly different, doesn't rebuild it: it returns
+the part it changes with `then_default` set (`Edit::then_default()` is an edit with nothing
+else). caretline applies the rule's changes, selection and marks, then handles the message as
+it would have, with the same rules, markers and marks, and records the two as one undo step:
+undo restores the text and the selection from before the key.
+
+Enter in an outline splits `- Last line of the plan` after `line` into `- Last line` and
+`-  of the plan`, keeping the space, as other editors do. A host that wants the new line to
+start at the word drops the spaces after the caret and lets the engine split:
+
+```rust
+use caretline::{Edit, Host, Msg};
+
+let host = Host::new().input_rule("trim_split", |ctx, msg| {
+    if !matches!(msg, Msg::InsertNewline) || ctx.selection().len() != 1 {
+        return None;
+    }
+    let r = ctx.selection().primary();
+    let spaces = ctx.text().chars_at(r.head).take_while(|c| *c == ' ').count();
+    (r.is_empty() && spaces > 0).then(|| Edit {
+        changes: vec![(r.head, r.head + spaces, String::new())],
+        ..Edit::then_default()
+    })
+});
+```
+
+Enter now gives `- Last line` and `- of the plan` with the caret before `of`: the new item has
+the marker the engine's Enter gives (the next number, the new tag, the same depth) and a mark of
+its own, the old item keeps its mark, and one undo brings back `- Last line of the plan` with
+the caret after `line`. In a paragraph the line breaks as before, without the space. Typing
+afterwards is a step of its own, as after the engine's Enter. The same shape works for any
+message a rule sees: adjust the text, the selection or the marks, and leave the action to the
+engine.
 
 ### Mark payloads
 

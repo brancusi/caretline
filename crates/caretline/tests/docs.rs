@@ -1,5 +1,6 @@
 //! The examples in docs/ run: structure.md (decorations), markdown.md (a list edit),
-//! embedding.md (a host command, and the case study's cycle built on tags).
+//! embedding.md (a host command, an input rule that adjusts Enter, and the case study's cycle
+//! built on tags).
 
 use caretline::outline::markdown;
 use caretline::outline::Kind;
@@ -104,6 +105,43 @@ fn the_host_command_example_runs() {
         },
     );
     assert_eq!(state.doc.text.to_string(), "HELLO\nworld\n");
+}
+
+/// embedding.md#adjusting-what-enter-does
+#[test]
+fn the_trim_split_example_runs() {
+    let host = Host::new().input_rule("trim_split", |ctx, msg| {
+        if !matches!(msg, Msg::InsertNewline) || ctx.selection().len() != 1 {
+            return None;
+        }
+        let r = ctx.selection().primary();
+        let spaces = ctx
+            .text()
+            .chars_at(r.head)
+            .take_while(|c| *c == ' ')
+            .count();
+        (r.is_empty() && spaces > 0).then(|| Edit {
+            changes: vec![(r.head, r.head + spaces, String::new())],
+            ..Edit::then_default()
+        })
+    });
+    let mut s = markdown::load(
+        "- Last line of the plan\n",
+        None,
+        Viewport {
+            width: 40,
+            height: 4,
+        },
+        OutlineConfig::default(),
+    );
+    s.doc.set_host(host);
+    s.view.selection = caretline::helix::Selection::point(11);
+    update(&mut s, Msg::InsertNewline);
+    assert_eq!(markdown::to_file(&s), "- Last line\n- of the plan\n");
+    assert_eq!(s.view.caret(), 14);
+    update(&mut s, Msg::Undo);
+    assert_eq!(markdown::to_file(&s), "- Last line of the plan\n");
+    assert_eq!(s.view.caret(), 11);
 }
 
 /// embedding.md#a-one-line-field

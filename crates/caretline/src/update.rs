@@ -210,7 +210,7 @@ fn caret_block(state: &State) -> Option<crate::marks::MarkId> {
 }
 
 /// A message as the plain-text editor handles it.
-fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
+pub(crate) fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
     match msg {
         Msg::InsertText { text } => {
             let text = normalize_line_endings(&text, state.doc.config.line_ending.as_str());
@@ -626,6 +626,7 @@ pub(crate) fn commit_with(
     let now = state.doc.now_ms;
     let changed = changed_chars(&txn);
     let continues = step.merge
+        || std::mem::take(&mut state.doc.merge_next)
         || match (step.kind, state.doc.run) {
             (Some(kind), Some(run)) => {
                 !step.replaced
