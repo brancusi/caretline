@@ -65,6 +65,20 @@ Guidance for AI agents (and people) working on caretline. `CLAUDE.md` points her
 - **Keep the engine standalone:** no new dependency on a terminal, async runtime or host crate
   (CI checks `cargo tree -p caretline`).
 
+## How we write code here
+
+- **One source of truth.** State is normalized: one `Document` per text, views point into it
+  and never copy it. Anything derived (layout, placement, rows, touched ranges) is computed
+  from the state, or cached as derived data that is safe to drop, never stored beside it.
+- **Strict Elm architecture.** One serializable state, changed only by messages through pure
+  `update`; `view` is a pure function of it. No clock, randomness or I/O inside; time and
+  terminal facts (ticks, sizes, cell pixels) arrive as messages, so every session replays.
+- **Instantiate, don't fork.** One component, many instances: differences are data (a config,
+  a role, a policy, a host's renderer), never a second code path for a special caller.
+- **Special cases are a smell.** A one-off guard, a host-specific branch or a "just for this
+  case" flag means the model is missing something: flag it and fix the model, so the case
+  becomes ordinary. Extension points stay generic (they never name a host concept).
+
 ## Before every commit and push
 
 - **Pushes are paused** until the owner's security review: commit locally after every change;
