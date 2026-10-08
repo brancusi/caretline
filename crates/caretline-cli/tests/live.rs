@@ -1,165 +1,19 @@
 //! Live attach: the interactive editor on a pseudo-terminal with `--listen`, driven over
 //! its socket and its keyboard at once.
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+mod common;
+
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use common::{Pty, Scratch, patience};
 use serde_json::{Value, json};
 
 const ROWS: u16 = 12;
 const COLS: u16 = 60;
-
-struct Pty {
-    master: std::fs::File,
-    out: Arc<Mutex<Vec<u8>>>,
-    child: std::process::Child,
-}
-
-impl Drop for Pty {
-    fn drop(&mut self) {
-        if matches!(self.child.try_wait(), Ok(None)) {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-        }
-    }
-}
-
-impl Pty {
-    fn spawn(mut c: Command) -> Pty {
-        let (mut m, mut s) = (0, 0);
-        let mut ws = libc::winsize {
-            ws_row: ROWS,
-            ws_col: COLS,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        };
-        assert_eq!(
-            unsafe {
-                libc::openpty(
-                    &mut m,
-                    &mut s,
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    &mut ws,
-                )
-            },
-            0
-        );
-        let slave = unsafe { OwnedFd::from_raw_fd(s) };
-        c.env("TERM", "xterm-256color");
-        let sfd = slave.as_raw_fd();
-        c.stdin(slave.try_clone().unwrap())
-            .stdout(slave.try_clone().unwrap())
-            .stderr(slave);
-        unsafe {
-            c.pre_exec(move || {
-                libc::setsid();
-                libc::ioctl(sfd, libc::TIOCSCTTY as _, 0);
-                Ok(())
-            });
-        }
-        let child = c.spawn().unwrap();
-        let master = unsafe { std::fs::File::from_raw_fd(m) };
-        let out = Arc::new(Mutex::new(Vec::new()));
-        let (mut r, o) = (master.try_clone().unwrap(), out.clone());
-        let mut w = master.try_clone().unwrap();
-        std::thread::spawn(move || {
-            let mut b = [0u8; 65536];
-            while let Ok(n) = r.read(&mut b) {
-                if n == 0 {
-                    break;
-                }
-                // Answer the keyboard-protocol query (no kitty support) so start-up is quick.
-                if b[..n].windows(4).any(|x| x == b"\x1b[?u") {
-                    let _ = w.write_all(b"\x1b[?62;22c");
-                }
-                o.lock().unwrap().extend_from_slice(&b[..n]);
-            }
-        });
-        Pty { master, out, child }
-    }
-
-    fn send(&mut self, b: &[u8]) {
-        self.master.write_all(b).unwrap();
-    }
-
-    fn screen(&self) -> String {
-        screen(&self.out.lock().unwrap(), ROWS as usize, COLS as usize).join("\n")
-    }
-
-    fn wait(&self, what: &str, ok: impl Fn(&str) -> bool) -> String {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            let s = self.screen();
-            if ok(&s) {
-                return s;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "timed out waiting for {what}; screen:\n{s}"
-            );
-            std::thread::sleep(Duration::from_millis(20));
-        }
-    }
-}
-
-/// The screen a byte stream draws: cursor moves (`CSI r;c H`), clears and text.
-fn screen(out: &[u8], rows: usize, cols: usize) -> Vec<String> {
-    let mut grid = vec![vec![' '; cols]; rows];
-    let (mut r, mut c) = (0usize, 0usize);
-    let s = String::from_utf8_lossy(out);
-    let mut it = s.chars().peekable();
-    while let Some(ch) = it.next() {
-        match ch {
-            '\x1b' => match it.next() {
-                Some('[') => {
-                    let mut params = String::new();
-                    while let Some(&n) = it.peek() {
-                        it.next();
-                        if ('@'..='~').contains(&n) {
-                            if n == 'H' {
-                                let mut p = params
-                                    .trim_start_matches('?')
-                                    .split(';')
-                                    .map(|x| x.parse::<usize>().unwrap_or(1));
-                                r = p.next().unwrap_or(1).saturating_sub(1);
-                                c = p.next().unwrap_or(1).saturating_sub(1);
-                            } else if n == 'J' && params == "2" {
-                                grid = vec![vec![' '; cols]; rows];
-                            }
-                            break;
-                        }
-                        params.push(n);
-                    }
-                }
-                Some(']') => {
-                    while let Some(n) = it.next() {
-                        if n == '\x07' || (n == '\x1b' && it.peek() == Some(&'\\')) {
-                            break;
-                        }
-                    }
-                }
-                _ => {}
-            },
-            '\r' => c = 0,
-            '\n' => r += 1,
-            ch if ch >= ' ' => {
-                if r < rows && c < cols {
-                    grid[r][c] = ch;
-                }
-                c += 1;
-            }
-            _ => {}
-        }
-    }
-    grid.into_iter().map(|l| l.into_iter().collect()).collect()
-}
 
 struct Client {
     w: UnixStream,
@@ -169,7 +23,7 @@ struct Client {
 impl Client {
     fn connect(path: &Path) -> Client {
         let s = UnixStream::connect(path).unwrap();
-        s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        s.set_read_timeout(Some(patience(10))).unwrap();
         Client {
             w: s.try_clone().unwrap(),
             r: BufReader::new(s),
@@ -198,9 +52,7 @@ fn bin() -> Command {
 
 #[test]
 fn a_running_editor_takes_pushed_state_and_messages() {
-    let dir = PathBuf::from("/tmp").join(format!("cll-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = Scratch::new("cll");
     let doc = dir.join("doc.md");
     std::fs::write(&doc, "first line\nsecond line\n").unwrap();
     let sock = dir.join("ed.sock");
@@ -213,8 +65,8 @@ fn a_running_editor_takes_pushed_state_and_messages() {
         .arg("--trace")
         .arg(&trace)
         .arg("--no-mouse")
-        .env("TMPDIR", &dir);
-    let mut pty = Pty::spawn(c);
+        .env("TMPDIR", &*dir);
+    let mut pty = Pty::spawn(c, ROWS, COLS);
     pty.wait("the editor", |s| {
         s.contains("first line") && s.contains("listening on")
     });
@@ -228,7 +80,7 @@ fn a_running_editor_takes_pushed_state_and_messages() {
     assert_eq!(info["socket"], sock.to_str().unwrap());
     let latest = bin()
         .args(["send", "--latest", "hello"])
-        .env("TMPDIR", &dir)
+        .env("TMPDIR", &*dir)
         .output()
         .unwrap();
     assert!(
@@ -237,7 +89,7 @@ fn a_running_editor_takes_pushed_state_and_messages() {
     );
     let by_pid = bin()
         .args(["send", "--pid", &pid.to_string(), "state.get", "--raw"])
-        .env("TMPDIR", &dir)
+        .env("TMPDIR", &*dir)
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&by_pid.stdout).contains("first line"));
@@ -336,14 +188,13 @@ fn a_running_editor_takes_pushed_state_and_messages() {
         json!({"op": "msgs", "apply_effects": true, "msgs": [{"msg": "quit"}, {"msg": "quit"}]}),
     );
     assert_eq!(r["result"]["executed"], true);
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + patience(10);
     while pty.child.try_wait().unwrap().is_none() {
         assert!(Instant::now() < deadline, "the editor didn't quit");
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(!sock.exists(), "the socket is removed on exit");
     assert!(!dir.join("caretline").join(format!("{pid}.json")).exists());
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// The view list's carets, by view id.
@@ -359,9 +210,7 @@ fn carets(c: &mut Client) -> Vec<(u64, u64)> {
 
 #[test]
 fn a_person_keeps_typing_while_a_client_pushes_text() {
-    let dir = PathBuf::from("/tmp").join(format!("clc-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = Scratch::new("clc");
     let doc = dir.join("doc.md");
     std::fs::write(&doc, "Hey there, \nnext\n").unwrap();
     let sock = dir.join("ed.sock");
@@ -373,14 +222,14 @@ fn a_person_keeps_typing_while_a_client_pushes_text() {
         .arg("--trace")
         .arg(&trace)
         .arg("--no-mouse")
-        .env("TMPDIR", &dir);
-    let mut pty = Pty::spawn(c);
+        .env("TMPDIR", &*dir);
+    let mut pty = Pty::spawn(c, ROWS, COLS);
     pty.wait("the editor", |s| {
         s.contains("Hey there,") && s.contains("listening on")
     });
     let mut client = Client::connect(&sock);
     pty.send(b"\x05"); // ctrl-e: the end of the line
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + patience(10);
     while carets(&mut client)[0].1 != 11 {
         assert!(
             Instant::now() < deadline,
@@ -433,7 +282,7 @@ fn a_person_keeps_typing_while_a_client_pushes_text() {
 
     // Every key landed, in one run on the person's line, with their caret at its end.
     let mine = format!("Hey there, {typed}");
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + patience(10);
     let text = loop {
         let got = client.ask(json!({"op": "state.get", "history": false}));
         let text = got["result"]["state"]["text"].as_str().unwrap().to_string();
@@ -463,7 +312,7 @@ fn a_person_keeps_typing_while_a_client_pushes_text() {
     for _ in 0..typed.len() + 5 {
         pty.send(b"\x1a"); // ctrl-z
     }
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + patience(10);
     loop {
         let got = client.ask(json!({"op": "state.get", "history": false}));
         if got["result"]["state"]["text"] == json!(want) {
@@ -515,11 +364,10 @@ fn a_person_keeps_typing_while_a_client_pushes_text() {
         json!(format!("{cur}tail from send\n"))
     );
     // Send's view closes with its connection: view 0 and this client's own are left.
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + patience(10);
     while carets(&mut client).len() > 2 {
         assert!(Instant::now() < deadline, "send's view stayed open");
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(carets(&mut client)[0].1, before);
-    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -1,12 +1,15 @@
 //! The state protocol through the binary: `caretline serve` on stdio and on a socket, and
 //! `caretline send`.
 
+mod common;
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use common::{Proc, Scratch, alive, patience};
 use serde_json::{Value, json};
 
 fn bin() -> Command {
@@ -17,12 +20,9 @@ fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures")
 }
 
-fn scratch(name: &str) -> PathBuf {
+fn scratch(name: &str) -> Scratch {
     // Short: socket paths are limited to about 100 bytes.
-    let dir = PathBuf::from("/tmp").join(format!("clp-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+    Scratch::new(&format!("p-{name}"))
 }
 
 /// Runs `caretline serve ARGS` with these request lines on stdin; the output lines.
@@ -33,6 +33,7 @@ fn serve_stdio(args: &[&str], requests: &[Value]) -> Vec<Value> {
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let mut stdin = child.stdin.take().unwrap();
@@ -145,23 +146,16 @@ fn state_set_then_render_matches_snapshot_byte_for_byte() {
     assert!(seen >= 4);
 }
 
+/// A `serve --socket` killed with its directory when dropped, and gone with the test
+/// process even if that is killed (`--exit-with-parent`).
 struct Server {
-    child: Child,
+    proc: Proc,
     socket: PathBuf,
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        if let Some(dir) = self.socket.parent() {
-            let _ = std::fs::remove_dir_all(dir);
-        }
-    }
+    _dir: Scratch,
 }
 
 fn wait_for_socket(path: &Path) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + patience(10);
     while UnixStream::connect(path).is_err() {
         assert!(Instant::now() < deadline, "no server at {}", path.display());
         std::thread::sleep(Duration::from_millis(20));
@@ -169,16 +163,21 @@ fn wait_for_socket(path: &Path) {
 }
 
 fn socket_server(name: &str, args: &[&str]) -> Server {
-    let socket = scratch(name).join("s.sock");
-    let child = bin()
-        .args(["serve", "--no-clock"])
-        .args(args)
-        .arg("--socket")
-        .arg(&socket)
-        .spawn()
-        .unwrap();
+    let dir = scratch(name);
+    let socket = dir.join("s.sock");
+    let proc = Proc::spawn(
+        bin()
+            .args(["serve", "--no-clock", "--exit-with-parent"])
+            .args(args)
+            .arg("--socket")
+            .arg(&socket),
+    );
     wait_for_socket(&socket);
-    Server { child, socket }
+    Server {
+        proc,
+        socket,
+        _dir: dir,
+    }
 }
 
 struct Client {
@@ -189,7 +188,7 @@ struct Client {
 impl Client {
     fn connect(path: &Path) -> Client {
         let s = UnixStream::connect(path).unwrap();
-        s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        s.set_read_timeout(Some(patience(10))).unwrap();
         Client {
             w: s.try_clone().unwrap(),
             r: BufReader::new(s),
@@ -308,6 +307,7 @@ fn send_talks_to_a_socket() {
         .args(["send", "--socket", sock])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     writeln!(
@@ -343,6 +343,7 @@ fn serve_ticks_to_real_time_unless_told_not_to() {
         .arg("serve")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     writeln!(
@@ -381,16 +382,54 @@ fn a_socket_path_too_long_is_a_clear_error() {
 #[test]
 fn a_killed_server_removes_its_socket() {
     for sig in [libc::SIGTERM, libc::SIGINT] {
-        let socket = scratch(&format!("sig{sig}")).join("s.sock");
-        let mut child = bin()
-            .args(["serve", "--socket"])
-            .arg(&socket)
-            .spawn()
-            .unwrap();
+        let dir = scratch(&format!("sig{sig}"));
+        let socket = dir.join("s.sock");
+        let mut server = Proc::spawn(bin().args(["serve", "--socket"]).arg(&socket));
         wait_for_socket(&socket);
-        unsafe { libc::kill(child.id() as i32, sig) };
-        child.wait().unwrap();
+        unsafe { libc::kill(server.id() as i32, sig) };
+        server.child.wait().unwrap();
         assert!(!socket.exists(), "signal {sig} left the socket");
-        let _ = std::fs::remove_dir_all(socket.parent().unwrap());
     }
+}
+
+#[test]
+fn a_failing_test_leaves_no_server_and_no_directory() {
+    let mut seen = None;
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let server = socket_server("panic", &[]);
+        seen = Some((server.proc.id(), server.socket.clone()));
+        assert!(alive(server.proc.id()));
+        panic!("a failed assertion, on purpose");
+    }));
+    assert!(failed.is_err());
+    let (pid, socket) = seen.unwrap();
+    assert!(!alive(pid), "the server {pid} outlived the test");
+    assert!(!socket.parent().unwrap().exists(), "the directory is left");
+}
+
+#[test]
+fn a_server_started_with_exit_with_parent_dies_with_its_parent() {
+    let dir = scratch("orphan");
+    let socket = dir.join("s.sock");
+    // A shell starts the server and is then killed outright, as a test process can be: no
+    // destructor runs, and the server is reparented.
+    let mut sh = Proc::spawn(
+        Command::new("/bin/sh")
+            .arg("-c")
+            .arg(r#""$0" serve --exit-with-parent --socket "$1" & echo $!; wait"#)
+            .arg(env!("CARGO_BIN_EXE_caretline"))
+            .arg(&socket),
+    );
+    wait_for_socket(&socket);
+    let mut pid = String::new();
+    common::eventually("the server's pid", || {
+        pid = sh.stdout.text();
+        pid.ends_with('\n')
+    });
+    let pid: u32 = pid.trim().parse().unwrap();
+    assert!(alive(pid));
+    unsafe { libc::kill(sh.id() as i32, libc::SIGKILL) };
+    sh.child.wait().unwrap();
+    common::eventually("the orphaned server to exit", || !alive(pid));
+    assert!(!socket.exists(), "the server removed its socket");
 }

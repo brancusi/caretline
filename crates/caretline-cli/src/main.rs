@@ -160,6 +160,10 @@ struct ServeArgs {
     /// segments are dropped first). The --trace file keeps everything.
     #[arg(long, value_name = "LINES", default_value_t = caretline::session::DEFAULT_TRACE_LIMIT)]
     trace_limit: usize,
+    /// Exit (removing the socket) when the process that started this one goes away, even
+    /// if it was killed. For servers a test or a supervisor starts and must not outlive.
+    #[arg(long)]
+    exit_with_parent: bool,
 }
 
 fn serve(args: ServeArgs) -> Result<(), String> {
@@ -211,9 +215,15 @@ fn serve(args: ServeArgs) -> Result<(), String> {
     match &args.socket {
         Some(path) => {
             let _listening = hub::listen(std::path::Path::new(path), tx)?;
+            if args.exit_with_parent {
+                hub::exit_with_parent(vec![path.into()]);
+            }
             hub::serve(hub, rx, false);
         }
         None => {
+            if args.exit_with_parent {
+                hub::exit_with_parent(Vec::new());
+            }
             let writer = hub::spawn_stdio(&tx);
             drop(tx);
             hub::serve(hub, rx, true);
