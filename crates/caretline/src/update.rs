@@ -7,7 +7,7 @@ use crate::helix::history::State as HistoryState;
 use crate::helix::line_ending::line_end_char_index;
 use crate::helix::transaction::Operation;
 use crate::helix::{ChangeSet, Range, RopeSlice, Selection, SmallVec, Tendril, Transaction};
-use crate::layout::{ensure_caret_visible, Layout};
+use crate::layout::{follow_caret, Cause, Layout};
 use crate::marks::{ClipMark, Clipboard, Mark, MarkDelta, Marks};
 use crate::msg::{By, Dir, Effect, Msg};
 use crate::state::{
@@ -104,6 +104,12 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
     }
     let selection_before = state.view.selection.clone();
     let scrolls_freely = matches!(msg, Msg::ScrollView { .. });
+    // A caret placed at a screen position: the view stays while the caret is in it.
+    let hit = matches!(
+        msg,
+        Msg::Click { .. } | Msg::SelectWordAt { .. } | Msg::SelectBlock { .. }
+    );
+    let scroll_before = state.view.scroll;
 
     let pins = if outline_on {
         crate::outline::rules::pins_for(state, &msg)
@@ -164,7 +170,14 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
     if state.view.free {
         crate::layout::clamp_scroll(state);
     } else {
-        ensure_caret_visible(state);
+        let cause = if hit {
+            Cause::Hit
+        } else if state.view.scroll != scroll_before {
+            Cause::Scrolled
+        } else {
+            Cause::Caret
+        };
+        follow_caret(state, cause);
     }
     effects
 }

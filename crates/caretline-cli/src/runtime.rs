@@ -599,9 +599,11 @@ fn terminal_msgs(state: &State, ev: Event) -> Vec<Msg> {
                         extend,
                     }]
                 }
+                // A drag past the last text row (onto the status bar) puts the caret below
+                // the view, which scrolls to follow it.
                 MouseEventKind::Drag(MouseButton::Left) => vec![Msg::Click {
                     col: m.column,
-                    row: m.row.min(text_rows.saturating_sub(1)),
+                    row: m.row,
                     extend: true,
                 }],
                 MouseEventKind::ScrollUp => vec![Msg::Scroll { rows: -3 }],

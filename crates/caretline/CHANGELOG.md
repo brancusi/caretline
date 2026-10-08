@@ -49,6 +49,16 @@
   (it changed `serde_json::Map`'s key order across a host's whole build). Protocol responses
   are built from structs, so their key order is the same with or without the feature; the
   engine's tests also run with `arbitrary_precision` on.
+- An edit that shortens the document (Backspace on an empty last line) no longer pulls the view
+  up when the caret stays in it: the view keeps its top and shows empty rows below the end.
+  The view is kept off them only when it moves to bring the caret into sight (a jump, a page,
+  a resize that hides the caret), never back above where it was while following the caret
+  down. `ensure_caret_visible` follows the same rule.
+- A caret placed by the pointer (`Msg::Click`, with or without `extend`, `SelectWordAt`,
+  `SelectBlock`) inside the view no longer scrolls it by `scrolloff` (or re-centres a
+  `Follow::Typewriter` view): the text stays under the pointer. The next key follows the caret
+  as before, and a click below the text rows (a drag past the bottom edge) still scrolls to the
+  caret. The `caretline` editor sends a drag onto the status bar as such a click.
 
 ## 0.3.0 (2026-10-07)
 

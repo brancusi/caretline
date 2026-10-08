@@ -1025,14 +1025,42 @@ pub fn clamp_scroll(state: &mut State) {
 }
 
 /// Moves the view the least needed for the primary caret to sit in it, `scrolloff` rows
-/// from the edges where possible.
+/// from the edges where possible (or by the view's [`Follow`] policy). The view is kept off
+/// empty rows below the end of the document only when this moves it; when the caret is
+/// already in place the view stays, empty rows and all (an edit that shortens the document
+/// doesn't pull the text down under the caret).
 pub fn ensure_caret_visible(state: &mut State) {
+    follow_caret(state, Cause::Caret);
+}
+
+/// Why the view follows the caret after a message (see [`follow_caret`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Cause {
+    /// A key, an edit, a resize, anything else: the follow policy and `scrolloff` apply.
+    Caret,
+    /// The message moved the view itself (a page motion, `Msg::Scroll`): as `Caret`, and the
+    /// view is kept off empty rows below the end even when following doesn't move it.
+    Scrolled,
+    /// The caret was placed at a screen position (a click, a drag, a double or triple
+    /// click): while it is in the view the view stays, whatever `scrolloff` or the follow
+    /// policy say, so the text doesn't move under the pointer. Out of the view, as `Caret`.
+    Hit,
+}
+
+/// [`ensure_caret_visible`], for a message of the given [`Cause`].
+pub(crate) fn follow_caret(state: &mut State, cause: Cause) {
     let layout = Layout::new(state);
     let h = state.text_rows();
     let w = state.view.viewport.width as usize;
     let (caret, col) = layout.pos_coords(state.caret());
     let mut top = layout.top(&state.view.scroll);
-    if let (Follow::Typewriter { percent }, true) = (state.view.config.follow, h > 0) {
+    let start = top;
+    let placed = cause == Cause::Hit
+        && h > 0
+        && (0..h as isize).contains(&layout.rows_between(top, caret, h));
+    if placed {
+        // The view stays where the pointer found it.
+    } else if let (Follow::Typewriter { percent }, true) = (state.view.config.follow, h > 0) {
         // The caret's row sits at `percent` of the height (the top clamps at the start).
         let row = ((h - 1) * percent.min(100) as usize + 50) / 100;
         top = layout.step_rows(caret, -(row as isize)).0;
@@ -1044,14 +1072,22 @@ pub fn ensure_caret_visible(state: &mut State) {
         } else if dist > (h - 1 - so) as isize {
             top = layout.step_rows(caret, -((h - 1 - so) as isize)).0;
         }
-        // Don't leave empty rows below the end of the document. Every visible line takes at
-        // least one row, so without folds this can only happen when the last line is fewer
-        // than `h` lines below the top; skipping the walk otherwise keeps updates cheap in
-        // long documents.
-        if layout.last_line().saturating_sub(top.line) < h || !layout.hidden.is_empty() {
+        // A view that moves doesn't leave empty rows below the end of the document. Every
+        // visible line takes at least one row, so without folds this can only happen when
+        // the last line is fewer than `h` lines below the top; skipping the walk otherwise
+        // keeps updates cheap in long documents.
+        let moved = top != start || cause == Cause::Scrolled;
+        if moved && (layout.last_line().saturating_sub(top.line) < h || !layout.hidden.is_empty()) {
             let max_top = layout.step_rows(layout.end(), -(h as isize - 1)).0;
-            if top > max_top && max_top <= caret {
-                top = max_top;
+            // Following down, never back above where the view was: a caret pushed into the
+            // bottom margin at the end of the document stays there.
+            let floor = if top > start && cause != Cause::Scrolled {
+                max_top.max(start)
+            } else {
+                max_top
+            };
+            if top > floor && max_top <= caret {
+                top = floor;
             }
         }
     } else {

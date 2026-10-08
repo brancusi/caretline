@@ -857,6 +857,314 @@ fn clicking_below_the_text_goes_to_the_end() {
 }
 
 // ---------------------------------------------------------------------------------------
+// The view stays: it moves only when asked (a scroll, a page) or when the caret would
+// otherwise leave it. An edit that shortens the document leaves empty rows below the end;
+// a click keeps the text under the pointer, whatever the margin.
+
+use caretline::helix::Selection;
+use caretline::outline::markdown;
+use caretline::{
+    update_doc, By, Dir, Document, Follow, OutlineConfig, OutlineLayout, Scroll, State, View,
+    Viewport,
+};
+
+/// `l0`, `l1`, … `l{n-1}`, one per line.
+fn short_lines(n: usize) -> String {
+    (0..n)
+        .map(|i| format!("l{i}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn mv(dir: Dir, by: By) -> Msg {
+    Msg::Move {
+        dir,
+        by,
+        extend: false,
+    }
+}
+
+fn click(row: u16) -> Msg {
+    Msg::Click {
+        col: 1,
+        row,
+        extend: false,
+    }
+}
+
+fn line_of(s: &State) -> usize {
+    s.doc.text.char_to_line(s.caret())
+}
+
+/// The caret at the start of line `line`, the view's top at line `top`.
+fn place(s: &mut State, line: usize, top: usize) {
+    s.view.selection = Selection::point(s.doc.text.line_to_char(line));
+    s.view.scroll = Scroll {
+        line: top,
+        ..Scroll::default()
+    };
+}
+
+#[test]
+fn v01_an_edit_that_shortens_the_document_keeps_the_view() {
+    // Ten text rows, no margin, the caret at the end: the view shows lines 20 to 29.
+    let mut s = state_wh(&format!("{}▮", short_lines(30)), 20, 11);
+    s.view.config.scrolloff = 0;
+    assert_eq!(s.view.scroll.line, 20);
+    send(&mut s, (0..5).map(|_| Msg::InsertNewline));
+    assert_eq!((line_of(&s), s.view.scroll.line), (34, 25));
+    send(&mut s, (0..3).map(|_| mv(Dir::Backward, By::Line)));
+    assert_eq!((line_of(&s), s.view.scroll.line), (31, 25));
+    send(&mut s, [Msg::DeleteBackward]);
+    assert_eq!(
+        (line_of(&s), s.view.scroll.line),
+        (30, 25),
+        "an empty row below the end, as in VS Code and Sublime"
+    );
+    send(&mut s, (0..4).map(|_| Msg::DeleteBackward));
+    assert_eq!(
+        (line_of(&s), s.view.scroll.line),
+        (29, 25),
+        "nor does any further Backspace move it"
+    );
+    // A view moved to bring the caret into sight still keeps off empty rows.
+    send(
+        &mut s,
+        [
+            mv(Dir::Backward, By::DocStart),
+            mv(Dir::Forward, By::DocEnd),
+        ],
+    );
+    assert_eq!((line_of(&s), s.view.scroll.line), (32, 23));
+}
+
+#[test]
+fn v02_a_click_on_the_margin_rows_keeps_the_view() {
+    // Twenty text rows, a two-row margin, the view from line 40.
+    for (row, line) in [(0, 40), (1, 41), (18, 58), (19, 59)] {
+        let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+        place(&mut s, 50, 40);
+        send(&mut s, [click(row)]);
+        assert_eq!(
+            (line_of(&s), s.view.scroll.line),
+            (line, 40),
+            "a click on row {row}"
+        );
+    }
+    // A key after it scrolls as the margin says.
+    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+    place(&mut s, 50, 40);
+    send(&mut s, [click(0), mv(Dir::Backward, By::Line)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (39, 37));
+    place(&mut s, 50, 40);
+    send(&mut s, [click(19), mv(Dir::Forward, By::Line)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (60, 43));
+}
+
+#[test]
+fn v03_a_drag_double_click_or_click_in_a_free_view_keeps_the_view() {
+    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+    place(&mut s, 50, 40);
+    let drag = |row| Msg::Click {
+        col: 3,
+        row,
+        extend: true,
+    };
+    send(&mut s, [click(10), drag(19)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (59, 40));
+    send(&mut s, [drag(0)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (40, 40));
+    // Dragged past the bottom edge, the view follows the caret as it always has.
+    send(&mut s, [drag(20)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (60, 43));
+    assert_eq!(
+        s.view.selection.primary().anchor,
+        s.doc.text.line_to_char(50) + 1
+    );
+    // A double-click on the top row.
+    place(&mut s, 50, 40);
+    let pos = s.doc.text.line_to_char(41) + 2;
+    send(&mut s, [Msg::SelectWordAt { pos }]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (41, 40));
+    // A view scrolled with the wheel (the caret left behind) takes a click where it is.
+    send(&mut s, [Msg::ScrollView { rows: 30 }]);
+    assert_eq!(s.view.scroll.line, 70);
+    send(&mut s, [click(19)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (89, 70));
+}
+
+/// Lines of 24 chars, two rows each at width 20.
+fn wrapped_lines(n: usize) -> String {
+    (0..n)
+        .map(|i| format!("w{i:02} word word word word"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn v04_wrapped_rows_keep_the_view() {
+    // The view starts on the second row of line 20.
+    let mut s = state_wh(&format!("▮{}", wrapped_lines(60)), 20, 11);
+    assert_eq!(caretline::layout::Layout::new(&s).line_rows(20), 2);
+    for row in [0, 1, 8, 9] {
+        place(&mut s, 23, 20);
+        s.view.scroll.row = 1;
+        let top = s.view.scroll;
+        send(&mut s, [click(row)]);
+        assert_eq!(s.view.scroll, top, "a click on row {row}");
+        if row == 0 {
+            assert_eq!(line_of(&s), 20);
+        }
+    }
+    // An edit that shortens the document, at its end.
+    let mut s = state_wh(&format!("{}▮", wrapped_lines(15)), 20, 11);
+    s.view.config.scrolloff = 0;
+    send(&mut s, (0..3).map(|_| Msg::InsertNewline));
+    send(&mut s, [mv(Dir::Backward, By::Line)]);
+    let top = s.view.scroll;
+    assert_eq!(top.row, 1, "the view starts inside a wrapped line");
+    send(&mut s, [Msg::DeleteBackward]);
+    assert_eq!(s.view.scroll, top);
+}
+
+/// An outline: a folded list, then forty paragraphs (a blank row before each), one with a
+/// host's row after it, laid out in columns.
+fn outline(w: u16, h: u16) -> State {
+    let mut md = String::from("- parent\n  - child a\n  - child b\n\n");
+    for i in 0..40 {
+        md.push_str(&format!("Paragraph {i}\n\n"));
+    }
+    let mut s = markdown::load(
+        &md,
+        None,
+        Viewport {
+            width: w,
+            height: h,
+        },
+        OutlineConfig::default(),
+    );
+    s.view.config.status_bar = false;
+    let ids: Vec<_> = s
+        .doc
+        .blocks()
+        .unwrap()
+        .blocks
+        .iter()
+        .map(|b| b.id)
+        .collect();
+    let mut layout = OutlineLayout::default();
+    layout.extra_rows.insert(ids[30], 1);
+    s.view.layout = Some(layout);
+    send(&mut s, [Msg::Fold { id: ids[0] }]);
+    send(
+        &mut s,
+        [Msg::Resize {
+            width: w,
+            height: h,
+        }],
+    );
+    s
+}
+
+#[test]
+fn v05_an_outline_keeps_the_view() {
+    let mut s = outline(40, 20);
+    let line = |s: &State, needle: &str| {
+        let text = s.doc.text.to_string();
+        s.doc.text.char_to_line(text.find(needle).unwrap())
+    };
+    let (caret, top) = (line(&s, "Paragraph 25"), line(&s, "Paragraph 20"));
+    // Row 0 is Paragraph 20's blank row, 18 Paragraph 28's text (27 has a host's row).
+    for row in [0, 1, 18] {
+        place(&mut s, caret, top);
+        send(&mut s, [click(row)]);
+        assert_eq!(s.view.scroll.line, top, "a click on row {row}");
+    }
+    // Row 19 is the blank row before Paragraph 29, whose text is below the view: the caret
+    // goes there and the view follows it.
+    place(&mut s, caret, top);
+    send(&mut s, [click(19)]);
+    assert_eq!(line_of(&s), line(&s, "Paragraph 29"));
+    assert_eq!(s.view.scroll.line, line(&s, "Paragraph 21"));
+    // At the end, joining the last paragraph to the one before shortens the document.
+    send(
+        &mut s,
+        [
+            mv(Dir::Forward, By::DocEnd),
+            mv(Dir::Backward, By::LineStart),
+        ],
+    );
+    let top = s.view.scroll;
+    let rows = caretline::layout::Layout::new(&s).end();
+    send(&mut s, [Msg::DeleteBackward]);
+    assert_ne!(caretline::layout::Layout::new(&s).end(), rows);
+    assert_eq!(s.view.scroll, top);
+}
+
+#[test]
+fn v06_two_views_each_keep_their_own() {
+    let mut doc = Document::new(&short_lines(30), None);
+    let end = doc.text.len_chars();
+    let mut views = [0, 1].map(|_| {
+        let mut v = View::new(Viewport {
+            width: 20,
+            height: 11,
+        });
+        v.config.scrolloff = 0;
+        v.selection = Selection::point(end);
+        v
+    });
+    for i in 0..2 {
+        update_doc(
+            &mut doc,
+            &mut views,
+            i,
+            Msg::Resize {
+                width: 20,
+                height: 11,
+            },
+        );
+    }
+    let send1 = |doc: &mut Document, views: &mut [View], msg| update_doc(doc, views, 1, msg);
+    for _ in 0..5 {
+        send1(&mut doc, &mut views, Msg::InsertNewline);
+    }
+    for _ in 0..3 {
+        send1(&mut doc, &mut views, mv(Dir::Backward, By::Line));
+    }
+    assert_eq!(views[1].scroll.line, 25);
+    send1(&mut doc, &mut views, Msg::DeleteBackward);
+    assert_eq!(views[1].scroll.line, 25);
+    // Clicks through view 0 keep view 0, and leave view 1 alone.
+    let top0 = views[0].scroll;
+    for row in [0, 9] {
+        update_doc(&mut doc, &mut views, 0, click(row));
+        assert_eq!(views[0].scroll, top0, "a click on row {row}");
+    }
+    assert_eq!(views[1].scroll.line, 25);
+}
+
+#[test]
+fn v07_typewriter_centres_on_keys_not_on_clicks() {
+    // Twenty text rows, the caret's row at half: row 10.
+    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+    s.view.config.follow = Follow::Typewriter { percent: 50 };
+    place(&mut s, 50, 40);
+    send(&mut s, [click(0)]);
+    assert_eq!(
+        (line_of(&s), s.view.scroll.line),
+        (40, 40),
+        "the text stays under the pointer"
+    );
+    send(&mut s, [mv(Dir::Forward, By::Line)]);
+    assert_eq!(
+        (line_of(&s), s.view.scroll.line),
+        (41, 31),
+        "a key centres it"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
 // Status bar
 
 #[test]
