@@ -58,6 +58,8 @@ halves' fields side by side, the shape every earlier state has.
 | `focused` | view | Only a focused view draws its caret. Left out while true |
 | `free` | view | Scrolled freely (`scroll_view`): the view doesn't follow the caret until it moves. Left out while false |
 | `layout` | view | The [outline layout](structure.md#the-outline-layout). Left out when unset |
+| `ext` | view | The host's own values for this view, by key: any JSON, changed by `ext` messages through the host's [reducers](embedding.md#view-values-and-ext-reducers), never read by the engine. Left out when empty |
+| `cell_px` | view | One cell's size in device pixels, `{"w": 8, "h": 16}`, as the last `resize` that carried it said. Copied to every frame for a host that draws pixels; never read by the engine. Left out while unknown |
 
 Only `text` matters when a state is parsed: every other field is optional and gets what
 `State::new` would give (see [Rehydration](#rehydration)).
@@ -146,7 +148,10 @@ The view moves only when asked to or when the caret would otherwise leave it:
   above the view, up; on the last text row (or past it) with text below, down. The selection
   extends to the row brought in. Both edges behave the same, so a runtime only forwards the
   pointer's row. A runtime sends a `drag` per pointer move, so a pointer held still at the
-  edge doesn't keep scrolling (that would take a timer the engine doesn't have).
+  edge scrolls once: the engine has no timer. To keep scrolling, the runtime re-sends the
+  same `drag` on its frame ticks while the button is held on an edge row; each is an ordinary
+  message, so the trace records every row it scrolled
+  ([messages.md](messages.md#selecting-by-dragging)).
 
 ## Changes from elsewhere
 
@@ -221,6 +226,11 @@ sequenceDiagram
 The interactive `caretline` binary is exactly this loop
 ([`runtime.rs`](../crates/caretline-cli/src/runtime.rs)). Before each batch of messages
 from a terminal event, it sends a `Tick` with the wall clock.
+
+`view` is `render`: it lays out the view's rows, draws the text, the decorations and the status
+bar (`render_plain` stops there), then runs the host's [frame passes](embedding.md#frame-passes)
+over the frame in registration order (`render_skipping` leaves out the ones it names). Each pass
+reads only the document and the view, so a frame is still a function of the state.
 
 ## Why purity
 
@@ -385,7 +395,7 @@ map into caretline.
 | `Selection::map` | Undo and redo | When a history transaction has no selection, the current one is mapped through its changes |
 | `History` | `Document.history` | The revision tree. `commit_revision_at_timestamp` takes caller time; `amend_current_revision` (a caretline addition) folds a typing run into one revision; `rebase_over` (a caretline addition) transforms it over a change from elsewhere |
 | `graphemes` | Motion and deletes | `next_grapheme_boundary` and `prev_grapheme_boundary` keep every position on a boundary |
-| `DocumentFormatter`, `TextFormat` | `layout.rs` and `view.rs` | Soft wrap, tab stops and visual positions. Wrapping needs more than 10 columns. `resume_at_row` (a caretline addition) starts it inside a long line |
+| `DocumentFormatter`, `TextFormat` | `layout.rs` and `view.rs` | Soft wrap, tab stops and visual positions. Wrapping needs more than 10 columns. `resume_at_row` (a caretline addition) starts it inside a long line. caretline's copy never lets a wide grapheme (an emoji, CJK, a tab) overflow the wrap column: it starts the next row; only a grapheme wider than the whole column overflows, alone on its row |
 | `LineEnding` | `Config.line_ending` | Detected from the text on load. Enter inserts it and pasted text is normalized to it |
 
 What changed from upstream Helix is listed in
@@ -459,12 +469,17 @@ line out at its own column and width.
 ## The host
 
 A host extends the engine without changing it: named commands (`Msg::Command`), input rules
-(which take an editing message before the engine) and a decorator (what to draw beside each
-block), registered on a `Host` and set on the document (`Document::set_host`). Each is a pure
-function, so `update` stays pure and replay stays exact when the same host is registered. The
-host is not part of the state's value and never serialized. In the update loop, a command runs
-in place of the engine's handling of its message, as one transaction and one undo step; input
-rules run before the block rules. See [embedding.md](embedding.md#extending-the-engine).
+(which take an editing message before the engine), a decorator (what to draw beside each
+block), ext reducers for its per-view values (`Msg::Ext`, `View::ext`), frame passes (what to
+draw over each frame), catalog entries and protocol ops, registered on a `Host` and set on the
+document (`Document::set_host`). Each is a pure function, so `update` and `view` stay pure and
+replay stays exact when the same host is registered. The host is not part of the state's value
+and never serialized; the values its reducers keep in `View::ext` are. In the update loop, a
+command runs in place of the engine's handling of its message, as one transaction and one undo
+step; input rules run before the block rules; `Msg::Ext` runs its key's `apply` on the acting
+view; and after the message, each view holding a key whose reducer observes gets the message,
+its effects and its text changes. A host op becomes messages before any of this, so the trace
+holds only messages. See [embedding.md](embedding.md#extending-the-engine).
 
 ## What `update` does after every message
 
@@ -478,6 +493,7 @@ After handling any message, `update` always:
    scrolled freely and the caret hasn't moved since, or the caret was placed by the pointer
    inside the view; see [Documents and views](#documents-and-views)).
 
-`update_doc` then rebases every other view through the text changes.
+`update_doc` then rebases every other view through the text changes, and the host's ext
+observers run on each view whose `ext` holds their key, with the message's composed changes.
 
 So no runtime needs to fix up scrolling after a resize or an edit.

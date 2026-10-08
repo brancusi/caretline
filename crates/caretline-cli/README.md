@@ -36,7 +36,7 @@ The engine is an Elm architecture around Helix's editing core:
   position, the viewport size, the clipboard register, the undo history, the dirty flag, the
   file path and the config (tab width, soft wrap).
 - **`Msg`** is every input: key intents (`insert_text`, `move`, `undo`, …), `resize`, `click`,
-  `scroll`, `tick` (the clock) and results from the runtime (`saved`, `save_failed`).
+  `drag`, `scroll`, `tick` (the clock) and results from the runtime (`saved`, `save_failed`).
 - **`update(state, msg)`** is pure. It reads no clock (time arrives in `tick`), uses no
   randomness and does no I/O. It returns **effects** as values: `write_file`,
   `clipboard_set`, `quit`. The binary performs them and feeds results back as messages.

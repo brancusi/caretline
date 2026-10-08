@@ -72,7 +72,7 @@ draw(view(&state));                        // a grid of cells`,
   },
   {
     id: 'extend', title: 'Your meaning, on top',
-    body: 'caretline edits text and never decides what it means. Your app adds that: named commands that run as one undo step and replay, input rules, a JSON payload on each block, and decorations drawn in a block’s hang. All pure, so state, traces and the protocol keep working.',
+    body: 'caretline edits text and never decides what it means. Your app adds that: named commands that run as one undo step and replay, input rules, a JSON payload on each block and on each view, decorations drawn in a block’s hang, passes that draw over the frame, and protocol ops of its own. All pure, so state, traces and the protocol keep working.',
     lang: 'rust',
     code: `let host = Host::new()
     .command("cycle", cycle)          // Msg::Command { name: "cycle", .. }
@@ -215,7 +215,7 @@ assert_eq!(view(&state).cursor, Some((2, 0)));          // the caret is after "h
         <div class="section__head">
           <span class="label">scope</span>
           <h2>A text-editing engine. Nothing else.</h2>
-          <p>caretline edits text and knows its shape. What your text means belongs in your app, added through host commands, input rules, block payloads and decorations. <a href="/docs/embedding/#extending-the-engine">Extending the engine</a></p>
+          <p>caretline edits text and knows its shape. What your text means belongs in your app, added through host commands, input rules, block and view payloads, decorations and frame passes. <a href="/docs/embedding/#extending-the-engine">Extending the engine</a></p>
         </div>
         <div class="table-wrap">
           <table class="cmp">

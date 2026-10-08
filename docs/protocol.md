@@ -39,7 +39,7 @@ serde_json features the program embedding the engine turns on.
 
 | Op | Request fields | Result |
 |---|---|---|
-| `hello` | | `proto` (1), `version`, `rev`, `ops`, `commands` (the host's registered [commands](embedding.md#host-commands)) |
+| `hello` | | `proto` (1), `version`, `rev`, `ops` (the protocol's, then the host's), `commands` (the host's registered [commands](embedding.md#host-commands)), and when the host has any, `host_ops` (its [ops](#host-ops-and-catalog-entries)) and `catalog` (its catalog entries) |
 | `state.get` | optional `history` (default true) | `rev`, `state` (the full [State](architecture.md#what-state-holds) JSON). With `history: false`, the state [without its undo history](#the-state-without-its-history) |
 | `history.get` | | `rev` and what `state.get` with `history: false` leaves out: `history`, `saved_revision`, `saving`, `run`, and `mark_log` and `undo_floor` when set |
 | `state.set` | `state` (only `text` needed, see [Minimal state](#minimal-state)), optional `if_rev` | `rev`. Replaces the state (repaired as on load) and starts a new trace segment |
@@ -55,8 +55,9 @@ serde_json features the program embedding the engine turns on.
 | `view.open` | optional `open` (a [View](architecture.md#documents-and-views): every field optional; a copy of view 0 when absent), `w`, `h` | `rev`, `view`: the new view's id. See [Views](#views) |
 | `view.close` | `view` | `rev`, `closed` |
 | `view.list` | | `rev`, `views`: `{view, w, h, caret, read_only}` for each, view 0 first |
-| `commands.list` | | `commands`: the [command catalog](keys.md) (`id`, `name`, `description`, `category`, …), and `host_commands`: the host's command names |
-| `keymap.get` | optional `outline` (default: the document's kind) | `outline`, `bindings`: the default keymap, `{keys, command, platform}` each |
+| `commands.list` | | `commands`: the [command catalog](keys.md) (`id`, `name`, `description`, `category`, …), then the host's catalog entries with `"source": "host"`; and `host_commands`: the host's command names |
+| `keymap.get` | optional `outline` (default: the document's kind) | `outline`, `bindings`: the default keymap, `{keys, command, platform}` each, then one `{keys, command, platform: "any", source: "host"}` per key of a host catalog entry |
+| a host's op | whatever the host reads, optional `view`, `if_rev`, `now_ms` | `rev`, `view`, `msgs`, `effects`, or `rev` and the host's own fields. See [Host ops and catalog entries](#host-ops-and-catalog-entries) |
 
 `render` and `state.get` take an optional `view` (default 0, the state's own). `msgs`, `keys`
 and `text.set` take one too; without it they go through view 0 in `caretline serve`, and
@@ -212,7 +213,7 @@ views, fitted to the new document.
 |---|---|
 | `text` (default) | `frame`: the rows as text, trailing spaces trimmed, as `--snapshot` prints |
 | `ansi` | `frame`: the rows with ANSI styling, as `--snapshot --format ansi` prints |
-| `cells` | `rows`: one `{text, spans, info}` per row. `spans` lists runs of non-text roles as `[x, len, role]`; `info` says what the row shows (below) |
+| `cells` | `rows`: one `{text, spans, flags, info}` per row. `spans` lists runs of non-text roles as `[x, len, role]`; `flags`, runs of cells a host's frame pass flagged as `[x, len, "dim" \| "ring" \| "dim ring"]`; `info` says what the row shows (below). `spans` and `flags` are left out when empty |
 
 ```json
 {"id":9,"result":{"rev":3,"w":30,"h":4,"format":"cells","cursor":[11,0],"rows":[
@@ -224,13 +225,51 @@ views, fitted to the new document.
 
 Roles are `text`, `selection`, `status`, `status_accent` and `hang` (a block's hang, with the
 [outline layout](structure.md#the-outline-layout)), plus any role name a host's
-[decoration](structure.md#decorations) uses.
+[decoration](structure.md#decorations) or [frame pass](embedding.md#frame-passes) uses.
+
+`flags` ask the client to draw cells dimmed (`dim`) or ringed (`ring`): a host's frame pass
+sets them (a spotlight dims what is around it, a ring marks what a hint points at), and the
+engine never does. A row with none has no `flags`, so clients that don't know the field see
+nothing new:
+
+```json
+{"text":"The caret is at the end of this line.  ","flags":[[0,4,"dim"],[4,5,"ring"]]}
+```
 
 A row's `info` is `{"kind":"text","block":3,"line":4,"row":0,"first":true,"last":true,"chars":{"start":40,"end":52},"x":6}`
 (a row of text: its block, line, visual row, whether it is the block's first or last row, the
 chars it shows and the column its text starts), `{"kind":"gap","before":3}` (a block's blank
 row), `{"kind":"extra","block":3,"index":0}` (a host's row after a block), `{"kind":"past"}`
 or `{"kind":"status"}`.
+
+### Host ops and catalog entries
+
+An app that embeds the engine (a [`Host`](embedding.md#catalog-entries-and-protocol-ops))
+can add ops of its own and describe its commands. `caretline serve` and the editor register
+none; a `Session` with such a host answers them like the protocol's own.
+
+- **Ops.** A request whose `op` isn't one of the protocol's goes to the host's op of that
+  name, which reads the whole request and turns it into [messages](messages.md). They are
+  applied through the request's `view` (0 when absent), after `if_rev` and `now_ms` as for
+  `msgs`, and recorded in the trace, so a replay needs only the messages. The reply is `{rev,
+  view, msgs, effects}`, or `rev` and fields the host builds from the view after them. A refusal
+  is an `op_failed` error, and an op neither side knows is still `unknown_op`. `hello` adds the
+  host's ops to `ops` and lists them again in `host_ops`.
+- **Catalog entries.** `hello`'s `catalog`, `commands.list` (after the engine's commands) and
+  `keymap.get` (one binding per key) list the host's commands with `"source": "host"`: `id`,
+  `name`, `description`, `category`, `keys` (key-script notation) and `msg`, the message that
+  runs it.
+
+With a host that has a `shout` command in its catalog and an `app.greet` op:
+
+```json
+{"id":1,"op":"app.greet","who":"Ana"}
+{"id":1,"result":{"rev":1,"view":0,"msgs":[{"msg":"insert_text","text":"hello Ana"}],"effects":[]}}
+{"id":2,"op":"app.greet"}
+{"id":2,"error":{"kind":"op_failed","message":"app.greet needs who"}}
+{"id":3,"op":"hello"}
+{"id":3,"result":{"proto":1,"version":"0.3.0","rev":1,"ops":["hello",…,"keymap.get","app.greet"],"commands":["shout"],"host_ops":["app.greet"],"catalog":[{"id":"app.shout","name":"Shout","description":"Upper-case the caret's line","category":"App","keys":["<f2>"],"msg":{"msg":"command","name":"shout"},"source":"host"}]}}
+```
 
 ## Revisions
 
@@ -244,7 +283,7 @@ Use `rev` two ways.
 
 - **Did something change?** Compare the `rev` you last saw. The difference is the number of
   changes you missed, and `trace.get` with `since_rev` has them.
-- **Write only if nothing changed:** pass `if_rev` on `state.set`, `text.set`, `msgs` or `keys`. If the
+- **Write only if nothing changed:** pass `if_rev` on `state.set`, `text.set`, `msgs`, `keys` or a host's op. If the
   rev differs, nothing is applied and you get a `stale` error. Re-read, then decide.
 
 ```console
@@ -333,7 +372,8 @@ A subscriber also gets events for its own requests, after the response.
 |---|---|
 | `parse` | The line isn't JSON. No `id` comes back |
 | `bad_request` | Not an object, no `op`, a missing field (`state.set needs a state`), or a zero size |
-| `unknown_op` | The op isn't one of `hello`'s `ops` |
+| `unknown_op` | The op isn't one of `hello`'s `ops` (the protocol's and the host's) |
+| `op_failed` | A host's op refused the request (its message says why). Nothing was applied |
 | `bad_keys` | The key script doesn't parse (`unknown key <oops>`) |
 | `stale` | `if_rev` didn't match the current rev |
 | `trimmed` | `trace.get` asked for a `since_rev` older than the kept trace |

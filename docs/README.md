@@ -69,7 +69,7 @@ commands.
 | Area | Status | Notes |
 |---|---|---|
 | Grapheme-correct editing | Yes | Carets never land inside an emoji, a ZWJ sequence, a flag or a combining accent |
-| Wide characters | Yes | CJK and emoji take two cells, using Helix's width table (`unicode-width` 0.1.12) |
+| Wide characters | Yes | CJK and emoji take two cells, using Helix's width table (`unicode-width` 0.1.12). Soft wrap never splits one or lets it overflow the column: it starts the next row |
 | Selections | Yes | Anchor and head per range, macOS text-field collapse rules |
 | Multi-range selections | Engine only | `update` edits every range. No key creates extra ranges yet, but a state or a `Msg` sequence can |
 | Transactions with position mapping | Yes | Every edit is a Helix `Transaction`; selections map through its changes |

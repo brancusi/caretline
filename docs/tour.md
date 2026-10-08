@@ -2,9 +2,10 @@
 
 > **New and not released.** [`caretline-tour`](../crates/caretline-tour) is in the repository
 > but not yet on crates.io, and its API may change before its first release. It is built on
-> [`caretline-layers`](layers.md), also unreleased. The engine hooks that would keep a
-> walkthrough inside a caretline state and its traces are designed but not built
-> ([Not built yet](#not-built-yet)); until then the host keeps the walkthrough's state itself.
+> [`caretline-layers`](layers.md), also unreleased. caretline now has the engine hooks that
+> would keep a walkthrough inside its state and traces (view values and `Msg::Ext`), but this
+> crate doesn't use them yet ([Not built yet](#not-built-yet)): the host keeps the
+> walkthrough's state itself.
 
 A **walkthrough** is a list of steps that shows someone round a host's screen. Each step does
 three things:
@@ -516,8 +517,9 @@ An explicit start (`tour.start`, a menu item) is never refused for having been s
 
 ## Not built yet
 
-These are designed but not built ([design, sections 6 and 12.4](../docs/design/layers.md)):
-the walkthrough's state in a caretline view (`ext["tour"]`) and a message for its ops, so an
-editor trace records and replays it with the engine's own; capture routing; the host's
+These are designed but not built ([design, sections 6, 12.4 and 12.5](../docs/design/layers.md)):
+the walkthrough's state in a caretline view (`ext["tour"]`) with an ext reducer for its ops
+(the engine's `View::ext` and `Msg::Ext`, which exist now), so an editor trace records and
+replays it with the engine's own; capture routing; the host's
 catalog for `command`; and `caretline demo guide`. Until then the host keeps `TourState`
 beside its own state, as on this page.

@@ -33,14 +33,15 @@ log. There's no terminal crate and no ratatui.
 |---|---|---|
 | `State`, `Config`, `Viewport`, `Scroll` | `caretline` | Hold and configure the editor: one document and one view |
 | `Document`, `View`, `ViewConfig`, `Follow`, `ExternalUndo` | `caretline` | A document and its views, separately: see [Several views](#several-views-of-one-document) |
+| `CellPx` | `caretline` | One cell's size in device pixels, carried by `Msg::Resize` into `View::cell_px` and `Frame::cell_px`: see [Render](#render) |
 | `update_doc` | `caretline` | Apply a message through one of several views |
 | `update_with_changes`, `update_doc_with_changes`, `ChangeSet`, `Assoc` | `caretline` | Apply a message and get its text changes, to map positions of your own: see [Map your own positions](#map-your-own-positions-through-each-message) |
 | `ExtChange` | `caretline` | A change from elsewhere, for `Msg::External`: see [messages.md](messages.md#changes-from-elsewhere) |
-| `Msg`, `Dir`, `By`, `Effect` | `caretline` | Say what happened; get work back |
+| `Msg`, `Dir`, `By`, `Effect` | `caretline` | Say what happened; get work back. Both are `#[non_exhaustive]`: a `match` ends with a `_` arm |
 | `update`, `replay` | `caretline` | Apply one message; fold many |
 | `update::selection_text` | `caretline::update` | Get the selected text, as a copy would |
-| `view`, `Frame` | `caretline` | Render to cells |
-| `view::{render, hit, Cell, Role, RowInfo, Hit, display_width}` | `caretline::view` | Render any view; read cells and rows; style them by meaning; hit-test a cell |
+| `view`, `Frame`, `Cell`, `CellFlags`, `Region`, `Role` | `caretline` | Render to cells; draw over a frame with its writers (`set`, `restyle`, `flag`, `role`, `region_at`) |
+| `view::{render, render_plain, render_skipping, hit, locate, Locate, RowInfo, Hit, display_width}` | `caretline::view` | Render any view, with or without the host's frame passes; read cells and rows; style them by meaning; hit-test a cell; find a char position's cell |
 | `OutlineLayout`, `views::hidden_lines` | `caretline` | The [outline layout](structure.md#the-outline-layout) and folds |
 | `keymap`, `Key`, `KeyCode`, `Mods` | `caretline` | Map keys to messages |
 | `parse_keys`, `script_to_msgs`, `keymap::ScriptItem` | `caretline` | Use the `--keys` notation |
@@ -53,8 +54,11 @@ log. There's no terminal crate and no ratatui.
 | `OutlineConfig`, `Outline`, `BlockInfo`, `Kind`, `NewBlock`, `outline::{markdown, derive, content, Hang}` | `caretline`, `::outline` | Block documents: [structure](structure.md) and the [Markdown grammar](markdown.md) over the same buffer |
 | `outline_keymap`, `keymap_for`, `script_to_msgs_for` | `caretline` | A block document's keys |
 | `Host`, `Ctx`, `Edit`, `MarkOp`, `Decoration`, `Deco` | `caretline` | Your app's [extensions](embedding.md#extending-the-engine): commands, input rules, decorations |
+| `ExtFns`, `ExtOut`, `Observed` | `caretline` | [View values and their reducers](embedding.md#view-values-and-ext-reducers): `Host::ext`, `Msg::Ext`, `View::ext` |
+| `HostCommandInfo`, `OpFns` | `caretline` | [Catalog entries and protocol ops](embedding.md#catalog-entries-and-protocol-ops): `Host::catalog`, `Host::op` |
+| `Host::frame_pass` | `caretline` | [Frame passes](embedding.md#frame-passes): draw over every rendered frame |
 | `commands::{commands, command, command_msg, default_keymap, command_for, Binding, CommandInfo, Category, Platform}` | `caretline::commands` | The [command catalog and the default keymap](keys.md) |
-| `trace::replay_trace_with` | `caretline::trace` | Replay a trace that runs host commands |
+| `trace::replay_trace_with` | `caretline::trace` | Replay a trace that runs host commands or ext reducers |
 
 ## Create a state
 
@@ -269,13 +273,58 @@ print!("{}", frame.to_text());                     // or frame.to_ansi()
 | `Status` | The status bar |
 | `StatusAccent` | The dirty marker `[+]` in the status bar |
 | `Hang` | A block's hang, with the [outline layout](structure.md#the-outline-layout) |
-| `Named(i)` | A role a host named in a [decoration](structure.md#decorations): `frame.role_name(role)` |
+| `Named(i)` | A role a host named in a [decoration](structure.md#decorations) or a frame pass: `frame.role_name(role)` |
 
 The engine never picks colours. Your renderer maps roles to styles. Each cell also has the
-`char_idx` of the document char it shows (none for blank cells and the status bar), and the
-frame has one `RowInfo` per row: what the row shows (a line's text with its char range, a
-block's blank row, a host's row, past the end, the status bar). `view::hit(doc, view, col,
-row)` says what a cell means for a click.
+`char_idx` of the document char it shows (none for blank cells and the status bar) and
+`flags` (`CellFlags`: `DIM`, `RING`, set only by a host's [frame pass](embedding.md#frame-passes),
+for your renderer to draw dimmed or ringed), and the frame has one `RowInfo` per row: what the
+row shows (a line's text with its char range, a block's blank row, a host's row, past the end,
+the status bar). `view::hit(doc, view, col, row)` says what a cell means for a click, and
+`frame.region_at(x, y)` which region a frame pass put there.
+
+`view(&state)` and `view::render(doc, view)` run the host's frame passes;
+`view::render_plain(doc, view)` draws without them, and `view::render_skipping(doc, view,
+&["name"])` without the named ones. `Frame::new(width, height)` makes a blank frame, and its
+writers (`set`, `restyle`, `flag`, `role`) never split a wide grapheme.
+
+### Where a position is on screen
+
+`view::locate(doc, view, pos)` is the inverse of `hit`, through the same layout: the cell a
+char position is drawn at, `Locate::At { x, y }` (where `hit` finds the position again), or
+which way it lies: `Above`, `Below`, `Left` or `Right` (a line that doesn't wrap, scrolled
+sideways) or `Folded { block }` (the outermost folded block hiding it). Use it to put
+something of yours next to the text: a hint, a remote caret, a badge. Its JSON is
+`{"kind": "at", "x": 1, "y": 1}`.
+
+```rust
+use caretline::view::{hit, locate, Hit, Locate};
+use caretline::{State, Viewport};
+
+let state = State::new("one\ntwo\nthree\n", None, Viewport { width: 20, height: 3 });
+// Two text rows and the status bar: "one" and "two" show, "three" is below.
+assert_eq!(locate(&state.doc, &state.view, 5), Locate::At { x: 1, y: 1 });
+assert_eq!(hit(&state.doc, &state.view, 1, 1), Hit::Text { pos: 5 });
+assert_eq!(locate(&state.doc, &state.view, 9), Locate::Below);
+```
+
+### The cell's size in pixels
+
+A host that draws pixels over the cells (an image, a soft shadow) needs the cell's size.
+It arrives as a message, so whatever is drawn from it is a function of the state and replays
+the same on any machine: `Msg::Resize`'s optional `cell_px` sets `View::cell_px`, and every
+frame carries it as `Frame::cell_px`. A resize without it keeps the view's;
+`Msg::resize(width, height)` builds one.
+
+```rust
+use caretline::{update, view, CellPx, Msg, State, Viewport};
+
+let mut state = State::new("hi", None, Viewport { width: 80, height: 24 });
+update(&mut state, Msg::Resize { width: 80, height: 24, cell_px: Some(CellPx::new(8, 16)) });
+assert_eq!(view(&state).cell_px, Some(CellPx { w: 8, h: 16 }));
+update(&mut state, Msg::resize(100, 30)); // no pixels: keeps the view's
+assert_eq!(state.view.cell_px, Some(CellPx::new(8, 16)));
+```
 
 ## Handle effects
 

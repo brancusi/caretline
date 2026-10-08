@@ -41,6 +41,7 @@ See the [Quickstart](quickstart.md) for what the installer does and what the dem
 | `… --frame-clock FPS` | Editor: start with a frame clock (a `frame` message FPS times a second). Off by default |
 | `… --stats` | Editor: print the repaint count and mean repaint time on exit |
 | `… --trace-limit LINES` | Editor and `serve`: bound the in-memory trace `trace.get` serves (default 100,000 lines; see [protocol.md](protocol.md#traces)) |
+| `caretline serve … --exit-with-parent` | Exit (removing the socket) once the process that started the server is gone, even if it was killed: for servers a test or a supervisor starts (see [protocol.md](protocol.md#transports)) |
 
 A run is **headless** when any of `--snapshot`, `--dump-state`, `--msgs`, `--keys` or
 `--replay` is given. Headless runs never perform effects: no file is written and the

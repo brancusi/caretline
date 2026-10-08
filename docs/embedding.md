@@ -158,7 +158,7 @@ fn main() -> std::io::Result<()> {
                 None => continue,
             },
             Event::Paste(text) => Msg::Paste { text: Some(text) },
-            Event::Resize(width, height) => Msg::Resize { width, height },
+            Event::Resize(width, height) => Msg::resize(width, height),
             _ => continue,
         };
         update(&mut state, Msg::Tick { now_ms: now_ms() });
@@ -184,12 +184,20 @@ traces), read the `caretline` binary's
 For your own renderer:
 
 - The frame's size is the state's viewport. When your area changes size, send
-  `Msg::Resize`; `update` keeps the caret in view.
+  `Msg::resize(width, height)`; `update` keeps the caret in view. If you draw pixels over the
+  cells, send the cell's size in device pixels too, `Msg::Resize { width, height, cell_px:
+  Some(CellPx::new(w, h)) }`: it is kept in `View::cell_px` and copied to `Frame::cell_px`, so
+  what you draw from it replays like the rest of the state. A resize without it keeps the
+  view's.
 - The last row of every frame is caretline's status bar (file name, `[+]`, messages,
   `line:col`). There's no option to turn it off yet; if you don't want it, give the state one
   extra row and don't copy the last one.
 - Mouse cells map directly: send `Msg::Click { col, row, extend }` with coordinates relative
-  to your area, and `Msg::Scroll { rows }` for the wheel.
+  to your area, `Msg::Drag { col, row }` while the button is held and the pointer moves, and
+  `Msg::Scroll { rows }` for the wheel. A drag on the first or last text row scrolls one row;
+  to keep scrolling while the pointer is held still there, re-send the same `Drag` on your
+  frame ticks ([messages.md](messages.md#selecting-by-dragging)).
+- `Msg` is `#[non_exhaustive]`, as `Effect` is: a `match` on a message ends with a `_` arm.
 
 ### Panels: several independent editors
 
@@ -224,7 +232,7 @@ impl Panels {
         let rects = Layout::horizontal((0..n).map(|_| Constraint::Ratio(1, n))).split(area);
         for (state, r) in self.editors.iter_mut().zip(rects.iter()) {
             if (state.view.viewport.width, state.view.viewport.height) != (r.width, r.height) {
-                update(state, Msg::Resize { width: r.width, height: r.height });
+                update(state, Msg::resize(r.width, r.height));
             }
         }
         rects.to_vec()
@@ -302,7 +310,7 @@ assert_eq!(field.doc.text.to_string(), "12.5");
 ## Extending the engine
 
 caretline edits text and knows its shape (blocks, depth, markers), never its meaning. What a
-line *means* in your app (a task, a ticket, a status) you add through four extension points,
+line *means* in your app (a task, a ticket, a status) you add through these extension points,
 registered on a `Host` and set on the document:
 
 | Point | Register | Runs |
@@ -311,6 +319,10 @@ registered on a `Host` and set on the document:
 | [Input rules](#input-rules) | `Host::input_rule(name, f)` | Before the engine handles an editing message; the first to return an edit takes it |
 | [Mark payloads](#mark-payloads) | (data, not code) | Carried with each block's mark |
 | [Decorations](#decorations) | `Host::decorator(f)` | When a view with an outline layout is drawn or hit-tested |
+| [View values and ext reducers](#view-values-and-ext-reducers) | `Host::ext(key, ExtFns::new(apply).with_observe(observe))` | `apply` for `Msg::Ext { key, op }` on the acting view; `observe` after every message, on each view holding the key |
+| [Frame passes](#frame-passes) | `Host::frame_pass(name, f)` | At the end of every `view::render`, drawing over the frame |
+| [Catalog entries](#catalog-entries-and-protocol-ops) | `Host::catalog(entries)` | Listed by the protocol's `hello`, `commands.list` and `keymap.get` |
+| [Protocol ops](#catalog-entries-and-protocol-ops) | `Host::op(name, OpFns::new(to_msgs))` | A protocol request whose `op` is `name`: turned into messages, applied and traced |
 
 ```rust
 use caretline::{Edit, Host, State};
@@ -334,9 +346,10 @@ same document, view and arguments. That is what keeps the engine's promises:
   other host and is never serialized); a state read from JSON has none until you `set_host`.
 - **Replay** stays exact. A command is a message, so traces record it; replay a trace that uses
   commands with `trace::replay_trace_with(input, &host)`, registering the same functions.
-- **The protocol** keeps working: `msgs` can send `{"msg":"command","name":…,"args":…}`,
-  `hello` and `commands.list` name the registered commands, and `state.set` keeps the session's
-  host.
+- **The protocol** keeps working: `msgs` can send `{"msg":"command","name":…,"args":…}` and
+  `{"msg":"ext","key":…,"op":…}`, `hello` and `commands.list` name the registered commands,
+  catalog entries and ops, a host's op is answered like the protocol's own, and `state.set`
+  keeps the session's host.
 
 ### Host commands
 
@@ -378,6 +391,153 @@ A decorator returns, for each block, a `Decoration { hang, gutter }` of `Deco { 
 caretline draws the text in the slot; the cells carry your role's name
 (`Frame::role_name`); `view::hit` reports the `id` under a click. See
 [structure.md](structure.md#decorations).
+
+### View values and ext reducers
+
+A host that keeps state of its own per view (what it shows over the text, a step it is at, a
+bookmark) keeps it in `View::ext`, a map from a key to any JSON value: the view-level twin of a
+mark's payload. The engine never reads it. It is serialized with the state (`"ext"`, left out
+when empty), so it goes through `state.get` and `state.set`, `view.open`, traces and replay.
+
+Change it with messages, so the trace records why: `Host::ext(key, fns)` registers the key's
+reducer, and `Msg::Ext { key, op }` runs its `apply(ctx, current, op)` on the acting view. An
+optional `observe(ctx, value, &Observed)` runs after **every** message on each view whose
+`ext` holds the key, with the message, its effects, whether it went through this view
+(`acting`) and its text changes (`changes`, the `ChangeSet` `update_with_changes` returns):
+map positions through edits, expire on the clock, follow what the person does. Both return
+an `ExtOut`: a new value (`ExtOut::value(v)`) or none (`ExtOut::remove()`), `Effect::Host`s
+(`with_effect`), a status line (`with_status`) and a frame clock (`with_frame_clock`).
+
+```rust
+use caretline::{update, Assoc, ExtFns, ExtOut, Host, Msg, State, Viewport};
+use serde_json::json;
+
+// A bookmark per view: `{"set": pos}` sets it, `{"clear": true}` removes it, and it follows
+// the text through every edit, from any view or from elsewhere.
+let host = Host::new().ext(
+    "bookmark",
+    ExtFns::new(|_ctx, _current, op| match op.get("set") {
+        Some(pos) => Ok(ExtOut::value(pos.clone())),
+        None if op.get("clear").is_some() => Ok(ExtOut::remove()),
+        None => Err("bookmark: set or clear".into()),
+    })
+    .with_observe(|_ctx, value, seen| {
+        let pos = value.as_u64()? as usize;
+        let changes = seen.changes?; // None: the text didn't change
+        Some(ExtOut::value(json!(changes.map_pos(pos, Assoc::After))))
+    }),
+);
+let mut state = State::new("hello world\n", None, Viewport { width: 40, height: 5 });
+state.doc.set_host(host);
+update(&mut state, Msg::Ext { key: "bookmark".into(), op: json!({ "set": 6 }) });
+update(&mut state, Msg::InsertText { text: ">> ".into() }); // at 0, before the bookmark
+assert_eq!(state.view.ext["bookmark"], json!(9));
+```
+
+`Msg::Ext` is passive (it doesn't end a typing run or clear the status) and a read-only view
+takes it: it never edits text. With no reducer for the key, or when `apply` refuses, nothing
+changes and the status says why. A view the protocol opens for a client starts with no
+values: they are the person's view's. Replay a trace that holds `ext` messages with
+`trace::replay_trace_with(input, &host)`.
+
+### Frame passes
+
+`Host::frame_pass(name, f)` draws over every frame `view::render` makes (and so `view`,
+snapshots and the protocol's `render`), after the text, decorations and status bar, in the
+order the passes were registered; registering a name again replaces that pass in its place.
+`view::render_plain(doc, view)` draws without any pass, and `view::render_skipping(doc, view,
+&["name"])` without the named ones (a runtime that draws that one another way, in pixels).
+With none registered, rendering costs the same.
+
+A pass writes through `Frame`'s grapheme-safe writers: `set(x, y, grapheme, role)` (returns
+the cells it took; writing over either half of a wide grapheme blanks the other half, and a
+wide grapheme that doesn't fit is drawn as a space), `restyle(x, y, role)`, `flag(x, y,
+CellFlags)` and `role(name)` (a style name of yours, as decorations use). It can add clickable
+`Region { x, y, w, h, id }`s to `frame.regions`; `frame.region_at(x, y)` finds the last one
+added at a cell. `CellFlags::DIM` and `CellFlags::RING` ask your renderer to draw a cell dimmed
+or ringed: the engine never sets or reads them (`to_ansi` draws them faint and underlined). To
+place something at a char position, `view::locate(doc, view, pos)` says which cell it is on,
+or which way it lies off screen.
+
+```rust
+use caretline::view::{render_plain, Region};
+use caretline::{view, CellFlags, Host, State, Viewport};
+use serde_json::json;
+
+// A badge in the top-right corner, from the view's own value, clickable; row 1 dimmed.
+let host = Host::new().frame_pass("badge", |ctx, frame| {
+    let Some(text) = ctx.view.ext.get("badge").and_then(|v| v.as_str()) else { return };
+    let role = frame.role("badge");
+    let x0 = frame.width.saturating_sub(text.chars().count() as u16);
+    let mut x = x0;
+    for c in text.chars() {
+        x += frame.set(x, 0, &c.to_string(), role);
+    }
+    frame.regions.push(Region { x: x0, y: 0, w: x - x0, h: 1, id: "badge".into() });
+    for x in 0..frame.width {
+        frame.flag(x, 1, CellFlags::DIM);
+    }
+});
+let mut state = State::new("one\ntwo\n", None, Viewport { width: 20, height: 4 });
+state.doc.set_host(host);
+state.view.ext.insert("badge".into(), json!("2 new"));
+
+let frame = view(&state);
+assert_eq!(frame.role_name(frame.cell(19, 0).role), "badge");
+assert_eq!(frame.region_at(17, 0).map(|r| r.id.as_str()), Some("badge"));
+assert!(frame.cell(0, 1).flags.contains(CellFlags::DIM));
+assert!(render_plain(&state.doc, &state.view).regions.is_empty()); // no passes
+```
+
+A pass is pure like every extension: draw from the document, the view (its `ext` values, its
+`cell_px`) and nothing else, and snapshots and replays draw the same.
+
+### Catalog entries and protocol ops
+
+`Host::catalog` describes your commands the way the engine's [catalog](keys.md) describes its
+own, so a help screen or an agent finds them: `HostCommandInfo::new(id, name, msg)` with
+`with_description`, `with_category` and `with_keys` (key-script notation). The protocol lists
+them with `"source": "host"`: in `hello`'s `catalog`, after the engine's commands in
+`commands.list`, and one binding per key in `keymap.get`. Binding the keys is still your app's
+job.
+
+`Host::op(name, OpFns::new(to_msgs))` answers a protocol op of your own. A request whose `op`
+isn't one of the protocol's goes to it: `to_msgs(ctx, request)` turns the whole request into
+messages, which are applied through the request's `view` (0 when absent; `if_rev` and
+`now_ms` work as for `msgs`) and recorded in the trace, so the op replays as its messages.
+The reply is `{rev, view, msgs, effects}`, or, with `.with_reply(|ctx, frame, request| …)`,
+`rev` and the fields it returns. An `Err` from `to_msgs` is an `op_failed` error. `hello` lists
+the op in `ops` and `host_ops`.
+
+```rust
+use caretline::{Edit, Host, HostCommandInfo, Msg, OpFns, Session, State, Viewport};
+use serde_json::Value;
+
+let host = Host::new()
+    .command("shout", |ctx, _| {
+        let line = ctx.text().char_to_line(ctx.caret());
+        let (a, b) = (ctx.text().line_to_char(line), ctx.text().line_to_char(line + 1) - 1);
+        Ok(Edit { changes: vec![(a, b, ctx.text().slice(a..b).to_string().to_uppercase())], ..Edit::default() })
+    })
+    // Listed by `hello`, `commands.list` and `keymap.get`, with `"source": "host"`.
+    .catalog(vec![HostCommandInfo::new("app.shout", "Shout", Msg::Command { name: "shout".into(), args: Value::Null })
+        .with_description("Upper-case the caret's line")
+        .with_category("App")
+        .with_keys(vec!["<f2>".into()])])
+    // A protocol op of the app's own: the request becomes messages, applied and traced.
+    .op("app.greet", OpFns::new(|_ctx, req| {
+        let who = req.get("who").and_then(Value::as_str).ok_or("app.greet needs who")?;
+        Ok(vec![Msg::InsertText { text: format!("hello {who}") }])
+    }));
+let mut state = State::new("", None, Viewport { width: 30, height: 4 });
+state.doc.set_host(host);
+let mut session = Session::new(state);
+let reply = session.handle(r#"{"id":1,"op":"app.greet","who":"Ana"}"#, None);
+// {"id":1,"result":{"rev":1,"view":0,"msgs":[{"msg":"insert_text","text":"hello Ana"}],"effects":[]}}
+assert_eq!(session.state().doc.text.to_string(), "hello Ana");
+```
+
+See [protocol.md](protocol.md#host-ops-and-catalog-entries) for the wire format.
 
 ## Case study: tasks in thc
 

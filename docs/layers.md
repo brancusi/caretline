@@ -3,9 +3,11 @@
 > **New and not released.** [`caretline-layers`](../crates/caretline-layers) is in the
 > repository but not yet on crates.io, and its API may change before its first release. This
 > page covers what is built (steps 1a and 1b of the [design](../docs/design/layers.md):
-> placement, views, and the kitty plumbing for pixels in Ghostty); the next steps (engine hooks,
-> in-frame mode, protocol and MCP tools in caretline itself) are listed in the design's
-> section 9. Walkthroughs built on it are [`caretline-tour`](tour.md).
+> placement, views, and the kitty plumbing for pixels in Ghostty). The engine hooks it will
+> build on are in caretline (view values, frame passes, `view::locate`, host ops: see
+> [embedding.md](embedding.md#extending-the-engine)); the next steps (in-frame mode through an
+> `install(host)` adapter, protocol and MCP tools) are listed in the design's sections 9 and
+> 12.5. Walkthroughs built on it are [`caretline-tour`](tour.md).
 
 `caretline-layers` puts things **over** a host's screen: a hint box beside a word, an arrow
 to a table row, a ring round a block, a spotlight that dims everything else. It decides where
@@ -602,8 +604,9 @@ stays in cells inside tmux or screen, where the graphics never reach the termina
 `frame`. Get it from the probe, and when the window's pixel size (`TIOCGWINSZ`) stops matching
 cells × cell size, the font changed: write `probe::cell_size_request()` and take the new
 `CellSize` reply. Treat it like any other input that reaches your renderer, so the same inputs
-give the same bytes. (caretline will carry it in `Msg::Resize` itself in step 1c; until then
-the CLI keeps it in its runtime.)
+give the same bytes. caretline carries it in the state: send it as `Msg::Resize`'s `cell_px`
+and read it back from `View::cell_px` (or `Frame::cell_px`), as the CLI does, and a replay
+draws the same pixels.
 
 `caretline demo layers` is a working host: its renderer is
 [`src/layers.rs`](../crates/caretline-cli/src/layers.rs) (tiny-skia rasters for a panel, arrow,
@@ -614,9 +617,10 @@ frame nothing.
 
 ## Not built yet
 
-These are designed but not built ([design, section 9](../docs/design/layers.md)): the engine
-hooks for drawing layers inside a caretline frame (in-frame mode), the cell size as an editor
-message, `hint.*` and `layer.*` in caretline's own protocol, and MCP tools for agents.
+These are designed but not built ([design, sections 9 and 12.5](../docs/design/layers.md)):
+in-frame mode (an `install(host)` adapter that keeps the layers in a view's `ext` values and
+draws them in a frame pass, on the engine hooks caretline now has), `hint.*` and `layer.*` in
+caretline's own protocol, and MCP tools for agents.
 Until then a host uses the screen-level mode on this page. The editor (`caretline FILE`) and
 `caretline-mcp` show no layers; `caretline demo layers` is the one place the CLI does.
 Walkthroughs are built, as a reducer whose state the host keeps: see [tour.md](tour.md).

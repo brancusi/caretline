@@ -57,10 +57,10 @@ the hosts and never change the layer model.
 |---|---|---|---|
 | E1 | **View payloads.** `View.ext: BTreeMap<String, serde_json::Value>`, serialized, left out when empty, never read by the engine. The view-level twin of mark payloads | Layers and walkthrough progress are per view (a hint is on the person's screen, not the agent's), must be in the state for traces and replay, and must not be a typed engine concept | ~40 LOC |
 | E2 | **`Msg::Ext { key, op }` and ext reducers.** `Host::ext(key, ExtFns { apply, observe })`. `apply(ctx, current, op) -> ExtOut` runs for `Msg::Ext`. `observe(ctx, current, &Observed { msg, effects, changes }) -> Option<ExtOut>` runs after every message for each view whose `ext` holds that key, with the message's composed `ChangeSet` (any view's edit, undo, `external`). `ExtOut { value, effects, status, frame_clock }`. `Msg::Ext` is passive (doesn't end a typing run or clear the status) and is accepted on read-only views | Applying layer and walkthrough ops; mapping text anchors through edits; "advance when" over messages; expiry on `tick`; pulses on the frame clock | ~180 LOC |
-| E3 | **Frame passes and cell flags.** `Host::frame_pass(name, f: Fn(&Ctx, &mut Frame))`, run in registration order at the end of every `render`. `view::render_plain` skips them all; `view::render_skipping(doc, view, host, &[name])` skips named ones. `Frame` gains public, grapheme-safe writers: `set(x, y, grapheme, role) -> u16` (overwriting either half of a wide grapheme blanks the other half; a wide grapheme that doesn't fit is drawn as a space), `restyle(x, y, role)`, `flag(x, y, CellFlags)`, `role(name) -> Role` (today's private `named`). `Cell` gains `flags: CellFlags` (one byte: `DIM`, `RING`). `Frame.regions: Vec<Region { x, y, w, h, id }>` and `Frame::region_at(x, y)` | The compositing hook for in-frame renderers, two generic marks a renderer may set, and the hit map. With no pass registered or nothing to draw, the cost is one map lookup | ~180 LOC |
+| E3 | **Frame passes and cell flags.** `Host::frame_pass(name, f: Fn(&Ctx, &mut Frame))`, run in registration order at the end of every `render`. `view::render_plain` skips them all; `view::render_skipping(doc, view, &[name])` skips named ones (the host is the document's). `Frame` gains public, grapheme-safe writers: `set(x, y, grapheme, role) -> u16` (overwriting either half of a wide grapheme blanks the other half; a wide grapheme that doesn't fit is drawn as a space), `restyle(x, y, role)`, `flag(x, y, CellFlags)`, `role(name) -> Role` (today's private `named`). `Cell` gains `flags: CellFlags` (one byte: `DIM`, `RING`). `Frame.regions: Vec<Region { x, y, w, h, id }>` and `Frame::region_at(x, y)` | The compositing hook for in-frame renderers, two generic marks a renderer may set, and the hit map. With no pass registered or nothing to draw, the cost is one map lookup | ~180 LOC |
 | E4 | **`view::locate(doc, view, pos) -> Locate`.** The inverse of `hit`: `At { x, y }`, `Above`, `Below`, `Left`, `Right` (no-wrap scroll) or `Folded { block }` | Anchor resolution for text positions, marks and blocks, including which way an off-screen anchor lies. It is hit-testing, squarely in scope | ~80 LOC |
 | E5 | **Host catalog entries and ops.** `Host::catalog(Vec<HostCommandInfo { id, name, description, category: String, keys: Vec<String>, msg: Msg }>)`; `Host::op(name, OpFns { to_msgs, reply })`. `hello`, `commands.list` and `keymap.get` list them with `source: "host"` | Layer commands appear in help (F1) and in agents' `commands`; `layer.push` and friends are routed without the protocol knowing them | ~150 LOC |
-| E6 | **Cell pixel size as a message.** `Msg::Resize { width, height, cell_px: Option<CellPx> }` (`CellPx { w, h }`, device pixels; `#[serde(default)]`, left out when `None`). It is stored in `Viewport.cell_px` and copied to `Frame.cell_px` | Pixel output becomes a pure function of the state, so pixel goldens replay across machines (4). Old traces replay unchanged | ~60 LOC, a golden and a CHANGELOG line (breaking for code that builds `Msg::Resize`) |
+| E6 | **Cell pixel size as a message.** `Msg::Resize { width, height, cell_px: Option<CellPx> }` (`CellPx { w, h }`, device pixels; `#[serde(default)]`, left out when `None`). It is stored in `View.cell_px` (as built; the sketch had `Viewport`) and copied to `Frame.cell_px` | Pixel output becomes a pure function of the state, so pixel goldens replay across machines (4). Old traces replay unchanged | ~60 LOC, a golden and a CHANGELOG line (breaking for code that builds `Msg::Resize`) |
 
 That's about 690 LOC in the engine, all generic. Text, marks, selections, undo and `view::hit`
 are untouched.
@@ -789,19 +789,20 @@ described, deterministically. The CLI's choice is its own (decision 6).
 
 ```rust
 // state.rs
-pub struct View { /* … */ #[serde(default, skip_serializing_if = "BTreeMap::is_empty")] pub ext: BTreeMap<String, Value>, /* … */ }
+pub struct View { /* … */ #[serde(default, skip_serializing_if = "BTreeMap::is_empty")] pub ext: BTreeMap<String, Value>,
+                  #[serde(default, skip_serializing_if = "Option::is_none")] pub cell_px: Option<CellPx>, /* … */ }   // as built: in View, not Viewport
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub struct CellPx { pub w: u16, pub h: u16 }   // device pixels
-pub struct Viewport { pub width: u16, pub height: u16, #[serde(default, skip_serializing_if = "Option::is_none")] pub cell_px: Option<CellPx> }
 
 // msg.rs
+#[non_exhaustive]   // as built
 pub enum Msg { /* … */
     Resize { width: u16, height: u16, #[serde(default, skip_serializing_if = "Option::is_none")] cell_px: Option<CellPx> },   // E6
     Ext { key: String, #[serde(default)] op: Value } }   // passive
 
 // host.rs
 pub struct ExtOut { pub value: Option<Value>, pub effects: Vec<(String, Value)>, pub status: Option<String>, pub frame_clock: Option<u16> }
-pub struct Observed<'a> { pub msg: &'a Msg, pub effects: &'a [Effect], pub changes: Option<&'a ChangeSet> }
+pub struct Observed<'a> { pub msg: &'a Msg, pub effects: &'a [Effect], pub changes: Option<&'a ChangeSet>, pub acting: bool }
 pub type ExtApplyFn   = dyn Fn(&Ctx, Option<&Value>, &Value) -> Result<ExtOut, String> + Send + Sync;
 pub type ExtObserveFn = dyn Fn(&Ctx, &Value, &Observed) -> Option<ExtOut> + Send + Sync;
 pub type FramePassFn  = dyn Fn(&Ctx, &mut Frame) + Send + Sync;
@@ -809,7 +810,7 @@ pub struct HostCommandInfo { pub id: String, pub name: String, pub description: 
 pub struct OpFns { pub to_msgs: Arc<dyn Fn(&Ctx, &Value) -> Result<Vec<Msg>, String> + Send + Sync>,
                    pub reply: Option<Arc<dyn Fn(&Ctx, &Frame, &Value) -> Value + Send + Sync>> }
 impl Host {
-    pub fn ext(self, key: &str, apply: impl Fn(..) + 'static, observe: Option<impl Fn(..) + 'static>) -> Host;
+    pub fn ext(self, key: &str, fns: ExtFns) -> Host;   // ExtFns::new(apply).with_observe(observe)
     pub fn frame_pass(self, name: &str, f: impl Fn(&Ctx, &mut Frame) + Send + Sync + 'static) -> Host;
     pub fn catalog(self, entries: Vec<HostCommandInfo>) -> Host;
     pub fn op(self, name: &str, fns: OpFns) -> Host;
@@ -832,7 +833,7 @@ pub struct Frame { /* … */ pub regions: Vec<Region>, pub cell_px: Option<CellP
 pub enum Locate { At { x: u16, y: u16 }, Above, Below, Left, Right, Folded { block: MarkId } }
 pub fn locate(doc: &Document, view: &View, pos: usize) -> Locate;
 pub fn render_plain(doc: &Document, view: &View) -> Frame;                     // without frame passes
-pub fn render_skipping(doc: &Document, view: &View, host: &Host, skip: &[&str]) -> Frame;
+pub fn render_skipping(doc: &Document, view: &View, skip: &[&str]) -> Frame;   // the document's host
 ```
 
 **The `cells` wire format** gains an optional `flags` field per row, runs of `[x, len, "dim"]`,
@@ -966,7 +967,7 @@ pub fn install(host: Host, built_in: Vec<Tour>) -> Host;   // ext "tour", layer 
 |---|---|---|
 | **1a · `caretline-layers` core** (in progress) | For hosts that draw their own screen, with no engine change: `Layer`, `Layers`, `LayerOp`, `apply` and `observe` as plain functions; content kinds and the `Renderer` trait (`measure`); built-in anchors and `AnchorMap`; ChangeSet mapping and off-screen state; placement (sides, flip, shift, clamp, collision, protected rects, the sliver rule, strip fallback); routes; holes; regions and `hit`; agent limits; placements as JSON; scope test; placement goldens and a bench | ~1,600 LOC: **1.5 weeks** |
 | **1b · Kitty plumbing and the CLI's renderers** (built, 12.2; `cli.guide`, pulses and the `t=t` probe deferred) | The spike is done (3.6). The `kitty` feature: shape-key ids, transmit, re-place with crops, place-then-delete swaps, deletes, `t=d` and `t=t`, probe bytes and reply parsing, byte goldens. In `caretline-cli`: the `hint` and `cli.guide` renderers in cells (rungs A–C) and pixels (`tiny-skia`: panel, curve, ring, veil, pulse variants), the theme, the probe, `CARETLINE_LAYERS`, PNG goldens | Plumbing ~600 LOC; renderers ~1,100 LOC: **2 weeks** |
-| **1c · Engine hooks and the guide** | E1–E6 with tests: `View.ext`, `Msg::Ext`, frame passes, `CellFlags` and the `cells` wire field, `locate`, catalog and ops, and **`cell_px` in `Msg::Resize`** (a golden and a CHANGELOG line); the scope words; in-frame mode (`install`, the frame pass, `FrameResolver`, region hits); `caretline-tour` (TOML, predicates, branching, the reducer, the layer source, seen-state effects); `caretline-cli`: `caretline demo guide` (the 11 `## N ·` sections of `tour.md` as `demo/guide.toml`), `demo tour` kept as an alias, the hand-written `tour_hint` match deleted, F-keys, `guides.json`, the runtime's input parser turning terminal replies into messages; replay goldens, pixels included | Engine ~700 LOC (4 days); mode A ~400 LOC (2 days); tour ~800 LOC (4 days); CLI ~500 LOC (3 days); goldens (2 days): **about 3 weeks** |
+| **1c · Engine hooks and the guide** (the hooks are built, 12.5; mode A is next) | E1–E6 with tests: `View.ext`, `Msg::Ext`, frame passes, `CellFlags` and the `cells` wire field, `locate`, catalog and ops, and **`cell_px` in `Msg::Resize`** (a golden and a CHANGELOG line); the scope words; in-frame mode (`install`, the frame pass, `FrameResolver`, region hits); `caretline-tour` (TOML, predicates, branching, the reducer, the layer source, seen-state effects); `caretline-cli`: `caretline demo guide` (the 11 `## N ·` sections of `tour.md` as `demo/guide.toml`), `demo tour` kept as an alias, the hand-written `tour_hint` match deleted, F-keys, `guides.json`, the runtime's input parser turning terminal replies into messages; replay goldens, pixels included | Engine ~700 LOC (4 days); mode A ~400 LOC (2 days); tour ~800 LOC (4 days); CLI ~500 LOC (3 days); goldens (2 days): **about 3 weeks** |
 | **2 · Agents** | `layer_kinds` in `hello`; `hint.*`, `layer.*` and `tour.*` routed through `Host::op`; `render` with `format: "layers"`; agent limits end to end; the MCP tools, `--no-hints`; `docs/protocol.md`, `docs/mcp.md`; `caretline demo agent` shows a hint as it edits | ~700 LOC: **1 week** |
 | **3 · Host adoption** | Hosts register their `hint` renderer and their own kinds; host anchor kinds and `LayerSource` for mode B hosts; a "Layers and guides" section in `docs/embedding.md`; the site playground runs the guide with cell renderers; tier-2 manifests; a shared renderer crate only if a second host wants the CLI's look | **1–2 weeks**, then separate designs |
 
@@ -1540,6 +1541,44 @@ single-layer shorthand; `narration`; the opaque `host`). Where it differs from 6
 - **Approximations in `Editor`.** A block runs from its mark to the next. A started tour's
   text anchors aren't mapped through edits (the pushed layers are, by `caretline-layers`'
   `observe`); block anchors need nothing.
-- **Still to come** with the engine hooks: `ext["tour"]` in the view (E1), `Msg::Ext` and an
-  ext reducer so a trace records tour ops (E2), the host catalog for `command` (E5;
+- **Still to come** on the engine hooks (built since, 12.5): `ext["tour"]` in the view (E1),
+  `Msg::Ext` and an ext reducer so a trace records tour ops (E2), the host catalog for `command` (E5;
   `Editor` matches the engine's catalog), capture routing, and `caretline demo guide`.
+
+### 12.5 The engine hooks (E1–E6)
+
+Built in the engine in phase 1c, part 1, with `tests/hooks.rs`; documented for hosts in
+[embedding.md](../embedding.md#extending-the-engine), [messages.md](../messages.md) and
+[protocol.md](../protocol.md#host-ops-and-catalog-entries). Where they differ from 1.3 and 8.1:
+
+- **`cell_px` lives in `View`, not `Viewport`** (E6). `Viewport` stays `{width, height}`, so
+  every struct literal of it still builds; the view keeps `cell_px` (`"cell_px"` at the state's
+  top level, left out while unknown) and every frame copies it. A resize without `cell_px`
+  keeps the view's, so a runtime that learns the pixels later sends them then.
+  `Msg::resize(width, height)` builds a resize without them.
+- **`render_skipping(doc, view, skip)`** takes no `host`: the passes are the document's host's,
+  as for every other extension.
+- **`Msg` is `#[non_exhaustive]`** (breaking, once): a `match` outside the crate ends with a
+  `_` arm, so `Msg::Ext`, `Msg::Drag` and later kinds aren't breaking. The variants' fields are
+  not non-exhaustive (hosts build them with struct literals); a field added to a variant is
+  still breaking and takes `#[serde(default)]`.
+- **`Host::ext(key, ExtFns)`**, with `ExtFns::new(apply).with_observe(observe)`, instead of two
+  closure arguments. `Observed` also says whether the message went through the observed view
+  (`acting`). `ExtOut`, `ExtFns`, `OpFns` and `Observed` are `#[non_exhaustive]` with
+  constructors and `with_` setters.
+- **Host ops** (E5) run their messages through the request's `view` (0 when absent), after
+  `if_rev` and `now_ms` as for `msgs`, and record them, so a trace holds only messages. A
+  refusal is the new `op_failed` error; `hello` lists the host's ops in `ops` and `host_ops` and
+  its catalog in `catalog`. A request never reaches a host op named like one of the protocol's.
+- **A view the protocol opens for a client starts with no `ext` values**: they are the
+  person's view's (what it shows them).
+- **Cost.** With no frame pass registered rendering costs the same (100×40: 143.7 µs before,
+  143.9 µs after); with no observer, `update` composes no changes it wasn't asked for.
+
+**Next: mode A in `caretline-layers`.** The hooks are generic and nothing uses them in a host
+yet. The next step is `caretline-layers`' `install(host)` adapter (in-frame mode, 2.5 and 7.1):
+the layer set in `View::ext["layers"]` with a reducer that applies `LayerOp`s and maps anchors
+through each message's changes, a frame pass that draws the `hint` kind in cells,
+`FrameResolver` over `view::locate`, region hits through `Frame::region_at`, and the `layer.*`
+and `hint.*` ops through `Host::op`. Then `caretline-tour` keeps `TourState` in
+`View::ext["tour"]` the same way (12.4), and the CLI's editor and `demo guide` adopt both.

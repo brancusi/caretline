@@ -19,6 +19,11 @@ Variants without fields are just the tag:
 A message file is one message per line (blank lines and `//` comments are skipped), or a
 single JSON array.
 
+In Rust, `Msg` is `#[non_exhaustive]`, as `Effect` is: new kinds of message can come in any
+release, so a `match` on a message ends with a `_` arm. Its variants are built with struct
+literals (`Msg::Click { col, row, extend }`); `Msg::resize(width, height)` builds a resize
+without naming its pixel field.
+
 ## Messages
 
 ### Editing
@@ -60,6 +65,33 @@ paragraphs is one space. Motion by a line, a visual row or a page goes to the st
 | `SelectAll` | `{"msg":"select_all"}` | Selects the whole document |
 | `Collapse` | `{"msg":"collapse"}` | Collapses every range to its caret |
 
+#### Selecting by dragging
+
+A runtime sends `click` when the button goes down (with `extend` for a shift-click) and a
+`drag` for each move while it is held. A drag on the first or last text row scrolls the view
+one row toward the text beyond it and extends the selection to the row it brought in, so
+dragging past an edge selects on. Both edges behave the same; the runtime only forwards the
+pointer's cell (a row past the last text row counts as the last).
+
+The engine has no timer, so a pointer **held still** on an edge scrolls once. To keep
+scrolling, as editors do, the runtime re-sends the same `drag` on its own frame ticks while
+the button is held on an edge row: each one scrolls one more row and extends one more row.
+The pace is the runtime's (its frame clock, or a faster one the further out the pointer is),
+and each tick is an ordinary message, so the trace records every step and a replay scrolls
+exactly as far:
+
+```json
+{"msg":"click","col":3,"row":1}
+{"msg":"drag","col":3,"row":4}
+{"msg":"drag","col":3,"row":4}
+{"msg":"drag","col":3,"row":4}
+```
+
+Here the view is 6 rows (5 of text) over a long document: the three drags on row 4 scroll it
+three rows, and the selection runs from the click to the row now at the bottom. Stop when the
+button is released or the pointer leaves the edge row; at the end of the text the drags only
+extend.
+
 `dir` is `backward` or `forward`. `by` is one of:
 
 | `by` | Moves to |
@@ -97,7 +129,7 @@ the last row to the end, as in a macOS text field.
 | `Saved` | `{"msg":"saved"}` | The runtime finished a save: marks that revision as saved |
 | `SaveFailed { err }` | `{"msg":"save_failed","err":"disk full"}` | The runtime couldn't save: shows the error |
 | `Quit` | `{"msg":"quit"}` | Returns `quit`. With unsaved changes, the first quit only warns and a second one quits |
-| `Resize { width, height }` | `{"msg":"resize","width":80,"height":24}` | Sets the viewport (clamped to at least 1 × 1) |
+| `Resize { width, height, cell_px }` | `{"msg":"resize","width":80,"height":24}` or `{"msg":"resize","width":80,"height":24,"cell_px":{"w":8,"h":16}}` | Sets the viewport (clamped to at least 1 × 1). `cell_px`, optional, is one cell's size in device pixels: kept in the view (`cell_px`) and copied to every frame, for a host that draws pixels over the cells. A resize without it keeps the view's. `Msg::resize(width, height)` builds one without it |
 | `Tick { now_ms }` | `{"msg":"tick","now_ms":1000}` | Reports the time. Undo grouping uses it |
 | `ShowStatus { text }` | `{"msg":"show_status","text":"hi"}` | Shows a one-line message in the status bar (the first line of `text`) |
 | `Frame { now_ms }` | `{"msg":"frame","now_ms":1008}` | A display frame from the runtime's frame clock. Advances the clock as `tick` does; animation state advances from it |
@@ -130,6 +162,7 @@ everything but `kind` and `text` is optional (`tag`: a bullet's [tag](markdown.m
 | Msg | JSON | Does |
 |---|---|---|
 | `Command { name, args }` | `{"msg":"command","name":"shout","args":{"times":2}}` | Runs the host's command `name` (registered with `Host::command`) as one transaction and one undo step. An unknown name changes nothing and says so. See [embedding.md](embedding.md#host-commands) |
+| `Ext { key, op }` | `{"msg":"ext","key":"bookmark","op":{"set":6}}` | Applies `op` to the acting view's host value under `key` (`View::ext`, `"ext"` in the state's JSON) through the reducer the host registered with `Host::ext`. It never edits text: passive, and taken by a read-only view. With no reducer for the key, or when the reducer refuses, nothing changes and the status says why. `op` may be left out (`null`). See [embedding.md](embedding.md#view-values-and-ext-reducers) |
 
 ### Views and folds
 
@@ -174,7 +207,7 @@ takes it too.
 A change that names a missing block is skipped with a `notice` effect. See
 [architecture.md](architecture.md#changes-from-elsewhere) for the history transform.
 
-`tick`, `frame`, `frame_clock`, `resize`, `saved`, `save_failed`, `show_status` and `external` are **passive**. They
+`tick`, `frame`, `frame_clock`, `resize`, `saved`, `save_failed`, `show_status`, `external` and `ext` are **passive**. They
 don't clear the status message, don't end a typing run and don't disarm a pending quit.
 
 ## Effects

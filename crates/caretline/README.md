@@ -10,7 +10,8 @@ terminal I/O and no ratatui.
 selections, undo and redo, generic structure (marks with payloads, blocks, folds, block
 operations), views, changes from elsewhere, rendering the editing surface, and state, messages,
 replay and the protocol. What your text *means* (tasks, statuses, anything) belongs in your app,
-added through host commands, input rules, mark payloads and decorations
+added through host commands, input rules, mark and view payloads, decorations, frame passes
+and protocol ops
 ([Extending the engine](../../docs/embedding.md#extending-the-engine)).
 
 `Session` wraps a state with a revision counter and the trace of everything applied, and
