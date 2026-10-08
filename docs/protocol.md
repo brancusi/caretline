@@ -174,6 +174,9 @@ last edit joins the same undo step. So that a client's typing groups by real tim
   each request's messages (only forward, and only when the clock has moved). The tick is an
   ordinary message: it is in the result's `msgs`, in events and in the trace, so replay stays
   exact.
+- A tick never moves the view (see [Which messages move the
+  view](messages.md#which-messages-move-the-view)). After a `state.set` whose selection is
+  off screen, send a `resize` (the current size will do) to bring the caret into view.
 - `caretline serve --no-clock` turns that off, for fully deterministic sessions. `Session`
   in process never ticks on its own (`Session::handle_at` takes a clock).
 

@@ -69,7 +69,7 @@ option on); caretline turns it on when the terminal supports it and works withou
 | Copy / cut / paste | `⌘C` `⌘X` `⌘V`, `Ctrl-C` `Ctrl-X` `Ctrl-V` (and the terminal's own paste) |
 | Undo / redo | `⌘Z` `⇧⌘Z`, `Ctrl-Z` `Ctrl-Shift-Z` `Ctrl-Y` `Ctrl-R` |
 | Save / quit | `⌘S` `⌘Q`, `Ctrl-S` `Ctrl-Q` (quit twice to discard unsaved changes) |
-| Mouse | click places the caret, Shift-click and drag extend, the wheel scrolls (`--no-mouse` turns this off) |
+| Mouse | click places the caret, Shift-click and drag extend, the wheel scrolls; a drag held on the first or last text row keeps scrolling (`--no-mouse` turns this off) |
 
 The rules follow a macOS text field: a motion without Shift collapses a selection to its edge
 instead of moving from the caret (`←` goes to the start, `→` to the end, `↑` and `↓` start

@@ -41,7 +41,12 @@ You own the loop. Each turn:
 
 1. Turn your input into a `Msg`. For keys, convert to `caretline::Key` and call
    `keymap`; for paste, resize and mouse events, build the message directly.
-2. Send `Msg::Tick { now_ms }` with the wall clock, so typing groups into undo steps.
+2. Send `Msg::Tick { now_ms }` with the wall clock, so typing groups into undo steps. A tick
+   never moves the view, so it doesn't undo where a click or a drag left it, and it doesn't
+   settle the view either: after you replace the state or set a view's selection, scroll or
+   size yourself, call `caretline::layout::ensure_caret_visible(&mut state)` (or send
+   `Msg::resize`) to bring the caret into view
+   ([messages.md](messages.md#which-messages-move-the-view)).
 3. Call `update` and perform the effects it returns.
 4. Call `view` and copy the cells to your screen. Put your cursor at `frame.cursor`.
 
@@ -195,8 +200,9 @@ For your own renderer:
 - Mouse cells map directly: send `Msg::Click { col, row, extend }` with coordinates relative
   to your area, `Msg::Drag { col, row }` while the button is held and the pointer moves, and
   `Msg::Scroll { rows }` for the wheel. A drag on the first or last text row scrolls one row;
-  to keep scrolling while the pointer is held still there, re-send the same `Drag` on your
-  frame ticks ([messages.md](messages.md#selecting-by-dragging)).
+  to keep scrolling while the pointer is held still there, re-send the same `Drag` on a timer
+  of yours (the `caretline` editor uses about 50 ms) until the button is released, the pointer
+  leaves the edge or a drag no longer scrolls ([messages.md](messages.md#selecting-by-dragging)).
 - `Msg` is `#[non_exhaustive]`, as `Effect` is: a `match` on a message ends with a `_` arm.
 
 ### Panels: several independent editors

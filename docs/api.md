@@ -158,6 +158,15 @@ assert_eq!(state.doc.text.to_string(), "hello there");
 Send `Msg::Tick { now_ms }` with real time before user input if you want typing grouped into
 undo steps the way a person expects ([architecture.md](architecture.md#undo-grouping-worked-through)).
 
+A tick never moves the view. The engine sorts every message by how it may move the view
+(an internal `Msg::view_motion()`, an exhaustive match over the variants): keys and edits,
+`Scroll`, `ScrollView`, `Resize` and folds follow the caret; a host's `Edit`, `Command` and
+`InsertBlocks` follow only when they moved a caret or changed the text; `Click`, `Drag`,
+`SelectWordAt` and `SelectBlock` keep the view while the caret is in it; `Tick`, `Frame`,
+`FrameClock`, `Ext`, `ShowStatus`, `Saved`, `SaveFailed`, `External`, `Copy`, `Save` and
+`Quit` leave it where it is. The table is in
+[messages.md](messages.md#which-messages-move-the-view).
+
 ### Map your own positions through each message
 
 A host that keeps char positions of its own (an anchor for a hint, a bookmark, a remote
@@ -231,10 +240,12 @@ for r in state.view.selection.iter() {
 ### Set the selection yourself
 
 Replace `state.view.selection` with a Helix `Selection`, then call `sanitize` to snap it to
-grapheme boundaries and the text's length:
+grapheme boundaries and the text's length, and `layout::ensure_caret_visible` to bring the
+primary caret into view (nothing else will: a `Tick` never moves the view):
 
 ```rust
 use caretline::helix::{Range, Selection, SmallVec};
+use caretline::layout::ensure_caret_visible;
 use caretline::{update, Msg, State, Viewport};
 
 let mut state = State::new("a-b-c", None, Viewport { width: 40, height: 5 });
@@ -242,6 +253,7 @@ let mut state = State::new("a-b-c", None, Viewport { width: 40, height: 5 });
 let ranges: SmallVec<[Range; 1]> = [Range::point(1), Range::point(3)].into_iter().collect();
 state.view.selection = Selection::new(ranges, 1);
 state.sanitize();
+ensure_caret_visible(&mut state);
 update(&mut state, Msg::InsertText { text: "!".into() });
 assert_eq!(state.doc.text.to_string(), "a!-b!-c");
 assert_eq!(state.view.selection.len(), 2);
@@ -424,6 +436,12 @@ assert_eq!((replayed, count), (live, 2));
 `State::from_json` repairs hand-edited states (see
 [architecture.md](architecture.md#rehydration)). `to_json` is pretty-printed; use
 `serde_json::to_string(&state)` for one line.
+
+A restored state keeps the scroll it was saved with. If you restore into a different
+viewport, or change the selection, scroll or viewport of a state yourself (`state.set` over
+the protocol does the same), call `layout::ensure_caret_visible(&mut state)` or send
+`Msg::resize(width, height)` to bring the caret into view: no passive message (`Tick`,
+`Frame`, `Ext`, …) will.
 
 Deserializing goes through `state::StateInput`, where every field is optional, so a minimal
 state works:

@@ -21,7 +21,7 @@ See the [Quickstart](quickstart.md) for what the installer does and what the dem
 | `caretline demo [tour\|scenes\|agent\|layers]` | Built-in demos, no files needed: see the [Quickstart](quickstart.md) and [Layers over the tour](#layers-over-the-tour). `--snapshot WxH` prints a demo's first frame; `demo agent --headless` runs the agent against a headless editor and prints a JSON report |
 | `caretline [FILE]` | Edit FILE interactively (created on first save) |
 | `caretline FILE --trace T.jsonl` | Edit, recording the session to a trace |
-| `caretline FILE --no-mouse` | Edit without capturing the mouse |
+| `caretline FILE --no-mouse` | Edit without capturing the mouse (by default: click, Shift-click, drag, and a drag held on an edge row keeps scrolling, see [messages.md](messages.md#selecting-by-dragging)) |
 | `caretline --new-state FILE [--size WxH]` | Print an initial state for FILE as JSON |
 | `caretline --state S.json` | Edit a saved state interactively |
 | `caretline --state S.json --keys SCRIPT …` | Apply a key script, headless |

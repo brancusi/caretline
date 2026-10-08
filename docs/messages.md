@@ -74,11 +74,10 @@ dragging past an edge selects on. Both edges behave the same; the runtime only f
 pointer's cell (a row past the last text row counts as the last).
 
 The engine has no timer, so a pointer **held still** on an edge scrolls once. To keep
-scrolling, as editors do, the runtime re-sends the same `drag` on its own frame ticks while
+scrolling, as editors do, the runtime re-sends the same `drag` on a timer of its own while
 the button is held on an edge row: each one scrolls one more row and extends one more row.
-The pace is the runtime's (its frame clock, or a faster one the further out the pointer is),
-and each tick is an ordinary message, so the trace records every step and a replay scrolls
-exactly as far:
+The pace is the runtime's, and each repeat is an ordinary message, so the trace records every
+step and a replay scrolls exactly as far:
 
 ```json
 {"msg":"click","col":3,"row":1}
@@ -90,7 +89,13 @@ exactly as far:
 Here the view is 6 rows (5 of text) over a long document: the three drags on row 4 scroll it
 three rows, and the selection runs from the click to the row now at the bottom. Stop when the
 button is released or the pointer leaves the edge row; at the end of the text the drags only
-extend.
+extend. A `tick` between the repeats is harmless: it never moves the view (see
+[Which messages move the view](#which-messages-move-the-view)).
+
+The `caretline` editor does this: while the button is down and the last drag scrolled the
+view from an edge row, it re-sends that `drag` about every 50 ms (faster when the pointer is
+past the last text row, on the status bar). It stops on release, when the pointer moves off
+the edge, or when a drag no longer scrolls (the view reached the end of the text).
 
 `dir` is `backward` or `forward`. `by` is one of:
 
@@ -209,6 +214,23 @@ A change that names a missing block is skipped with a `notice` effect. See
 
 `tick`, `frame`, `frame_clock`, `resize`, `saved`, `save_failed`, `show_status`, `external` and `ext` are **passive**. They
 don't clear the status message, don't end a typing run and don't disarm a pending quit.
+
+### Which messages move the view
+
+After every message the engine decides whether the view may follow the primary caret. Each
+message falls in one class (the match is exhaustive, so a new message has to choose one):
+
+| The view | Messages |
+|---|---|
+| **Follows** the caret by the view's policy, `scrolloff` included | Every key that moves the caret or edits (`insert_text`, `insert_newline`, the `delete_*` messages, `kill_line`, `move`, `select_all`, `collapse`, `cut`, `paste`, `paste_plain`, `undo`, `redo`, `soft_break`, `indent`, `outdent`, `move_block`), `scroll`, `scroll_view`, `resize`, `fold`, `unfold`, `toggle_fold` |
+| **Follows only if** the message moved a caret or changed the text | `edit`, `command`, `insert_blocks` (a host's) |
+| **Stays while the caret is in it** (the caret was placed at a screen position) | `click`, `drag`, `select_word_at`, `select_block` |
+| **Never moves** | `tick`, `frame`, `frame_clock`, `ext`, `show_status`, `saved`, `save_failed`, `copy`, `save`, `quit`, and `external` (which rebases every view instead: each keeps its scroll on the text it showed) |
+
+A runtime sends a `tick` before every batch, so the view after a click or a drag stays as the
+pointer left it. A tick doesn't settle the view either: a host that changes a view's
+selection, scroll or size directly (through `state.set` or its own code) calls
+`layout::ensure_caret_visible`, or sends a `resize`, to bring the caret back into view.
 
 ## Effects
 
