@@ -4,7 +4,7 @@
 //!
 //! | Op | Request fields | Becomes |
 //! |---|---|---|
-//! | `hint.show` | `anchor` (one or a list), `text`, `title?`, `ttl_ms?`, `place?`, `arrow?` (default true), `ring?` (default true), `actor?` | a push of a [`HINT`] layer |
+//! | `hint.show` | `anchor` (one or a list), `text`, `title?`, `ttl_ms?`, `place?`, `arrow?` (default true), `ring?` (default true), `avoid?` (one anchor or a list), `actor?` | a push of a [`HINT`] layer |
 //! | `hint.hide` | `layer` or `all: true`, `actor?` | a pop |
 //! | `layer.push`, `layer.update` | `layer` (a [`Layer`]), `actor?` | a push or update |
 //! | `layer.pop` | `layer`, `owner` or `all: true`, `actor?` | a pop |
@@ -78,6 +78,8 @@ struct Show {
     arrow: bool,
     #[serde(default = "yes")]
     ring: bool,
+    #[serde(default)]
+    avoid: Option<Anchors>,
 }
 
 #[derive(Deserialize)]
@@ -141,6 +143,7 @@ pub fn parse(op: &str, req: &Value) -> Result<(Request, Option<String>), Refusal
             layer.ring = s.ring.then(Default::default);
             layer.ttl_ms = s.ttl_ms;
             layer.place = s.place;
+            layer.avoid = s.avoid.map(Anchors::list).unwrap_or_default();
             Ok((Request::Apply(LayerOp::Push(layer)), s.actor))
         }
         "layer.push" | "layer.update" => {
@@ -384,6 +387,7 @@ pub fn schema() -> Value {
                     "since_ms": u64,
                     "ttl_ms": {"anyOf": [u64, {"type": "null"}]},
                     "anchor": {"type": "array", "items": {"$ref": "#/$defs/anchor"}},
+                    "avoid": {"type": "array", "items": {"$ref": "#/$defs/anchor"}},
                     "content": {"anyOf": [{"$ref": "#/$defs/content"}, {"type": "null"}]},
                     "arrow": {"type": "boolean"},
                     "ring": {
@@ -443,7 +447,8 @@ pub fn schema() -> Value {
                 "ttl_ms": {"anyOf": [u64, {"type": "null"}]},
                 "place": {"type": "array", "items": {"$ref": "#/$defs/side"}},
                 "arrow": {"type": "boolean", "description": "Default true."},
-                "ring": {"type": "boolean", "description": "Default true."}
+                "ring": {"type": "boolean", "description": "Default true."},
+                "avoid": {"$ref": "#/$defs/anchors"}
             }), &["anchor", "text"]),
             "layer.push": request("layer.push", json!({"layer": {"$ref": "#/$defs/layer"}}), &["layer"]),
             "layer.update": request("layer.update", json!({"layer": {"$ref": "#/$defs/layer"}}), &["layer"]),

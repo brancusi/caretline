@@ -278,8 +278,8 @@ In-frame (7.1, mode A) the crate's frame pass runs these steps and then calls ea
 `render` at 100×40 costs 127 µs today. A bench guards the crate's numbers and the CLI's renderers
 together (9.2).
 
-As built (12): placement measures 6 µs for a box (four measures, one per side), 22 µs with
-an arrow and 36 µs for a spotlight with an arrow (12.5). A host skips even that when nothing changed by keeping the last plan
+As built (12): placement measures 6 µs for a box (four measures, one per side), 25 µs with
+an arrow and 37 µs for a spotlight with an arrow (12.5). A host skips even that when nothing changed by keeping the last plan
 with its inputs (12, "Unchanged inputs").
 
 ### 3.6 Pixel plumbing (feature `kitty`)
@@ -1540,3 +1540,37 @@ After 12.3, from a host that shows several documents. Where it differs from the 
   host can size what it draws for an agent (its name in the border, a "from" line) inside
   the box. Still pure: the same context, the same size. A closure of the data and the room
   is still a renderer.
+- **Soft avoid areas.** `Grid.protect` is hard, and a box only shifted along its side next to
+  the anchor: once the rows next to an anchor were protected, a side failed instead of moving
+  out to blank rows, leaving a strip or no arrow, and nothing kept a box off the text a step
+  explains (a diff's highlighted band, the table rows under it). A host replanned three
+  times as a stopgap. Now:
+  - `Grid::avoid(rect, weight)` marks cells to keep off when anything else fits (a weight per
+    cell, the heavier where rects overlap), and `Layer.avoid: Vec<Anchor>` (wire `"avoid"`)
+    names the layer's own, resolved every frame like its anchor, at weight `AVOID` (20).
+  - A box's score adds 10 tenths per unit of avoid weight it covers, and ranking puts every
+    box that covers no avoid cell before any that covers one (then routed before unrouted,
+    then score). So whenever the search has a clear box, the plan's box is clear; a host
+    tunes the weights only among boxes that can't be. `Planned.covers_avoid` counts the
+    cells covered.
+  - Arrows: an avoid cell costs 4 per unit of weight on top of its own cost (80 at the
+    default: above a text cell's 16 and a gap's 6), and placement adds 10 per unit for each
+    crossed, as covering it would. The sliver rule never widens a box onto more avoid weight.
+  - Further out: each side tries its nearest four places as before; when none is clear of
+    text and avoid cells, it goes on out (below: further down; right: past the row's end),
+    clear places only, up to `Grid::with_reach(Reach { rows, cols })` (default 12 rows, 40
+    columns), stopping at the first row or column with a clear place. The distance cost
+    (5 tenths per cell, counted twice past the nearest) makes near and clear beat far and
+    clear; covering text (10 a cell) or avoid cells makes far and clear beat near and
+    covering. Far boxes are routed after near ones, and only when the cells to the nearest
+    head leave them a chance, so the extra corridor is searched only when it can win.
+  - Goldens: `avoid.diff` (a box above the highlighted band and clear of the paragraph its
+    step explains) and `avoid.table` (a box under a table whose arrow keeps to blank cells);
+    `offscreen.scrolled` at 80×24 now takes the clear place beside "## Search" rather than
+    covering the paragraph. A seeded property test checks that whenever a clear box is in
+    reach, the chosen one is clear, and that the plan is deterministic.
+  - Cost, at 100×40 (release, the least of ten runs alternating with the build before
+    12.5): a box with its arrow 25.1 µs (was 27.9 in the same runs), a spotlight with an
+    arrow 37.5 µs (38.2), a box alone 5.8 µs (5.9). The far scan checks only the summed
+    tables until it finds a clear place, and a far box whose nearest head is too far isn't
+    routed.

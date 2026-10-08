@@ -9,14 +9,14 @@ together select whole words, and the selection grows from where you began.
 ## Undo
 
 Every change can be undone. Undo steps follow the way you typed: a word
-at a time while you type, and one step for a paste.
+at a time while you type, and one step for a paste.         +------------------+
+                                                            | Save             |
+## Search                                                   | Control S saves. |
+                                                            +------------------+
+Press Control F to search. Matches light up as you type, and Enter jumps
+to the next one.
 
-## Search
-
-Press Control F to search. Matches+------------------+e, and Enter jumps
-to the next one.                  | Save             |
-                                  | Control S saves. |
-## Saving                         +------------------+
+## Saving
 
 Your work is saved when you press Control S. The status bar shows a mark
 while there are changes to save.
@@ -34,14 +34,14 @@ while there are changes to save.
 
 
 
+                                                            ####################
+                                                            ####################
+                                                            ####################
+                                                            ####################
 
 
 
 
-                                  ####################
-                                  ####################
-                                  ####################
-                                  ####################
 
                                   *********
 

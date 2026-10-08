@@ -66,6 +66,7 @@ A **layer** is serializable data:
 | `hide_off_screen` | With the anchor off screen, show only the edge chip |
 | `place` | The sides to try for the box (default below, above, right, left) |
 | `max_width` | The widest the box may be (default 52, never over two-thirds of the area) |
+| `avoid` | Anchors whose cells this layer's box and arrow keep off: the text its step talks about. Resolved every frame like `anchor` (every one that shows), so they follow scrolling and edits; covered only when nothing else fits ([Avoid areas](#avoid-areas)) |
 
 `Layers` holds them (and `hidden`, for "hide all"). In Rust, `Layer::new(anchor)` with
 `with_content`, `with_arrow`, `with_ring` and `with_spotlight` builds one.
@@ -326,7 +327,10 @@ A pure function of the layers, the resolved anchors, the screen and the measured
   a prompt);
 - `mark_text(x, y, s)` for each string the host drew, so boxes avoid covering text and arrows
   go round words, and wide graphemes are never split;
-- `Grid::from_frame(&frame)` and `mark_frame(&frame, x, y)` for a caretline frame.
+- `Grid::from_frame(&frame)` and `mark_frame(&frame, x, y)` for a caretline frame;
+- `avoid(rect, weight)` / `with_avoid(rect, weight)` for cells to keep off when anything else
+  fits, and `with_reach(Reach { rows, cols })` for how far a box may go to keep clear
+  ([Avoid areas](#avoid-areas)).
 
 The **`Plan`** (serializable) holds, per layer in draw order (`Planned`):
 
@@ -339,6 +343,7 @@ The **`Plan`** (serializable) holds, per layer in draw order (`Planned`):
 | `route` | The arrow: `junction` on the box's border and the same place as `attach` (`Attach { edge, offset }`: which edge, and how many cells along it from the corner), then `steps`, one cell each with the direction it enters and leaves; the last is the head. Lay out the border round `attach`: a title never sits where the arrow leaves. The head is always on a clear cell beside the anchor: blank, with nothing beside it on its row but the anchor, never on a letter, a hyphen inside a word or the gap between two words |
 | `no_arrow` | Why a layer that asked for an arrow has none: `docked` (the anchor is off screen; the chip points the way), `screen` (a screen position), `no_box` (a strip, or no box), `no_way` (no route round the other layers, holes, protected cells and wide graphemes), `head_on_text` (every cell beside the anchor is text or between words, as in the middle of a tight list: the arrow is dropped rather than drawn over the text; the box and ring still mark the anchor) |
 | `ring` | The anchor's cells to mark |
+| `covers_avoid` | How many of the box's cells are avoid cells: 0 (and left out of the JSON) unless no box in reach kept off them all, so a host's lint can flag it |
 | `owner`, `agent` | Whose layer it is (`Owner::actor()` gives an agent's name), and whether it is an agent's: what the host attributes it by |
 
 and for the whole screen: `spots` (each spotlight's area and holes; `Plan::dimmed(x, y)` says
@@ -358,10 +363,42 @@ the title row. Ties go to the first side listed, which gives flip; a box shifts 
 to stay inside the area, reaches the edge rather than leave a sliver of words beside it, and
 falls back to a strip when nothing fits.
 
+### Avoid areas
+
+`protect` is hard: no box covers those cells, ever. Some cells a box should only keep off
+when it can: the highlighted lines of a diff, the table rows a step explains. Mark those
+**avoid**:
+
+```rust
+use caretline_layers::{Grid, Layer, Rect, AVOID};
+
+let mut grid = Grid::new(100, 40).with_area(Rect::new(0, 0, 100, 39));
+grid.avoid(Rect::new(0, 12, 100, 6), AVOID); // the highlighted band, full width
+// Or let the layer name what its step talks about, resolved every frame:
+let layer = Layer::new(anchor).with_avoid(vec![band_anchor]);
+```
+
+- **Boxes.** A box that covers no avoid cell beats every box that covers one; among those
+  that must, the least weight covered wins (`weight` is in text cells: covering a text cell
+  costs 1, an avoid cell `AVOID` = 20 by default; overlapping rects keep the heavier). A
+  layer's own `avoid` cells weigh `AVOID`. `Planned.covers_avoid` counts the cells a box
+  covered when nothing in reach kept clear.
+- **Further out.** Each side tries the nearest four places first. When none of them is clear
+  of text and avoid cells (or protected cells block them), the side keeps going out, up to
+  the grid's reach (default 12 rows above or below, 40 columns beside), taking only clear
+  places, and stops at the first row or column that has one; the arrow bridges the gap. A
+  step farther costs 5 tenths of a text cell, so near and clear beats far and clear, and far
+  and clear beats near and covering.
+- **Arrows** pay an avoid cell's weight on top of its cost (4 per unit of weight: 80 at the
+  default, against 16 for a text cell and 6 for a gap), so they go round avoid cells, and
+  words, whenever a way round exists in their corridor. The head still ends on a clear cell
+  beside the anchor; when the anchor sits inside an avoid band, the head is in the band too,
+  as briefly as the route allows.
+
 With an arrow, the least-scoring box of every candidate wins; boxes are routed a side at a time,
 and a box that couldn't win even with the cheapest arrow is never routed. Placement is quick
 enough for every frame: at 100×40 (release build) a box costs about 6 µs (a measure per side),
-a box with its arrow about 22 µs, and a spotlight with an arrow about 36 µs.
+a box with its arrow about 25 µs, and a spotlight with an arrow about 37 µs.
 
 ## Ops for your protocol
 
@@ -370,7 +407,7 @@ keeps its own transport and routing (`op` and `view` are its fields):
 
 | Op | Request fields | Becomes |
 |---|---|---|
-| `hint.show` | `anchor` (one or a list), `text`, `title?`, `ttl_ms?`, `place?`, `arrow?` (default true), `ring?` (default true), `actor?` | A push of a `hint` layer |
+| `hint.show` | `anchor` (one or a list), `text`, `title?`, `ttl_ms?`, `place?`, `arrow?` (default true), `ring?` (default true), `avoid?` (one anchor or a list), `actor?` | A push of a `hint` layer |
 | `hint.hide` | `layer` or `all: true`, `actor?` | A pop |
 | `layer.push`, `layer.update` | `layer` (a layer as above), `actor?` | A push or an update |
 | `layer.pop` | `layer`, `owner` or `all: true`, `actor?` | A pop |

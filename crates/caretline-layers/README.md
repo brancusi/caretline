@@ -29,6 +29,10 @@ them.
   keep off each other's boxes, chips, anchors and arrows; an arrow says where it attaches to
   its box, or why there is none (`no_arrow`), and its head is never on text; a box for an
   off-screen anchor docks against its edge chip and touches it (`dock`).
+- **Avoid areas**: cells a host marks (`Grid::avoid`: a highlighted band, a table) or a layer
+  names (`Layer.avoid`: what its step talks about) are kept clear by boxes and arrows when
+  anything else fits; a box goes further out, within the grid's reach, to keep clear, and
+  `Planned.covers_avoid` says when it couldn't.
 - **Edits come from the engine**: `caretline::update_with_changes` returns each message's
   `ChangeSet`, and `observe` maps text anchors through it: all of them for a host with one
   document (`Edited::All`), or only those in the views that show the edited one

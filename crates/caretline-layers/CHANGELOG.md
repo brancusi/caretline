@@ -32,8 +32,8 @@
   agents) the caret, never splitting a wide grapheme; a one-row strip on narrow areas or when
   nothing fits; edge chips for off-screen anchors; arrow routes as cells (A*, round words);
   ring cells; spotlight holes; click regions and `Plan::hit`. Pure and serializable.
-  At 100×40 (release), a box costs about 6 µs, a box with its arrow about 22 µs, and a
-  spotlight with an arrow about 36 µs (with per-side measuring and clear arrow heads,
+  At 100×40 (release), a box costs about 6 µs, a box with its arrow about 25 µs, and a
+  spotlight with an arrow about 37 µs (with per-side measuring and clear arrow heads,
   below): routing costs are built once per plan, candidate boxes are routed only when a
   lower bound says they can win, and the winner's route is reused.
 - Layers placed together keep apart: no box, chip or strip covers another layer's box, chip,
@@ -90,6 +90,22 @@
   cap; right and left: the columns past the gap, at most the cap), so a renderer can return
   a narrow, tall box for a narrow side. A side with no room isn't measured.
 
+- Soft avoid areas. `Grid::avoid(rect, weight)` (and `with_avoid`) marks cells a box and
+  its arrow keep off when anything else fits: a highlighted band, a table. `Layer.avoid`
+  (wire `"avoid": [...]`, also on `hint.show`; in the schema) names anchors whose cells the
+  layer keeps off, resolved every frame like `anchor`, so "don't cover what this step talks
+  about" follows scrolling and edits. A box covering no avoid cell beats every box that
+  covers one; among those that must, the least weight wins (`AVOID` = 20 text cells by
+  default). Arrows pay 4 per unit of weight per avoid cell on top of its cost, so they go
+  round avoid cells and words whenever their corridor has a way. A side none of whose
+  nearest four places is clear of text and avoid cells (or whose nearest are protected)
+  keeps going out, clear places only, up to the grid's `Reach` (default 12 rows, 40
+  columns; `Grid::with_reach`), each step farther costing more, the arrow bridging the gap.
+  `Planned.covers_avoid` counts the avoid cells a box covered (0, and left out of the JSON,
+  when it kept clear), for a host's lint. At 100×40 (release, least of ten runs alternating
+  with the build before these fixes): a box with its arrow 25.1 µs (was 27.9), a spotlight
+  with an arrow 37.5 µs (was 38.2), a box alone 5.8 µs.
+
 ### Changed (breaking within 0.1.0's development)
 
 - `Anchor` has a new variant, `In`: exhaustive matches need an arm. `Resolved` has a new
@@ -125,6 +141,9 @@
   document, but `observe` mapped every text anchor through it, so typing in `main` (page A)
   shifted a hint scoped to `panel:1` (page B), or dropped it when page B was shorter. Anchors
   scoped to views that don't show the edited document are now left alone (`Edited`).
+- A box no longer stays next to its anchor covering text when a clear place lies a few rows
+  further out: the `offscreen.scrolled` 80×24 golden's box moves from over the "Search"
+  paragraph to the blank space beside "## Search" (see soft avoid areas, above).
 - An arrow's head never lands on text. In a tight list it ended on a letter, a hyphen inside
   a word, or the gap between two words (`[ ]▶item`, `is▲quick`). The head now ends only on
   a clear cell beside the anchor: blank, with nothing beside it on its row but the anchor.
