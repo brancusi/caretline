@@ -71,6 +71,17 @@
   `Below`, `Left`, `Right` (a line that doesn't wrap) or `Folded { block }`. Serialized as
   `{"kind": "at", "x": …, "y": …}`.
 - `Cell`, `CellFlags`, `Region` and `Role` are re-exported at the crate root.
+- **Host catalog entries**: `Host::catalog(vec![HostCommandInfo::new(id, name, msg)
+  .with_description(…).with_category(…).with_keys(vec!["<f2>".into()])])`. The protocol lists
+  them with `"source": "host"`: `hello` in a new `catalog` field, `commands.list` after the
+  engine's commands, `keymap.get` one binding per key. `Host::catalog_entries` returns them.
+- **Host ops**: `Host::op(name, OpFns::new(to_msgs).with_reply(reply))`. A request whose op
+  isn't one of the protocol's own goes to the host's op of that name: `to_msgs(ctx, request)`
+  gives the messages, applied through the request's `view` (0 when absent, after `if_rev` and
+  `now_ms` as for `msgs`) and recorded in the trace; the reply is `{rev, view, msgs, effects}`,
+  or `rev` and the fields `reply(ctx, frame, request)` returns. A refusal is an `op_failed`
+  error; ops nobody knows are still `unknown_op`. `hello` adds the host's ops to `ops` and
+  lists them in `host_ops`. `Host::op_names` returns them.
 
 ### Breaking
 

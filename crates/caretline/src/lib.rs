@@ -67,7 +67,9 @@ pub use commands::{
 pub use external::ExtChange;
 /// A message's text changes ([`update_with_changes`]) and which side a mapped position keeps.
 pub use helix::{Assoc, ChangeSet};
-pub use host::{Ctx, Deco, Decoration, Edit, ExtFns, ExtOut, Host, MarkOp, Observed};
+pub use host::{
+    Ctx, Deco, Decoration, Edit, ExtFns, ExtOut, Host, HostCommandInfo, MarkOp, Observed, OpFns,
+};
 pub use keymap::{
     keymap, keymap_for, outline_keymap, parse_keys, script_to_msgs, script_to_msgs_for, Key,
     KeyCode, Mods,

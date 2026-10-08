@@ -10,7 +10,7 @@ use caretline::view::{
 };
 use caretline::{
     update, update_doc_with_changes, update_with_changes, CellPx, ChangeSet, Effect, ExtChange,
-    ExtFns, ExtOut, Host, Msg, Session, State, View, Viewport,
+    ExtFns, ExtOut, Host, HostCommandInfo, Msg, OpFns, Session, State, View, Viewport,
 };
 use serde_json::{json, Value};
 
@@ -793,4 +793,137 @@ fn locate_is_the_inverse_of_hit_in_an_outline_with_folds() {
             }
         }
     }
+}
+
+// --------------------------------------------------------------------------------------
+// E5: host catalog entries and ops
+
+fn op_host() -> Host {
+    host()
+        .catalog(vec![HostCommandInfo::new(
+            "count.bump",
+            "Count: bump",
+            ext("count", json!({"add": 1})),
+        )
+        .with_description("Adds one to the counter")
+        .with_category("Count")
+        .with_keys(vec!["<f2>".into()])])
+        // `count.add {"by": n}`: adds n, replies with the value and the frame's width.
+        .op(
+            "count.add",
+            OpFns::new(|_, req| {
+                let by = req["by"].as_i64().ok_or("count.add needs a number `by`")?;
+                Ok(vec![ext("count", json!({ "add": by }))])
+            })
+            .with_reply(
+                |ctx, frame, _| json!({ "count": ctx.view.ext.get("count"), "w": frame.width }),
+            ),
+        )
+        // `count.raw`: no reply of its own.
+        .op(
+            "count.raw",
+            OpFns::new(|_, _| Ok(vec![ext("count", json!({"add": 10}))])),
+        )
+        // Never routed: the protocol's own op wins.
+        .op("hello", OpFns::new(|_, _| Err("not me".into())))
+}
+
+fn ask(session: &mut Session, line: &str) -> Value {
+    serde_json::from_str(&session.handle(line, None).response).unwrap()
+}
+
+#[test]
+fn hello_commands_and_keymap_list_the_hosts_entries() {
+    let mut session = Session::new(with_host("hello", op_host()));
+    let r = ask(&mut session, r#"{"id":1,"op":"hello"}"#);
+    let ops = r["result"]["ops"].as_array().unwrap();
+    assert!(ops.contains(&json!("count.add")) && ops.contains(&json!("msgs")));
+    assert_eq!(
+        r["result"]["host_ops"],
+        json!(["count.add", "count.raw", "hello"])
+    );
+    let entry = &r["result"]["catalog"][0];
+    assert_eq!(entry["id"], "count.bump");
+    assert_eq!(entry["source"], "host");
+    assert_eq!(
+        entry["msg"],
+        json!({"msg": "ext", "key": "count", "op": {"add": 1}})
+    );
+
+    let r = ask(&mut session, r#"{"id":2,"op":"commands.list"}"#);
+    let cmds = r["result"]["commands"].as_array().unwrap();
+    assert_eq!(cmds.len(), caretline::commands().len() + 1);
+    assert!(cmds[0].get("source").is_none());
+    let last = cmds.last().unwrap();
+    assert_eq!(
+        (&last["id"], &last["category"], &last["source"]),
+        (&json!("count.bump"), &json!("Count"), &json!("host"))
+    );
+
+    let r = ask(&mut session, r#"{"id":3,"op":"keymap.get"}"#);
+    let bindings = r["result"]["bindings"].as_array().unwrap();
+    assert_eq!(
+        bindings.last().unwrap(),
+        &json!({"keys": "<f2>", "command": "count.bump", "platform": "any", "source": "host"})
+    );
+    assert_eq!(bindings.len(), caretline::default_keymap(false).len() + 1);
+
+    // A host without any keeps the old replies.
+    let mut plain = Session::new(State::new("x", None, vp()));
+    let r = ask(&mut plain, r#"{"id":1,"op":"hello"}"#);
+    assert!(r["result"].get("host_ops").is_none() && r["result"].get("catalog").is_none());
+    assert_eq!(
+        r["result"]["ops"].as_array().unwrap().len(),
+        caretline::protocol::OPS.len()
+    );
+}
+
+#[test]
+fn the_protocol_routes_host_ops() {
+    let mut session = Session::new(with_host("hello", op_host()));
+    let h = session.handle(r#"{"id":7,"op":"count.add","by":3}"#, None);
+    let r: Value = serde_json::from_str(&h.response).unwrap();
+    assert_eq!(
+        r,
+        json!({"id": 7, "result": {"rev": 1, "count": 3, "w": 40}})
+    );
+    let change = h.change.unwrap();
+    assert_eq!(change.msgs, vec![ext("count", json!({"add": 3}))]);
+    // Without a reply of its own: the messages and their effects.
+    let r = ask(&mut session, r#"{"id":8,"op":"count.raw","if_rev":1}"#);
+    assert_eq!(r["result"]["rev"], 2);
+    assert_eq!(r["result"]["msgs"][0]["msg"], "ext");
+    assert_eq!(r["result"]["effects"][0]["name"], "counted");
+    assert_eq!(session.state().view.ext["count"], 13);
+    // Through another view, and with a clock.
+    let id = session.open_view(View::new(vp()));
+    let line = format!(r#"{{"op":"count.add","by":2,"view":{id},"now_ms":500}}"#);
+    let r = ask(&mut session, &line);
+    assert_eq!(r["result"]["count"], 2);
+    assert_eq!(session.view(id).unwrap().ext["count"], 2);
+    assert_eq!(session.state().doc.now_ms, 500);
+    // Errors: the host's refusal, a stale rev, no such view; unknown ops stay unknown, and
+    // the protocol's own ops are never the host's.
+    let r = ask(&mut session, r#"{"id":9,"op":"count.add"}"#);
+    assert_eq!(r["error"]["kind"], "op_failed");
+    assert_eq!(r["error"]["message"], "count.add needs a number `by`");
+    let r = ask(
+        &mut session,
+        r#"{"id":10,"op":"count.add","by":1,"if_rev":0}"#,
+    );
+    assert_eq!(r["error"]["kind"], "stale");
+    let r = ask(&mut session, r#"{"op":"count.add","by":1,"view":99}"#);
+    assert_eq!(r["error"]["kind"], "no_view");
+    let r = ask(&mut session, r#"{"id":11,"op":"count.nope"}"#);
+    assert_eq!(r["error"]["kind"], "unknown_op");
+    assert!(r["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("count.add"));
+    let r = ask(&mut session, r#"{"id":12,"op":"hello"}"#);
+    assert_eq!(r["result"]["proto"], 1);
+    // The trace has the messages, and replays with the host.
+    let (state, views, _) = replay_trace_with(&session.trace_jsonl(), &op_host()).unwrap();
+    assert_eq!(state.to_json(), session.state().to_json());
+    assert_eq!(views[0].1.ext["count"], 2);
 }

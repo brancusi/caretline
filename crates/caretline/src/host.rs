@@ -43,6 +43,12 @@ pub type DecoratorFn = dyn Fn(&Ctx, &BlockInfo) -> Decoration + Send + Sync;
 /// A frame pass: draws over a rendered frame (through [`Frame::set`] and friends), at the end
 /// of every [`crate::view::render`].
 pub type FramePassFn = dyn Fn(&Ctx, &mut Frame) + Send + Sync;
+/// A host op's `to_msgs`: (the view it acts through, the whole request) to the messages it
+/// becomes, or why not (an `op_failed` error).
+pub type OpToMsgsFn = dyn Fn(&Ctx, &Value) -> Result<Vec<Msg>, String> + Send + Sync;
+/// A host op's `reply`: (the view after the messages, its frame, the request) to the reply's
+/// fields.
+pub type OpReplyFn = dyn Fn(&Ctx, &Frame, &Value) -> Value + Send + Sync;
 /// An ext reducer's `apply`: (the acting view, the key's value there if any, the message's
 /// `op`) to what changes, or why it can't (shown in the status).
 pub type ExtApplyFn = dyn Fn(&Ctx, Option<&Value>, &Value) -> Result<ExtOut, String> + Send + Sync;
@@ -65,6 +71,92 @@ struct Inner {
     exts: Vec<(String, ExtFns)>,
     /// Frame passes, in registration order (they draw in it).
     passes: Vec<(String, Arc<FramePassFn>)>,
+    /// Commands the host lists beside the engine's.
+    catalog: Vec<HostCommandInfo>,
+    /// Protocol ops the host answers, by name.
+    ops: BTreeMap<String, OpFns>,
+}
+
+/// A command a host adds to the command catalog ([`Host::catalog`]): listed beside the
+/// engine's ([`crate::commands`]), with `source: "host"`, by the protocol's `hello`,
+/// `commands.list` and `keymap.get`, so help and agents see it. Running it is sending `msg`.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[non_exhaustive]
+pub struct HostCommandInfo {
+    /// Stable, namespaced by the host (`myhost.toggle`).
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    /// A category of the host's (shown as a heading in help).
+    pub category: String,
+    /// Default keys, in key-script notation (`<f2>`, `<s-f4>`): bound only where free; the
+    /// host's own table decides.
+    pub keys: Vec<String>,
+    /// What running it sends.
+    pub msg: Msg,
+}
+
+impl HostCommandInfo {
+    pub fn new(id: impl Into<String>, name: impl Into<String>, msg: Msg) -> HostCommandInfo {
+        HostCommandInfo {
+            id: id.into(),
+            name: name.into(),
+            description: String::new(),
+            category: String::new(),
+            keys: Vec::new(),
+            msg,
+        }
+    }
+
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> HostCommandInfo {
+        self.description = description.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_category(mut self, category: impl Into<String>) -> HostCommandInfo {
+        self.category = category.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_keys(mut self, keys: Vec<String>) -> HostCommandInfo {
+        self.keys = keys;
+        self
+    }
+}
+
+/// A protocol op a host answers ([`Host::op`]): `to_msgs` turns the request into messages,
+/// applied through the request's view and recorded like any others; `reply`, when set, builds
+/// the reply's fields from the view after them.
+#[derive(Clone)]
+#[non_exhaustive]
+pub struct OpFns {
+    pub to_msgs: Arc<OpToMsgsFn>,
+    pub reply: Option<Arc<OpReplyFn>>,
+}
+
+impl OpFns {
+    pub fn new(
+        to_msgs: impl Fn(&Ctx, &Value) -> Result<Vec<Msg>, String> + Send + Sync + 'static,
+    ) -> OpFns {
+        OpFns {
+            to_msgs: Arc::new(to_msgs),
+            reply: None,
+        }
+    }
+
+    /// The same, replying with `reply`'s fields (an object; anything else comes back as
+    /// `value`) instead of the messages and their effects.
+    #[must_use]
+    pub fn with_reply(
+        mut self,
+        reply: impl Fn(&Ctx, &Frame, &Value) -> Value + Send + Sync + 'static,
+    ) -> OpFns {
+        self.reply = Some(Arc::new(reply));
+        self
+    }
 }
 
 /// An ext reducer's functions ([`Host::ext`]): `apply` for [`Msg::Ext`], and an optional
@@ -249,6 +341,46 @@ impl Host {
         self.inner.passes.iter().map(|(n, _)| n.as_str()).collect()
     }
 
+    /// Adds commands to the catalog (an entry with an id already there replaces it).
+    pub fn catalog(mut self, entries: Vec<HostCommandInfo>) -> Host {
+        let catalog = &mut Arc::make_mut(&mut self.inner).catalog;
+        for e in entries {
+            match catalog.iter_mut().find(|c| c.id == e.id) {
+                Some(slot) => *slot = e,
+                None => catalog.push(e),
+            }
+        }
+        self
+    }
+
+    /// The host's catalog entries, in the order they were added.
+    pub fn catalog_entries(&self) -> &[HostCommandInfo] {
+        &self.inner.catalog
+    }
+
+    /// Answers protocol op `name` (a later registration of the name replaces it): the
+    /// protocol routes a request whose op isn't one of its own ([`crate::protocol::OPS`]) to
+    /// it. `hello` lists it.
+    pub fn op(mut self, name: &str, fns: OpFns) -> Host {
+        Arc::make_mut(&mut self.inner)
+            .ops
+            .insert(name.to_string(), fns);
+        self
+    }
+
+    /// The host's op names, sorted.
+    pub fn op_names(&self) -> Vec<&str> {
+        self.inner.ops.keys().map(String::as_str).collect()
+    }
+
+    pub(crate) fn op_fns(&self, name: &str) -> Option<&OpFns> {
+        self.inner.ops.get(name)
+    }
+
+    pub(crate) fn has_ops(&self) -> bool {
+        !self.inner.ops.is_empty()
+    }
+
     /// The keys with a registered ext reducer, in registration order.
     pub fn ext_keys(&self) -> Vec<&str> {
         self.inner.exts.iter().map(|(k, _)| k.as_str()).collect()
@@ -291,6 +423,8 @@ impl Host {
             && self.inner.decorator.is_none()
             && self.inner.exts.is_empty()
             && self.inner.passes.is_empty()
+            && self.inner.catalog.is_empty()
+            && self.inner.ops.is_empty()
     }
 
     /// The decoration of `block`, from the decorator (none without one).
@@ -314,6 +448,11 @@ impl std::fmt::Debug for Host {
             .field("decorator", &self.has_decorator())
             .field("ext", &self.ext_keys())
             .field("frame_passes", &self.frame_pass_names())
+            .field(
+                "catalog",
+                &self.inner.catalog.iter().map(|c| &c.id).collect::<Vec<_>>(),
+            )
+            .field("ops", &self.op_names())
             .finish()
     }
 }
