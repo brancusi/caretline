@@ -620,11 +620,25 @@ fn remove_block(state: &mut State, o: &Outline, i: usize, backward: bool) -> Vec
 // ---------------------------------------------------------------------------------------
 // Tab and Shift-Tab
 
-fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
-    let Some(o) = state.blocks() else {
-        return notice(state, "only in outline documents");
-    };
-    let cfg = state.doc.outline.clone().expect("outline");
+/// What Tab or Shift-Tab does to the selection, read before it runs.
+enum NestPlan {
+    /// Tab on a later line of a paragraph: that line (starting at `line_start`) becomes a
+    /// paragraph of its own, `pad` deep, with the caret at `caret`.
+    Split {
+        line_start: usize,
+        pad: String,
+        caret: usize,
+    },
+    /// Blocks one level deeper or shallower (the indentation changes, sorted), and the blocks
+    /// that close the blank row above them (`OutlineConfig::nest_joins`).
+    Levels {
+        changes: Vec<(usize, usize, Option<String>)>,
+        joins: Vec<MarkId>,
+    },
+}
+
+fn nest_plan(state: &State, o: &Outline, delta: i32) -> NestPlan {
+    let cfg = state.doc.outline.as_ref().expect("outline");
     let text = state.doc.text.slice(..);
     let r = state.view.selection.primary();
     let unit = cfg.indent.max(1) as usize;
@@ -632,22 +646,16 @@ fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
     // under it (every line typed under a paragraph can be its child).
     if delta > 0 && r.is_empty() && state.view.selection.len() == 1 {
         let p = r.head;
-        let b = o.block_at(text, p).clone();
+        let b = o.block_at(text, p);
         let line = text.char_to_line(p);
         if b.kind == Kind::Para && !b.fence && line != b.first_line {
-            let ls = text.line_to_char(line);
             let pad = " ".repeat(b.indent + unit);
             let w = pad.chars().count();
-            edit(
-                state,
-                vec![(ls, ls, Some(pad))],
-                caret_at(p + w),
-                false,
-                move |m, _| {
-                    m.mint(ls);
-                },
-            );
-            return Vec::new();
+            return NestPlan::Split {
+                line_start: text.line_to_char(line),
+                pad,
+                caret: p + w,
+            };
         }
     }
     let range = o.indices_between(text, r.from(), r.to());
@@ -660,6 +668,7 @@ fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
         .find(|b| !b.is_empty())
         .map(|b| b.depth);
     let mut changes = Vec::new();
+    let mut joins = Vec::new();
     for i in range {
         let b = &o.blocks[i];
         let mut depth = b.depth;
@@ -682,22 +691,69 @@ fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
                     changes.push((b.start, b.start + (b.indent - target), None));
                 }
                 depth = want as u16;
+                // One below the last non-empty block above: that block is now its parent,
+                // and with `nest_joins` the blank row between them closes.
+                if cfg.nest_joins && delta > 0 && want == max && b.gap {
+                    joins.push(b.id);
+                }
             }
         }
         if !b.is_empty() {
             above = Some(depth);
         }
     }
-    if changes.is_empty() {
-        let why = if delta > 0 {
-            "nothing to nest under"
-        } else {
-            "already at the top level"
-        };
-        return notice(state, why);
+    NestPlan::Levels { changes, joins }
+}
+
+/// The blocks Tab joins to their new parent (`OutlineConfig::nest_joins`): blank rows that
+/// [`pins_for`] leaves to the edit.
+fn nest_joins(state: &State, o: &Outline) -> Vec<MarkId> {
+    if !state.doc.outline.as_ref().is_some_and(|c| c.nest_joins) {
+        return Vec::new();
     }
-    let sel = mapped(state, &changes, Assoc::After);
-    edit(state, changes, sel, false, |_, _| {});
+    match nest_plan(state, o, 1) {
+        NestPlan::Levels { joins, .. } => joins,
+        NestPlan::Split { .. } => Vec::new(),
+    }
+}
+
+fn nest(state: &mut State, delta: i32) -> Vec<Effect> {
+    let Some(o) = state.blocks() else {
+        return notice(state, "only in outline documents");
+    };
+    match nest_plan(state, &o, delta) {
+        NestPlan::Split {
+            line_start,
+            pad,
+            caret,
+        } => {
+            edit(
+                state,
+                vec![(line_start, line_start, Some(pad))],
+                caret_at(caret),
+                false,
+                move |m, _| {
+                    m.mint(line_start);
+                },
+            );
+        }
+        NestPlan::Levels { changes, .. } if changes.is_empty() => {
+            let why = if delta > 0 {
+                "nothing to nest under"
+            } else {
+                "already at the top level"
+            };
+            return notice(state, why);
+        }
+        NestPlan::Levels { changes, joins } => {
+            let sel = mapped(state, &changes, Assoc::After);
+            edit(state, changes, sel, false, move |m, _| {
+                for id in joins {
+                    m.set_gap(id, Some(false));
+                }
+            });
+        }
+    }
     Vec::new()
 }
 
@@ -1434,9 +1490,35 @@ pub(crate) fn pins_for(state: &State, msg: &Msg) -> Option<Pins> {
             })
         }
         Msg::Indent | Msg::Outdent => {
-            Some(Pins::All(o.blocks.iter().map(|b| (b.id, b.gap)).collect()))
+            // A block Tab joins to its new parent loses its blank row in the same edit.
+            let joins = if matches!(msg, Msg::Indent) {
+                nest_joins(state, &o)
+            } else {
+                Vec::new()
+            };
+            Some(Pins::All(
+                o.blocks
+                    .iter()
+                    .filter(|b| !joins.contains(&b.id))
+                    .map(|b| (b.id, b.gap))
+                    .collect(),
+            ))
         }
         _ => None,
+    }
+}
+
+impl Pins {
+    /// Leaves the blank rows of `ids` to the edit: a gap set explicitly (a host's
+    /// `MarkOp::SetGap`) is never pinned back.
+    pub(crate) fn release(&mut self, ids: &[MarkId]) {
+        if ids.is_empty() {
+            return;
+        }
+        let gaps = match self {
+            Pins::Near { gaps, .. } | Pins::All(gaps) => gaps,
+        };
+        gaps.retain(|(id, _)| !ids.contains(id));
     }
 }
 

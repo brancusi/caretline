@@ -138,6 +138,7 @@ assert_eq!(markdown::to_file(&s), "- Pay rent\n  - Call Ana\n");
 | `new_tag` | none | The tag Enter gives the item after a tagged one |
 | `atomic_images` | true | A block that is exactly one image is one caret unit |
 | `numbered` | true | `12. ` and `12) ` start numbered items |
+| `nest_joins` | false | Tab closes the blank row above a block it nests directly under the block above; Shift-Tab adds none back ([structure](structure.md#blank-rows-and-nest_joins)) |
 
 ## Keys
 

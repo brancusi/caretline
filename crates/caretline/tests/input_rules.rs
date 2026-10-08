@@ -5,7 +5,7 @@
 
 use caretline::helix::Selection;
 use caretline::outline::markdown;
-use caretline::{update, Edit, Host, Kind, Msg, OutlineConfig, State, Viewport};
+use caretline::{update, Edit, Host, Kind, MarkOp, Msg, OutlineConfig, State, Viewport};
 
 fn vp() -> Viewport {
     Viewport {
@@ -246,4 +246,100 @@ fn a_rule_without_the_default_must_rebuild_the_split_itself() {
     update(&mut s, Msg::Undo);
     assert_eq!(s.doc.text.to_string(), "- Last line of the plan");
     assert_eq!(caret_only(&s), 11);
+}
+
+// ---------------------------------------------------------------------------------------
+// Blank rows a rule sets: explicit host intent wins over the engine's gap pinning
+
+/// Block `k`'s depth and blank row.
+fn depth_gap(s: &State, k: usize) -> (u16, bool) {
+    let o = s.doc.blocks().unwrap();
+    (o.blocks[k].depth, o.blocks[k].gap)
+}
+
+/// Tab: close the blank row above the caret's block, then nest it as the engine would.
+fn join_rule(ctx: &caretline::Ctx, msg: &Msg) -> Option<Edit> {
+    if !matches!(msg, Msg::Indent) {
+        return None;
+    }
+    let o = ctx.blocks()?;
+    let id = o.block_at(ctx.text(), ctx.caret()).id;
+    Some(Edit {
+        marks: vec![MarkOp::SetGap {
+            id,
+            gap: Some(false),
+        }],
+        ..Edit::then_default()
+    })
+}
+
+#[test]
+fn a_gap_a_rule_sets_survives_the_default_and_undoes_with_it() {
+    let mut s = load("a\n\n- b\n", OutlineConfig::default());
+    s.doc
+        .set_host(Host::new().input_rule("test.join", join_rule));
+    s.view.selection = Selection::point(s.doc.text.len_chars());
+    assert_eq!(depth_gap(&s, 1), (0, true));
+    let rev = s.doc.history.current_revision();
+    update(&mut s, Msg::Indent);
+    assert_eq!(
+        depth_gap(&s, 1),
+        (1, false),
+        "the rule's gap is not pinned back"
+    );
+    assert_eq!(s.doc.history.current_revision(), rev + 1, "one undo step");
+    update(&mut s, Msg::Undo);
+    assert_eq!(depth_gap(&s, 1), (0, true));
+    update(&mut s, Msg::Redo);
+    assert_eq!(depth_gap(&s, 1), (1, false));
+    // Shift-Tab pins it where it is.
+    update(&mut s, Msg::Outdent);
+    assert_eq!(depth_gap(&s, 1), (0, false));
+}
+
+#[test]
+fn a_gap_a_rule_sets_without_the_default_survives_too() {
+    // The rule replaces Tab: it indents and closes the row itself.
+    let host = Host::new().input_rule("test.join_by_hand", |ctx, msg| {
+        let mut edit = join_rule(ctx, msg)?;
+        let o = ctx.blocks()?;
+        let b = o.block_at(ctx.text(), ctx.caret());
+        edit.changes = vec![(b.start, b.start, "  ".into())];
+        edit.then_default = false;
+        Some(edit)
+    });
+    let mut s = load("a\n\n- b\n", OutlineConfig::default());
+    s.doc.set_host(host);
+    s.view.selection = Selection::point(s.doc.text.len_chars());
+    update(&mut s, Msg::Indent);
+    assert_eq!(depth_gap(&s, 1), (1, false));
+}
+
+#[test]
+fn a_gap_a_keep_gaps_command_sets_is_not_pinned_back() {
+    let host = Host::new().command("test.join", |ctx, _| {
+        let o = ctx.blocks().ok_or("no outline")?;
+        let b = o.block_at(ctx.text(), ctx.caret());
+        Ok(Edit {
+            changes: vec![(b.start, b.start, "  ".into())],
+            marks: vec![MarkOp::SetGap {
+                id: b.id,
+                gap: Some(false),
+            }],
+            keep_gaps: true,
+            ..Edit::default()
+        })
+    });
+    let mut s = load("a\n\n- b\n\n- c\n", OutlineConfig::default());
+    s.doc.set_host(host);
+    s.view.selection = Selection::point(5);
+    update(
+        &mut s,
+        Msg::Command {
+            name: "test.join".into(),
+            args: serde_json::Value::Null,
+        },
+    );
+    assert_eq!(depth_gap(&s, 1), (1, false), "the command's own gap");
+    assert_eq!(depth_gap(&s, 2), (0, true), "every other row kept");
 }

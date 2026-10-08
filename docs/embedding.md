@@ -370,7 +370,7 @@ returns an `Edit` or the reason it can't run (shown in the status bar, nothing c
 | `marks` | `MarkOp`s applied after the text: `Mint { pos, attrs }`, `Remove { id }`, `SetGap { id, gap }`, `SetData { id, data }` |
 | `status` | A one-line message for the view |
 | `effects` | Your own effects, returned from `update` as `Effect::Host { name, data }` |
-| `keep_gaps` | Every block keeps its blank row (a change of shape never moves another block) |
+| `keep_gaps` | Every block keeps its blank row (a change of shape never moves another block), but one the edit's own `SetGap` sets ([below](#blank-rows-a-rule-sets)) |
 | `then_default` | An input rule's only: after the edit, the engine handles the message as it would have, in the same undo step ([below](#adjusting-what-enter-does)) |
 
 An unknown name changes nothing and says so; a read-only view refuses a command like any edit.
@@ -419,6 +419,34 @@ the caret after `line`. In a paragraph the line breaks as before, without the sp
 afterwards is a step of its own, as after the engine's Enter. The same shape works for any
 message a rule sees: adjust the text, the selection or the marks, and leave the action to the
 engine.
+
+#### Blank rows a rule sets
+
+Tab, Shift-Tab, typing, Backspace and Delete, and a command with `keep_gaps`, keep blank rows
+where they were ([structure](structure.md#the-buffer)): the engine reads them before the message
+and writes back any its action changed. A blank row your edit sets with `MarkOp::SetGap` is
+left out of that: explicit host intent wins over the automatic pinning, whether the rule
+replaces the action or lets the engine finish it with `then_default`. A rule that closes the
+blank row above the block Tab nests:
+
+```rust
+use caretline::{Edit, Host, MarkOp, Msg};
+
+let host = Host::new().input_rule("join_on_tab", |ctx, msg| {
+    if !matches!(msg, Msg::Indent) {
+        return None;
+    }
+    let id = ctx.blocks()?.block_at(ctx.text(), ctx.caret()).id;
+    Some(Edit {
+        marks: vec![MarkOp::SetGap { id, gap: Some(false) }],
+        ..Edit::then_default()
+    })
+});
+```
+
+The block nests and loses its blank row in one undo step; every other block keeps its own.
+(For exactly this, `OutlineConfig::nest_joins` does it without a rule, for every block a
+selection nests: see [structure](structure.md#blank-rows-and-nest_joins).)
 
 ### Mark payloads
 

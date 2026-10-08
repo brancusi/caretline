@@ -868,6 +868,140 @@ fn shift_tab_at_the_top_level_says_so() {
 }
 
 // ---------------------------------------------------------------------------------------
+// `nest_joins`: Tab closes the blank row above a block it nests under the block above
+
+/// A document from notation with `OutlineConfig::nest_joins` on.
+fn joining(notation: &str) -> State {
+    let mut s = doc(notation);
+    let cfg = s.doc.outline.clone().unwrap().with_nest_joins(true);
+    s.doc.outline = Some(cfg);
+    s.outline_changed();
+    s
+}
+
+/// Block `k`'s depth and blank row.
+fn depth_gap(s: &State, k: u64) -> (u16, bool) {
+    let o = s.blocks().unwrap();
+    let b = o.get(MarkId(k)).unwrap();
+    (b.depth, b.gap)
+}
+
+#[test]
+fn nest_joins_closes_the_row_on_tab_and_shift_tab_adds_none() {
+    let mut s = joining("a ‖ - ▮b");
+    assert_eq!(depth_gap(&s, 1), (0, true));
+    let rev = s.doc.history.current_revision();
+    send(&mut s, [Msg::Indent]);
+    assert_eq!(show(&s), "a ¦   - ▮b");
+    assert_eq!(depth_gap(&s, 1), (1, false));
+    assert_eq!(s.doc.history.current_revision(), rev + 1, "one undo step");
+    // Undo restores the depth and the blank row together; redo takes both again.
+    send(&mut s, [Msg::Undo]);
+    assert_eq!(show(&s), "a ‖ - ▮b");
+    assert_eq!(depth_gap(&s, 1), (0, true));
+    assert_eq!(s.doc.history.current_revision(), rev);
+    send(&mut s, [Msg::Redo]);
+    assert_eq!(show(&s), "a ¦   - ▮b");
+    assert_eq!(depth_gap(&s, 1), (1, false));
+    // Shift-Tab moves nothing vertically: no row comes back.
+    send(&mut s, [Msg::Outdent]);
+    assert_eq!(show(&s), "a ¦ - ▮b");
+    assert_eq!(depth_gap(&s, 1), (0, false));
+}
+
+#[test]
+fn nest_joins_off_keeps_every_blank_row() {
+    golden("a ‖ - ▮b", "<tab>", "a ‖   - ▮b");
+    golden("a ‖ - ▮b", "<tab><s-tab>", "a ‖ - ▮b");
+}
+
+#[test]
+fn nest_joins_on_a_selection_joins_only_the_blocks_nested_under_the_one_above() {
+    // `b` nests under `a` and `c` under `b`: both join the block above. `d` nests under `a`,
+    // not under the block above it (`c`, now deeper): it keeps its row.
+    let mut s = joining("- a ‖ - ⟦b ‖   - c ‖ - d▮⟧");
+    send(&mut s, [Msg::Indent]);
+    assert_eq!(show(&s), "- a ¦   - ⟦b ¦     - c ‖   - d▮⟧");
+    assert_eq!(depth_gap(&s, 1), (1, false));
+    assert_eq!(depth_gap(&s, 2), (2, false));
+    assert_eq!(depth_gap(&s, 3), (1, true));
+    send(&mut s, [Msg::Undo]);
+    assert_eq!(show(&s), "- a ‖ - ⟦b ‖   - c ‖ - d▮⟧");
+    // A block whose row was tight stays tight.
+    let mut s = joining("- a ‖ - ⟦b ¦ - c▮⟧");
+    send(&mut s, [Msg::Indent]);
+    assert_eq!(show(&s), "- a ¦   - ⟦b ¦   - c▮⟧");
+}
+
+#[test]
+fn nest_joins_keeps_the_row_when_the_new_parent_is_further_up() {
+    // `b` goes from depth 1 to 2: its parent is `x`, not `y` (depth 2) right above it.
+    let mut s = joining("- a ¦   - x ¦     - y ‖   - ▮b");
+    send(&mut s, [Msg::Indent]);
+    assert_eq!(show(&s), "- a ¦   - x ¦     - y ‖     - ▮b");
+    assert_eq!(depth_gap(&s, 3), (2, true));
+    // Directly under the block above, it joins.
+    let mut s = joining("- a ¦   - x ‖   - ▮b");
+    send(&mut s, [Msg::Indent]);
+    assert_eq!(show(&s), "- a ¦   - x ¦     - ▮b");
+}
+
+#[test]
+fn nest_joins_changes_nothing_when_tab_cannot_nest() {
+    let mut s = joining("- ▮a ‖ - b");
+    let rev = s.doc.history.current_revision();
+    send(&mut s, [Msg::Indent]);
+    assert_eq!(show(&s), "- ▮a ‖ - b");
+    assert_eq!(s.doc.history.current_revision(), rev);
+    assert_eq!(s.view.status.as_deref(), Some("nothing to nest under"));
+    // Already as deep as it can go: its row stays.
+    let mut s = joining("- a ‖   - ▮b");
+    send(&mut s, [Msg::Indent]);
+    assert_eq!(show(&s), "- a ‖   - ▮b");
+}
+
+#[test]
+fn nest_joins_frames_close_the_row_once_and_shift_tab_moves_nothing() {
+    let mut s = joining("Notes ‖ - ▮b ‖ - c");
+    s.view.config.status_bar = false;
+    s.view.layout = Some(caretline::OutlineLayout::default().with_hang_glyphs(true));
+    update(&mut s, Msg::resize(30, 6));
+    let rows = |s: &State| -> Vec<String> {
+        view(s)
+            .to_text()
+            .lines()
+            .map(|l| l.trim_end().to_string())
+            .collect()
+    };
+    assert_eq!(rows(&s), ["      Notes", "", "  •   b", "", "  •   c", ""]);
+    send(&mut s, [Msg::Indent]);
+    let nested = rows(&s);
+    assert_eq!(
+        nested,
+        ["      Notes", "      •   b", "", "  •   c", "", ""]
+    );
+    send(&mut s, [Msg::Outdent]);
+    let out = rows(&s);
+    assert_eq!(out, ["      Notes", "  •   b", "", "  •   c", "", ""]);
+    // Shift-Tab moved no row: only `b`'s column changed.
+    for (k, (a, b)) in nested.iter().zip(&out).enumerate() {
+        assert_eq!(a.is_empty(), b.is_empty(), "row {k} moved");
+    }
+}
+
+#[test]
+fn nest_joins_is_left_out_of_json_when_off() {
+    let off = serde_json::to_value(OutlineConfig::default()).unwrap();
+    assert!(off.get("nest_joins").is_none(), "{off}");
+    let on = OutlineConfig::default().with_nest_joins(true);
+    let json = serde_json::to_value(&on).unwrap();
+    assert_eq!(json["nest_joins"], true);
+    assert_eq!(serde_json::from_value::<OutlineConfig>(json).unwrap(), on);
+    let old: OutlineConfig = serde_json::from_str(r#"{"indent":2}"#).unwrap();
+    assert!(!old.nest_joins);
+}
+
+// ---------------------------------------------------------------------------------------
 // Moving blocks
 
 #[test]

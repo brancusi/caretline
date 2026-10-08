@@ -144,6 +144,58 @@ fn the_trim_split_example_runs() {
     assert_eq!(s.view.caret(), 11);
 }
 
+/// embedding.md#blank-rows-a-rule-sets
+#[test]
+fn the_join_on_tab_example_runs() {
+    let host = Host::new().input_rule("join_on_tab", |ctx, msg| {
+        if !matches!(msg, Msg::Indent) {
+            return None;
+        }
+        let id = ctx.blocks()?.block_at(ctx.text(), ctx.caret()).id;
+        Some(Edit {
+            marks: vec![caretline::MarkOp::SetGap {
+                id,
+                gap: Some(false),
+            }],
+            ..Edit::then_default()
+        })
+    });
+    let mut s = markdown::load(
+        "Plan\n\n- Pay rent\n",
+        None,
+        Viewport {
+            width: 40,
+            height: 4,
+        },
+        OutlineConfig::default(),
+    );
+    s.doc.set_host(host);
+    s.view.selection = caretline::helix::Selection::point(s.doc.text.len_chars());
+    update(&mut s, Msg::Indent);
+    assert_eq!(markdown::to_file(&s), "Plan\n  - Pay rent\n");
+    update(&mut s, Msg::Undo);
+    assert_eq!(markdown::to_file(&s), "Plan\n\n- Pay rent\n");
+}
+
+/// structure.md#blank-rows-and-nest_joins
+#[test]
+fn the_nest_joins_example_runs() {
+    let mut s = markdown::load(
+        "a\n\n- b\n",
+        None,
+        Viewport {
+            width: 40,
+            height: 4,
+        },
+        OutlineConfig::default().with_nest_joins(true),
+    );
+    s.view.selection = caretline::helix::Selection::point(s.doc.text.len_chars());
+    update(&mut s, Msg::Indent);
+    assert_eq!(markdown::to_file(&s), "a\n  - b\n");
+    update(&mut s, Msg::Outdent);
+    assert_eq!(markdown::to_file(&s), "a\n- b\n");
+}
+
 /// embedding.md#a-one-line-field
 #[test]
 fn the_one_line_field_example_runs() {

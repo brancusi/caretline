@@ -29,6 +29,7 @@ use serde_json::Value;
 use crate::helix::{Assoc, ChangeSet, Range, RopeSlice, Selection, Tendril, Transaction};
 use crate::marks::{MarkAttrs, MarkId};
 use crate::msg::{Effect, Msg};
+use crate::outline::rules::Pins;
 use crate::outline::{BlockInfo, Outline};
 use crate::state::{Document, State, View};
 use crate::update::{self, Step};
@@ -590,6 +591,17 @@ impl Edit {
         self.changes.is_empty() && self.marks.is_empty()
     }
 
+    /// The marks whose blank row it sets.
+    fn set_gaps(&self) -> Vec<MarkId> {
+        self.marks
+            .iter()
+            .filter_map(|op| match op {
+                MarkOp::SetGap { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Whether its changes are sorted, apart and within a text of `len` chars.
     fn in_range(&self, len: usize) -> bool {
         let mut at = 0;
@@ -736,8 +748,14 @@ pub(crate) fn observe(
     effects.extend(more);
 }
 
-/// The first input rule that takes `msg`, applied. `None`: no rule took it.
-pub(crate) fn input_rules(state: &mut State, msg: &Msg) -> Option<Vec<Effect>> {
+/// The first input rule that takes `msg`, applied. `None`: no rule took it. A blank row the
+/// rule's edit sets (`MarkOp::SetGap`) is released from `pins`, the blank rows the update
+/// loop keeps through the message: explicit host intent wins over automatic pinning.
+pub(crate) fn input_rules(
+    state: &mut State,
+    msg: &Msg,
+    pins: &mut Option<Pins>,
+) -> Option<Vec<Effect>> {
     if state.doc.host.inner.input_rules.is_empty() || !takes_input(msg) {
         return None;
     }
@@ -747,6 +765,9 @@ pub(crate) fn input_rules(state: &mut State, msg: &Msg) -> Option<Vec<Effect>> {
         .input_rules
         .iter()
         .find_map(|(_, f)| f(&Ctx::new(&state.doc, &state.view), msg))?;
+    if let Some(pins) = pins {
+        pins.release(&edit.set_gaps());
+    }
     if !edit.then_default || !edit.in_range(state.doc.text.len_chars()) {
         return Some(apply(state, edit));
     }
@@ -789,7 +810,10 @@ pub(crate) fn apply(state: &mut State, edit: Edit) -> Vec<Effect> {
         return Vec::new();
     }
     let pins = if edit.keep_gaps {
-        crate::outline::rules::pins_all(state)
+        crate::outline::rules::pins_all(state).map(|mut pins| {
+            pins.release(&edit.set_gaps());
+            pins
+        })
     } else {
         None
     };

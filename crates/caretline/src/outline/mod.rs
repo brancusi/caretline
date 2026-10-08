@@ -60,6 +60,11 @@ pub struct OutlineConfig {
     /// The tag Enter gives the item after a tagged one. None: a plain bullet.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_tag: Option<char>,
+    /// Tab closes the blank row above a block it nests directly under the block above it (that
+    /// block becomes its parent), in the same undo step; Shift-Tab adds none back. Off: Tab
+    /// and Shift-Tab keep every blank row.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub nest_joins: bool,
 }
 
 impl Default for OutlineConfig {
@@ -70,6 +75,7 @@ impl Default for OutlineConfig {
             numbered: true,
             tags: String::new(),
             new_tag: None,
+            nest_joins: false,
         }
     }
 }
@@ -80,6 +86,7 @@ setters!(OutlineConfig {
     with_numbered => numbered: bool,
     with_tags => tags: String,
     with_new_tag => new_tag: Option<char>,
+    with_nest_joins => nest_joins: bool,
 });
 
 impl OutlineConfig {
