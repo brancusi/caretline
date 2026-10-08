@@ -18,7 +18,7 @@ use crate::state::{
 /// for the runtime to perform. For several views of one document, see
 /// [`crate::update_doc`].
 pub fn update(state: &mut State, msg: Msg) -> Vec<Effect> {
-    update_logged(state, msg).0
+    update_observed(state, msg, false).0
 }
 
 /// [`update`], also returning the message's text changes: one [`ChangeSet`] that maps a char
@@ -39,8 +39,29 @@ pub fn update(state: &mut State, msg: Msg) -> Vec<Effect> {
 /// assert_eq!(changes.unwrap().map_pos(0, Assoc::After), 6);
 /// ```
 pub fn update_with_changes(state: &mut State, msg: Msg) -> (Vec<Effect>, Option<ChangeSet>) {
-    let (effects, log) = update_logged(state, msg);
-    (effects, compose_log(log))
+    update_observed(state, msg, true)
+}
+
+/// [`update_logged`], then the host's observers ([`crate::host::ExtFns::with_observe`]) on
+/// the view. The changes are composed only when asked for or observed.
+fn update_observed(state: &mut State, msg: Msg, want: bool) -> (Vec<Effect>, Option<ChangeSet>) {
+    let watched = state.doc.host.has_observers().then(|| msg.clone());
+    let (mut effects, log) = update_logged(state, msg);
+    if watched.is_none() && !want {
+        return (effects, None);
+    }
+    let changes = compose_log(log);
+    if let Some(msg) = watched {
+        crate::host::observe(
+            &state.doc,
+            std::slice::from_mut(&mut state.view),
+            0,
+            &msg,
+            &mut effects,
+            changes.as_ref(),
+        );
+    }
+    (effects, changes)
 }
 
 /// [`update`], returning the text changes made in order (not composed).
@@ -290,6 +311,7 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
         Msg::Command { .. } => {}
         // `update` and `update_doc` apply it to the document and every view.
         Msg::External { .. } => {}
+        Msg::Ext { key, op } => effects.extend(crate::host::run_ext(state, &key, &op)),
         Msg::SelectAll => {
             state.view.selection = Selection::single(0, state.doc.text.len_chars());
         }
@@ -411,9 +433,16 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
                 effects.push(Effect::Quit);
             }
         }
-        Msg::Resize { width, height } => {
+        Msg::Resize {
+            width,
+            height,
+            cell_px,
+        } => {
             state.view.viewport.width = width.max(1);
             state.view.viewport.height = height.max(1);
+            if let Some(c) = cell_px.filter(|c| c.w > 0 && c.h > 0) {
+                state.view.cell_px = Some(c);
+            }
         }
         Msg::Tick { now_ms } | Msg::Frame { now_ms } => {
             state.doc.now_ms = now_ms;

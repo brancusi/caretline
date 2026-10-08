@@ -67,7 +67,9 @@ pub use commands::{
 pub use external::ExtChange;
 /// A message's text changes ([`update_with_changes`]) and which side a mapped position keeps.
 pub use helix::{Assoc, ChangeSet};
-pub use host::{Ctx, Deco, Decoration, Edit, Host, MarkOp};
+pub use host::{
+    Ctx, Deco, Decoration, Edit, ExtFns, ExtOut, Host, HostCommandInfo, MarkOp, Observed, OpFns,
+};
 pub use keymap::{
     keymap, keymap_for, outline_keymap, parse_keys, script_to_msgs, script_to_msgs_for, Key,
     KeyCode, Mods,
@@ -78,8 +80,8 @@ pub use msg::{By, Dir, Effect, Msg};
 pub use outline::{BlockInfo, Kind, NewBlock, Outline, OutlineConfig};
 pub use session::Session;
 pub use state::{
-    Config, Document, ExternalUndo, Follow, Scroll, State, View, ViewConfig, Viewport,
+    CellPx, Config, Document, ExternalUndo, Follow, Scroll, State, View, ViewConfig, Viewport,
 };
 pub use update::{replay, update, update_with_changes};
-pub use view::{view, Frame};
+pub use view::{view, Cell, CellFlags, Frame, Region, Role};
 pub use views::{update_doc, update_doc_with_changes};

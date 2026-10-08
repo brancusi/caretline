@@ -28,8 +28,75 @@
 - `with_` setters on `Config`, `ViewConfig`, `OutlineConfig` and `OutlineLayout`, one per field
   (`OutlineLayout::default().with_hang_glyphs(true)`).
 - `History::transactions`: every revision's transaction and inversion.
+- **View values** (`View::ext: BTreeMap<String, serde_json::Value>`): a host's own state per
+  view, by key, the view-level twin of a mark's payload. Serialized at the state's top level
+  as `"ext"` (left out when empty), so it goes through `state.get`/`state.set`, `view.open`,
+  traces' `state` and `view_open` lines and replay. The engine never reads it.
+- **Ext reducers**: `Host::ext(key, ExtFns::new(apply).with_observe(observe))` and
+  `Msg::Ext { key, op }` (`{"msg":"ext","key":"…","op":…}`). `apply(ctx, current, op) ->
+  Result<ExtOut, String>` runs for `Msg::Ext` on the acting view; `observe(ctx, value,
+  &Observed { msg, effects, changes, acting }) -> Option<ExtOut>` runs after every message on
+  each view whose `ext` holds the key, with the message's composed `ChangeSet` (the one
+  `update_with_changes` returns). `ExtOut` (`value`, `effects`, `status`, `frame_clock`;
+  `ExtOut::value(v)`, `ExtOut::remove()` and `with_` setters) sets or removes the value, emits
+  `Effect::Host`s, sets the status and the frame clock. `Msg::Ext` is passive (it doesn't end
+  a typing run or clear the status) and is accepted on read-only views; with no reducer for
+  the key the status says so. Traces record it like any message and replay it with
+  `trace::replay_trace_with(input, &host)`. `Host::ext_keys` lists the keys.
+- **The cell pixel size is a message**: `CellPx { w, h }` (device pixels), `Msg::Resize`'s
+  optional `cell_px` (`{"msg":"resize","width":80,"height":24,"cell_px":{"w":8,"h":16}}`), kept
+  in `View::cell_px` (`"cell_px"` in the state's JSON, left out while unknown) and copied to
+  `Frame::cell_px`. A resize without it keeps the view's. Whatever a host draws in pixels is
+  then a function of the state, and replays the same on any machine. The `caretline` binary
+  sends the size its terminal probe finds (and a later `CSI 16 t` answer) this way.
+- `Msg::resize(width, height)`: a resize that keeps the cell pixel size.
+- **Frame passes**: `Host::frame_pass(name, |ctx, frame| …)` draws over every frame
+  `view::render` (and `view`, snapshots, the protocol's `render`) makes, in registration order;
+  a pass registered again under its name is replaced in place. `view::render_plain` draws
+  without any, `view::render_skipping(doc, view, &["name"])` without the named ones.
+  `Host::frame_pass_names` lists them. With none registered rendering costs the same (100×40:
+  143.7 µs before, 143.9 µs after).
+- Grapheme-safe writers on `Frame` for passes: `Frame::new(w, h)` (now public),
+  `set(x, y, grapheme, role) -> u16` (the cells written; writing over either half of a wide
+  grapheme blanks its other half, a wide grapheme that doesn't fit is drawn as a space),
+  `restyle(x, y, role)`, `flag(x, y, CellFlags)` and `role(name) -> Role` (a host's style
+  name, as decorations use). `Frame::regions: Vec<Region { x, y, w, h, id }>` and
+  `Frame::region_at(x, y)` (the last added wins) for what a pass makes clickable.
+- `CellFlags` (`DIM`, `RING`, one byte) on every `Cell` (`Cell::flags`): marks a pass sets for
+  its renderer. The engine never sets or reads them. The protocol's `cells` rows gain an
+  optional `flags` list of runs, `[x, len, "dim" | "ring" | "dim ring"]` (left out when empty;
+  additive, proto 1), and `Frame::to_ansi` draws them faint and underlined.
+- `view::locate(doc, view, pos) -> Locate`: where a char position is on screen, the inverse
+  of `view::hit` through the same layout: `At { x, y }`, or which way it lies, `Above`,
+  `Below`, `Left`, `Right` (a line that doesn't wrap) or `Folded { block }`. Serialized as
+  `{"kind": "at", "x": …, "y": …}`.
+- `Cell`, `CellFlags`, `Region` and `Role` are re-exported at the crate root.
+- **Host catalog entries**: `Host::catalog(vec![HostCommandInfo::new(id, name, msg)
+  .with_description(…).with_category(…).with_keys(vec!["<f2>".into()])])`. The protocol lists
+  them with `"source": "host"`: `hello` in a new `catalog` field, `commands.list` after the
+  engine's commands, `keymap.get` one binding per key. `Host::catalog_entries` returns them.
+- **Host ops**: `Host::op(name, OpFns::new(to_msgs).with_reply(reply))`. A request whose op
+  isn't one of the protocol's own goes to the host's op of that name: `to_msgs(ctx, request)`
+  gives the messages, applied through the request's `view` (0 when absent, after `if_rev` and
+  `now_ms` as for `msgs`) and recorded in the trace; the reply is `{rev, view, msgs, effects}`,
+  or `rev` and the fields `reply(ctx, frame, request)` returns. A refusal is an `op_failed`
+  error; ops nobody knows are still `unknown_op`. `hello` adds the host's ops to `ops` and
+  lists them in `host_ops`. `Host::op_names` returns them.
 
 ### Breaking
+
+- `Msg` is `#[non_exhaustive]` (as `Effect` is): a `match` on it outside the crate needs a
+  wildcard arm, and new kinds of message are no longer breaking. Its variants' fields are not,
+  so hosts still build messages with struct literals; a field added to a variant stays a
+  breaking change (with `#[serde(default)]`, so recorded JSON still parses). This release
+  adds `Msg::Ext`.
+- `Msg::Resize` has a third field, `cell_px: Option<CellPx>`. Code that builds it writes
+  `Msg::resize(width, height)` (or adds `cell_px: None`); a pattern that names its fields adds
+  `..`. Its JSON is unchanged without pixels (`#[serde(default)]`, left out when `None`), so
+  old traces and clients replay and parse as before.
+- `Frame` has new public fields, `cell_px` and `regions`, and `Cell` one, `flags`: a struct
+  literal adds `cell_px: None, regions: Vec::new()` (or starts from `Frame::new(w, h)`) and
+  `flags: CellFlags::NONE`.
 
 - `Config`, `ConfigInput`, `ViewConfig`, `OutlineConfig` and `OutlineLayout` are
   `#[non_exhaustive]`, so adding a setting is no longer a breaking change. Outside the crate

@@ -1,4 +1,4 @@
-//! The outline layer: blocks on top of the text, bounded by [marks](crate::marks).
+//! Outlines: blocks on top of the text, bounded by [marks](crate::marks).
 //!
 //! An outline document is still one text buffer. **One text line is one row**, and a block is
 //! one or more lines:

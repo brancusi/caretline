@@ -3,7 +3,7 @@
 //! from what the keys do.
 
 use caretline::commands::{Category, Platform, commands, default_keymap};
-use caretline::view::{Cell, Frame, Role};
+use caretline::view::{Cell, CellFlags, Frame, Role};
 
 /// `<c-s-z>` as `Ctrl-Shift-Z`, `<d-left>` as `Cmd-Left`.
 pub fn label(keys: &str) -> String {
@@ -137,6 +137,7 @@ pub fn overlay(frame: &mut Frame, outline: bool, offset: usize) {
                 symbol: ch.to_string().as_str().into(),
                 role,
                 char_idx: None,
+                flags: CellFlags::NONE,
             };
             cx += 1;
         }

@@ -29,7 +29,7 @@ use crate::update::step;
 ///
 /// `update(state, msg)` is `update_doc(&mut state.doc, [&mut state.view], 0, msg)`.
 pub fn update_doc(doc: &mut Document, views: &mut [View], acting: usize, msg: Msg) -> Vec<Effect> {
-    update_doc_logged(doc, views, acting, msg).0
+    update_doc_observed(doc, views, acting, msg, false).0
 }
 
 /// [`update_doc`], also returning the message's text changes, composed into one
@@ -42,8 +42,28 @@ pub fn update_doc_with_changes(
     acting: usize,
     msg: Msg,
 ) -> (Vec<Effect>, Option<ChangeSet>) {
-    let (effects, log) = update_doc_logged(doc, views, acting, msg);
-    (effects, crate::update::compose_log(log))
+    update_doc_observed(doc, views, acting, msg, true)
+}
+
+/// [`update_doc_logged`], then the host's observers on every view that holds their key. The
+/// changes are composed only when asked for or observed.
+fn update_doc_observed(
+    doc: &mut Document,
+    views: &mut [View],
+    acting: usize,
+    msg: Msg,
+    want: bool,
+) -> (Vec<Effect>, Option<ChangeSet>) {
+    let watched = doc.host.has_observers().then(|| msg.clone());
+    let (mut effects, log) = update_doc_logged(doc, views, acting, msg);
+    if watched.is_none() && !want {
+        return (effects, None);
+    }
+    let changes = crate::update::compose_log(log);
+    if let Some(msg) = watched {
+        crate::host::observe(doc, views, acting, &msg, &mut effects, changes.as_ref());
+    }
+    (effects, changes)
 }
 
 /// [`update_doc`], returning the text changes made in order (not composed).

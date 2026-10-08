@@ -177,13 +177,7 @@ fn run_seed(seed: u64) -> usize {
         if step % 10 == 0 {
             for (w, h) in [(1, 1), (2, 200), (200, 2), gen::size(&mut rng)] {
                 let mut sized = state.clone();
-                update(
-                    &mut sized,
-                    Msg::Resize {
-                        width: w,
-                        height: h,
-                    },
-                );
+                update(&mut sized, Msg::resize(w, h));
                 let f = view(&sized);
                 if let Some((x, y)) = f.cursor {
                     assert!(

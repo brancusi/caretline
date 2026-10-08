@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::external::ExtChange;
 use crate::marks::MarkId;
 use crate::outline::NewBlock;
+use crate::state::CellPx;
 
 /// Which way a motion goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,7 +42,18 @@ pub enum By {
 
 /// Everything that can happen to the editor. `update` is a pure function of the state
 /// and one of these; any time it needs arrives inside a message (`Tick`).
+///
+/// Hosts build messages and match on them, so the type follows two rules:
+/// - `#[non_exhaustive]` on the enum: new kinds of message may be added in any release, so a
+///   `match` outside the crate ends with a wildcard arm (as for [`Effect`]).
+/// - A variant's fields are not `#[non_exhaustive]`: hosts build variants with struct
+///   literals (`Msg::Move { dir, by, extend }`), which that attribute would forbid. A field
+///   added to a variant is a breaking change, made only in a minor release at 0.x and listed
+///   in the CHANGELOG; the new field takes `#[serde(default)]`, so recorded messages (traces,
+///   protocol clients) still parse. Constructors such as [`Msg::resize`] cover the common
+///   cases without naming every field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 #[serde(tag = "msg", rename_all = "snake_case")]
 pub enum Msg {
     /// Type text at every caret, replacing any selection.
@@ -100,9 +112,15 @@ pub enum Msg {
         err: String,
     },
     Quit,
+    /// The view's size in cells, and the size of one cell in device pixels when the runtime
+    /// knows it ([`crate::View::cell_px`]). A resize without `cell_px` keeps the one the view
+    /// has, so a runtime that learns the pixels later (a terminal's reply) sends them then, and
+    /// old traces replay unchanged. Build one with [`Msg::resize`] when there are no pixels.
     Resize {
         width: u16,
         height: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_px: Option<CellPx>,
     },
     /// The current time. Typing runs (one undo step) are measured with it.
     Tick {
@@ -203,11 +221,30 @@ pub enum Msg {
         #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
         args: serde_json::Value,
     },
+
+    /// An operation `op` on the acting view's host value under `key` ([`crate::View::ext`]),
+    /// applied by the reducer the host registered for the key ([`crate::Host::ext`]). With no
+    /// reducer for the key nothing changes and the status says so. Passive (it doesn't end an
+    /// edit run or clear the status), and accepted on a read-only view: it never edits text.
+    Ext {
+        key: String,
+        #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+        op: serde_json::Value,
+    },
 }
 
 impl Msg {
+    /// A resize to `width`x`height` cells that keeps the view's cell pixel size.
+    pub fn resize(width: u16, height: u16) -> Msg {
+        Msg::Resize {
+            width,
+            height,
+            cell_px: None,
+        }
+    }
+
     /// Messages that never end an edit run or clear the status: the clock, a resize, a
-    /// save's result, a status message.
+    /// save's result, a status message, a change from elsewhere, a host value's operation.
     pub fn is_passive(&self) -> bool {
         matches!(
             self,
@@ -219,6 +256,7 @@ impl Msg {
                 | Msg::SaveFailed { .. }
                 | Msg::ShowStatus { .. }
                 | Msg::External { .. }
+                | Msg::Ext { .. }
         )
     }
 

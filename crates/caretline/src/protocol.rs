@@ -227,6 +227,9 @@ struct CellRow {
     text: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     spans: Vec<(u16, u16, String)>,
+    /// Runs of cells a frame pass flagged, as `[x, len, "dim" | "ring" | "dim ring"]`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    flags: Vec<(u16, u16, &'static str)>,
     /// What the row shows (text of a line, a block's blank row, …).
     info: crate::view::RowInfo,
 }
@@ -278,16 +281,25 @@ impl RenderedFrame {
     }
 }
 
-/// Each row's symbols joined (a wide grapheme's second cell adds nothing) and its runs of
-/// non-text roles as `[x, len, role]`, in cell columns.
+/// Each row's symbols joined (a wide grapheme's second cell adds nothing), its runs of
+/// non-text roles as `[x, len, role]` and of flagged cells as `[x, len, flags]`, in cell
+/// columns.
 fn cell_rows(frame: &Frame) -> Vec<CellRow> {
     (0..frame.height)
         .map(|y| {
             let mut text = String::with_capacity(frame.width as usize);
             let mut spans: Vec<(u16, u16, String)> = Vec::new();
+            let mut flags: Vec<(u16, u16, &'static str)> = Vec::new();
             for x in 0..frame.width {
                 let cell = frame.cell(x, y);
                 text.push_str(&cell.symbol);
+                if !cell.flags.is_empty() {
+                    let name = cell.flags.names();
+                    match flags.last_mut() {
+                        Some((fx, len, f)) if *f == name && *fx + *len == x => *len += 1,
+                        _ => flags.push((x, 1, name)),
+                    }
+                }
                 if cell.role == Role::Text {
                     continue;
                 }
@@ -300,6 +312,7 @@ fn cell_rows(frame: &Frame) -> Vec<CellRow> {
             CellRow {
                 text,
                 spans,
+                flags,
                 info: frame
                     .rows
                     .get(y as usize)
@@ -406,6 +419,19 @@ impl Session {
         clock_ms: Option<u64>,
         own: Option<&mut Option<u32>>,
     ) -> Handled {
+        // A host's op: only when the host has some, and never one of the protocol's own.
+        if self.state().doc.host().has_ops() {
+            #[derive(Deserialize)]
+            struct Head {
+                op: String,
+            }
+            if let Ok(Head { op }) = serde_json::from_str::<Head>(line) {
+                let host = self.state().doc.host().clone();
+                if let (false, Some(fns)) = (OPS.contains(&op.as_str()), host.op_fns(&op)) {
+                    return self.handle_host_op(line, fns, clock_ms);
+                }
+            }
+        }
         let req: Request = match serde_json::from_str(line) {
             Ok(r) => r,
             Err(e) => return bad_line(line, e),
@@ -442,16 +468,23 @@ impl Session {
             _ => Ok(()),
         };
         match req.op.as_str() {
-            "hello" => Ok(reply(to_line(
-                id,
-                Hello {
-                    proto: PROTO,
-                    version: env!("CARGO_PKG_VERSION"),
-                    rev: self.rev(),
-                    ops: OPS,
-                    commands: self.state().doc.host().command_names(),
-                },
-            ))),
+            "hello" => {
+                let host = self.state().doc.host();
+                let mut ops: Vec<&str> = OPS.to_vec();
+                ops.extend(host.op_names());
+                Ok(reply(to_line(
+                    id,
+                    Hello {
+                        proto: PROTO,
+                        version: env!("CARGO_PKG_VERSION"),
+                        rev: self.rev(),
+                        ops,
+                        commands: host.command_names(),
+                        host_ops: host.op_names(),
+                        catalog: host.catalog_entries().iter().map(HostRow::from).collect(),
+                    },
+                )))
+            }
             "state.get" => {
                 #[derive(Serialize)]
                 struct R<S: Serialize> {
@@ -781,22 +814,42 @@ impl Session {
                     control: None,
                 })
             }
-            "commands.list" => Ok(reply(to_line(
-                id,
-                CommandList {
-                    commands: crate::commands::commands(),
-                    host_commands: self.state().doc.host().command_names(),
-                },
-            ))),
-            "keymap.get" => {
-                let outline = req.outline.unwrap_or(self.state().doc.outline.is_some());
+            "commands.list" => {
+                let host = self.state().doc.host();
+                let mut commands: Vec<CommandRow> = crate::commands::commands()
+                    .iter()
+                    .map(CommandRow::Engine)
+                    .collect();
+                commands.extend(
+                    host.catalog_entries()
+                        .iter()
+                        .map(|c| CommandRow::Host(c.into())),
+                );
                 Ok(reply(to_line(
                     id,
-                    KeymapReply {
-                        outline,
-                        bindings: crate::commands::default_keymap(outline),
+                    CommandList {
+                        commands,
+                        host_commands: host.command_names(),
                     },
                 )))
+            }
+            "keymap.get" => {
+                let outline = req.outline.unwrap_or(self.state().doc.outline.is_some());
+                let mut bindings: Vec<BindingRow> = crate::commands::default_keymap(outline)
+                    .into_iter()
+                    .map(BindingRow::Engine)
+                    .collect();
+                for c in self.state().doc.host().catalog_entries() {
+                    bindings.extend(c.keys.iter().map(|k| {
+                        BindingRow::Host(HostBinding {
+                            keys: k,
+                            command: &c.id,
+                            platform: crate::commands::Platform::Any,
+                            source: "host",
+                        })
+                    }));
+                }
+                Ok(reply(to_line(id, KeymapReply { outline, bindings })))
             }
             "view.list" => {
                 let mut list = vec![view_summary(0, &self.state().view)];
@@ -813,15 +866,132 @@ impl Session {
                 let rev = self.checkpoint();
                 Ok(reply(to_line(id, Rev { rev })))
             }
-            other => Err(err(
-                "unknown_op",
-                format!("unknown op {other:?}; known ops: {}", OPS.join(", ")),
-            )),
+            other => {
+                let mut known: Vec<&str> = OPS.to_vec();
+                known.extend(self.state().doc.host().op_names());
+                Err(err(
+                    "unknown_op",
+                    format!("unknown op {other:?}; known ops: {}", known.join(", ")),
+                ))
+            }
         }
     }
 }
 
 impl Session {
+    /// Answers a host's op ([`crate::Host::op`]): the request's `view` (0 when absent), an
+    /// optional `if_rev` and `now_ms` as for `msgs` (else the runtime's clock, forward only),
+    /// then the host's messages, applied and recorded, then its reply.
+    fn handle_host_op(
+        &mut self,
+        line: &str,
+        fns: &crate::host::OpFns,
+        clock_ms: Option<u64>,
+    ) -> Handled {
+        let req: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(e) => return bad_line(line, e),
+        };
+        let id = req.get("id").filter(|v| !v.is_null()).cloned();
+        match self.host_op(&req, fns, clock_ms, id.as_ref()) {
+            Ok(h) => h,
+            Err(e) => Handled {
+                response: error_line(id.as_ref(), &e),
+                change: None,
+                control: None,
+            },
+        }
+    }
+
+    fn host_op(
+        &mut self,
+        req: &Value,
+        fns: &crate::host::OpFns,
+        clock_ms: Option<u64>,
+        id: Option<&Value>,
+    ) -> Result<Handled, ProtoError> {
+        let num = |k: &str| -> Result<Option<u64>, ProtoError> {
+            match req.get(k) {
+                None | Some(Value::Null) => Ok(None),
+                Some(v) => v
+                    .as_u64()
+                    .map(Some)
+                    .ok_or_else(|| err("bad_request", format!("{k} must be a number"))),
+            }
+        };
+        if let Some(want) = num("if_rev")? {
+            if want != self.rev() {
+                return Err(err(
+                    "stale",
+                    format!("rev is {}, the request expected {want}", self.rev()),
+                ));
+            }
+        }
+        let on = match num("view")? {
+            Some(v) => u32::try_from(v).map_err(|_| no_view(u32::MAX))?,
+            None => 0,
+        };
+        let state = self.state_of(on).ok_or_else(|| no_view(on))?;
+        let mut msgs = (fns.to_msgs)(&crate::host::Ctx::new(&state.doc, &state.view), req)
+            .map_err(|e| err("op_failed", e))?;
+        let now = self.state().doc.now_ms;
+        let tick = num("now_ms")?
+            .filter(|&t| t != now)
+            .or(clock_ms.filter(|&t| t > now));
+        if let Some(now_ms) = tick {
+            msgs.insert(0, Msg::Tick { now_ms });
+        }
+        let mut effects = Vec::new();
+        for msg in msgs.iter().cloned() {
+            effects.extend(self.apply_on(on, msg));
+        }
+        let rev = self.rev();
+        #[derive(Serialize)]
+        struct Applied<'a> {
+            rev: u64,
+            view: u32,
+            msgs: &'a [Msg],
+            effects: &'a [Effect],
+        }
+        #[derive(Serialize)]
+        struct Replied {
+            rev: u64,
+            #[serde(flatten)]
+            body: Value,
+        }
+        let response = match &fns.reply {
+            None => to_line(
+                id,
+                Applied {
+                    rev,
+                    view: on,
+                    msgs: &msgs,
+                    effects: &effects,
+                },
+            ),
+            Some(f) => {
+                let after = self.state_of(on).ok_or_else(|| no_view(on))?;
+                let frame = crate::view::view(&after);
+                let body = match f(&crate::host::Ctx::new(&after.doc, &after.view), &frame, req) {
+                    Value::Object(m) => Value::Object(m),
+                    other => serde_json::json!({ "value": other }),
+                };
+                to_line(id, Replied { rev, body })
+            }
+        };
+        let change = (!msgs.is_empty()).then_some(Change {
+            rev,
+            msgs,
+            state_set: false,
+            view: (on != 0).then_some(on),
+        });
+        Ok(Handled {
+            response,
+            change,
+            control: None,
+        })
+    }
+
     /// The view a writing request goes through: the one it names, else the client's own
     /// (opened now when it has none), else view 0.
     fn acting_view(
@@ -836,6 +1006,8 @@ impl Session {
                 _ => {
                     let mut view = self.state().view.clone();
                     view.status = None;
+                    // The host's values are the person's view's (what it shows them).
+                    view.ext.clear();
                     let v = self.open_view(view);
                     *own = Some(v);
                     v
@@ -868,8 +1040,62 @@ struct Hello<'a> {
     proto: u32,
     version: &'static str,
     rev: u64,
-    ops: &'static [&'static str],
+    /// The protocol's ops, then the host's.
+    ops: Vec<&'a str>,
     commands: Vec<&'a str>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    host_ops: Vec<&'a str>,
+    /// The host's catalog entries.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    catalog: Vec<HostRow<'a>>,
+}
+
+/// A host's catalog entry on the wire: its fields and `source: "host"`.
+#[derive(Serialize)]
+struct HostRow<'a> {
+    id: &'a str,
+    name: &'a str,
+    description: &'a str,
+    category: &'a str,
+    keys: &'a [String],
+    msg: &'a Msg,
+    source: &'static str,
+}
+
+impl<'a> From<&'a crate::host::HostCommandInfo> for HostRow<'a> {
+    fn from(c: &'a crate::host::HostCommandInfo) -> HostRow<'a> {
+        HostRow {
+            id: &c.id,
+            name: &c.name,
+            description: &c.description,
+            category: &c.category,
+            keys: &c.keys,
+            msg: &c.msg,
+            source: "host",
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum CommandRow<'a> {
+    Engine(&'a crate::commands::CommandInfo),
+    Host(HostRow<'a>),
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum BindingRow<'a> {
+    Engine(crate::commands::Binding),
+    Host(HostBinding<'a>),
+}
+
+#[derive(Serialize)]
+struct HostBinding<'a> {
+    keys: &'a str,
+    command: &'a str,
+    platform: crate::commands::Platform,
+    source: &'static str,
 }
 
 #[derive(Serialize)]
@@ -905,14 +1131,15 @@ struct ViewClosed {
 
 #[derive(Serialize)]
 struct CommandList<'a> {
-    commands: &'static [crate::commands::CommandInfo],
+    /// The engine's commands, then the host's catalog (with `source: "host"`).
+    commands: Vec<CommandRow<'a>>,
     host_commands: Vec<&'a str>,
 }
 
 #[derive(Serialize)]
-struct KeymapReply {
+struct KeymapReply<'a> {
     outline: bool,
-    bindings: Vec<crate::commands::Binding>,
+    bindings: Vec<BindingRow<'a>>,
 }
 
 #[derive(Serialize)]

@@ -97,13 +97,7 @@ fn random_doc(rng: &mut StdRng) -> State {
         ensure_grapheme_boundary_prev(t, rng.random_range(0..=len))
     };
     s.view.selection = Selection::single(a, b);
-    update(
-        &mut s,
-        Msg::Resize {
-            width: w,
-            height: h,
-        },
-    );
+    update(&mut s, Msg::resize(w, h));
     s
 }
 

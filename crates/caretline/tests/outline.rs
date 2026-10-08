@@ -105,7 +105,7 @@ fn doc_wh(notation: &str, width: u16, height: u16) -> State {
         _ => head,
     };
     s.view.selection = Selection::single(anchor, head);
-    update(&mut s, Msg::Resize { width, height });
+    update(&mut s, Msg::resize(width, height));
     s
 }
 

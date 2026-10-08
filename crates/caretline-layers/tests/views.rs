@@ -7,7 +7,7 @@
 
 mod common;
 
-use caretline::view::{Cell, Frame, RowInfo, render};
+use caretline::view::{Cell, CellFlags, Frame, RowInfo, render};
 use caretline::{Document, Msg, View, Viewport, update_doc, update_doc_with_changes};
 use caretline_layers::*;
 use common::*;
@@ -79,6 +79,7 @@ fn screen(main: &Frame, panel: &Frame) -> Frame {
         symbol: " ".into(),
         role: main.cell(0, 0).role,
         char_idx: None,
+        flags: CellFlags::NONE,
     };
     let mut f = Frame {
         width: W,
@@ -95,6 +96,8 @@ fn screen(main: &Frame, panel: &Frame) -> Frame {
             })
             .collect(),
         roles: Vec::new(),
+        cell_px: None,
+        regions: Vec::new(),
     };
     for y in 0..main.height {
         for x in 0..main.width {

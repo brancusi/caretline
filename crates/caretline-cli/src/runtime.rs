@@ -322,8 +322,9 @@ pub trait Demo {
 
 /// What the probe found: pixels on (the cell size in device pixels) or not, and why.
 ///
-/// The cell size lives here, in the runtime, for now: it comes from the terminal, not from a
-/// message. Phase 1c makes it one (`Msg::Resize { cell_px }`, E6), so pixel output replays.
+/// `cell_px` here is what the probe found; the runtime hands it to the state as
+/// `Msg::Resize { cell_px }` (and a later `CSI 16 t` answer the same way), and draws pixels
+/// from the state's `View::cell_px`, so pixel output is a function of the state and replays.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Gfx {
     pub cell_px: Option<caretline_layers::kitty::CellPx>,
@@ -424,13 +425,7 @@ pub fn compose_state(state: &State, views: &[(u32, caretline::View)], pane_rows:
     };
     let mut s = State::from_parts(state.doc.clone(), v.clone());
     if (s.view.viewport.width, s.view.viewport.height) != (top.width, pane_rows) {
-        caretline::update(
-            &mut s,
-            Msg::Resize {
-                width: top.width,
-                height: pane_rows,
-            },
-        );
+        caretline::update(&mut s, Msg::resize(top.width, pane_rows));
     }
     let mut pane = caretline::view(&s);
     if let Some((x, y)) = pane.cursor.take() {
@@ -587,7 +582,7 @@ fn terminal_msgs(state: &State, ev: Event) -> Vec<Msg> {
             }
         }
         Event::Paste(text) => vec![Msg::Paste { text: Some(text) }],
-        Event::Resize(width, height) => vec![Msg::Resize { width, height }],
+        Event::Resize(width, height) => vec![Msg::resize(width, height)],
         Event::Mouse(m) => {
             let text_rows = state.text_rows() as u16;
             let extend = m.modifiers.contains(KeyModifiers::SHIFT);
@@ -656,28 +651,14 @@ fn fit_views(
     let v = hub.session.state().view.viewport;
     let top = h - rows;
     if (v.width, v.height) != (w, top) {
-        dispatch_local(
-            hub,
-            vec![Msg::Resize {
-                width: w,
-                height: top,
-            }],
-            quit,
-            "runtime",
-        );
+        dispatch_local(hub, vec![Msg::resize(w, top)], quit, "runtime");
     }
     if rows > 0
         && let Some((id, view)) = hub.session.views().first()
         && (view.viewport.width, view.viewport.height) != (w, rows)
     {
         let id = *id;
-        hub.session.apply_on(
-            id,
-            Msg::Resize {
-                width: w,
-                height: rows,
-            },
-        );
+        hub.session.apply_on(id, Msg::resize(w, rows));
     }
 }
 
@@ -698,12 +679,16 @@ fn event_loop(
 
     let mut start = vec![Msg::Tick { now_ms: now_ms() }];
     let v = hub.session.state().view.viewport;
-    if let Some((w, h)) = term
-        && (w, h) != (v.width, v.height)
+    let (w, h) = term.unwrap_or((v.width, v.height));
+    // The probe's cell size goes into the state, where pixels are drawn from.
+    let cell_px = gfx.cell_px.map(|c| caretline::CellPx::new(c.w, c.h));
+    if (w, h) != (v.width, v.height)
+        || cell_px.is_some_and(|c| Some(c) != hub.session.state().view.cell_px)
     {
         start.push(Msg::Resize {
             width: w,
             height: h,
+            cell_px,
         });
     }
     if let Some(text) = status {
@@ -730,10 +715,18 @@ fn event_loop(
                    input: Input,
                    quit: &mut bool| match input {
         // A reply read mid-session: the cell size after a font change. Others (a late probe
-        // answer) change nothing.
+        // answer) change nothing. It goes in as a message, so the trace records it and pixel
+        // output replays.
         Input::Reply(caretline_layers::probe::Reply::CellSize(c)) => {
-            if gfx.cell_px.is_some() && c.w > 0 && c.h > 0 {
-                gfx.cell_px = Some(c);
+            let v = &hub.session.state().view;
+            let c = caretline::CellPx::new(c.w, c.h);
+            if gfx.cell_px.is_some() && c.w > 0 && c.h > 0 && v.cell_px != Some(c) {
+                let msg = Msg::Resize {
+                    width: v.viewport.width,
+                    height: v.viewport.height,
+                    cell_px: Some(c),
+                };
+                dispatch_local(hub, vec![msg], quit, "runtime");
             }
         }
         Input::Reply(_) => {}
@@ -747,15 +740,7 @@ fn event_loop(
             if let (Some(c), Some((w, h))) = (change, *term) {
                 let v = hub.session.state().view.viewport;
                 if c.state_set && (w, h) != (v.width, v.height) {
-                    dispatch_local(
-                        hub,
-                        vec![Msg::Resize {
-                            width: w,
-                            height: h,
-                        }],
-                        quit,
-                        "runtime",
-                    );
+                    dispatch_local(hub, vec![Msg::resize(w, h)], quit, "runtime");
                 }
             }
         }
@@ -800,8 +785,14 @@ fn event_loop(
                 *term = Some((w, h));
                 // The window's pixels disagree with cells × cell size: the font size changed.
                 // Ask again; the answer comes back as an `Input::Reply`.
-                if let (Some(c), Ok(ws)) = (gfx.cell_px, crossterm::terminal::window_size())
-                    && ws.width > 0
+                if let (Some(c), Ok(ws)) = (
+                    hub.session
+                        .state()
+                        .view
+                        .cell_px
+                        .filter(|_| gfx.cell_px.is_some()),
+                    crossterm::terminal::window_size(),
+                ) && ws.width > 0
                     && (ws.width as u32 != ws.columns as u32 * c.w as u32
                         || ws.height as u32 != ws.rows as u32 * c.h as u32)
                 {
@@ -915,7 +906,18 @@ fn event_loop(
                     dim: Vec::new(),
                     bytes: d.hide(),
                 },
-                (Some(d), None) => d.decorate(hub, &mut frame, &gfx),
+                // Pixels when the probe allowed them, at the cell size in the state.
+                (Some(d), None) => {
+                    let shown = Gfx {
+                        cell_px: gfx.cell_px.and(
+                            frame
+                                .cell_px
+                                .map(|c| caretline_layers::kitty::CellPx::new(c.w, c.h)),
+                        ),
+                        ..gfx.clone()
+                    };
+                    d.decorate(hub, &mut frame, &shown)
+                }
                 (None, _) => Decor::default(),
             };
             if let Some(offset) = help {

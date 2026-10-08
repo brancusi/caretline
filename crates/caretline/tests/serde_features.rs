@@ -144,10 +144,7 @@ fn tagged_messages_and_changes_round_trip() {
             now_ms: 1_700_000_000_123,
         },
         Msg::Scroll { rows: -3 },
-        Msg::Resize {
-            width: 80,
-            height: 24,
-        },
+        Msg::resize(80, 24),
         Msg::Click {
             col: 7,
             row: 2,
