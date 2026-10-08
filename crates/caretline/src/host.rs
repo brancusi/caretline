@@ -558,6 +558,13 @@ pub struct Edit {
     /// Every block keeps its blank row (a change of shape never moves another block).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub keep_gaps: bool,
+    /// An input rule's edit only: after it, the engine handles the message as it would have
+    /// (its default: Enter splits the block, a key types), in the same undo step. The rule
+    /// adjusts the text, selection and marks the default then acts on. When it changes the
+    /// text or marks, undo restores the selection from before the message. A command ignores
+    /// it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub then_default: bool,
 }
 
 impl Edit {
@@ -569,9 +576,28 @@ impl Edit {
         }
     }
 
+    /// An edit that changes nothing itself and leaves the message to the engine, for an input
+    /// rule to build on ([`Edit::then_default`]).
+    pub fn then_default() -> Edit {
+        Edit {
+            then_default: true,
+            ..Edit::default()
+        }
+    }
+
     /// Whether it changes neither text nor marks.
     pub fn is_noop(&self) -> bool {
         self.changes.is_empty() && self.marks.is_empty()
+    }
+
+    /// Whether its changes are sorted, apart and within a text of `len` chars.
+    fn in_range(&self, len: usize) -> bool {
+        let mut at = 0;
+        self.changes.iter().all(|&(from, to, _)| {
+            let ok = at <= from && from <= to && to <= len;
+            at = to;
+            ok
+        })
     }
 }
 
@@ -721,7 +747,24 @@ pub(crate) fn input_rules(state: &mut State, msg: &Msg) -> Option<Vec<Effect>> {
         .input_rules
         .iter()
         .find_map(|(_, f)| f(&Ctx::new(&state.doc, &state.view), msg))?;
-    Some(apply(state, edit))
+    if !edit.then_default || !edit.in_range(state.doc.text.len_chars()) {
+        return Some(apply(state, edit));
+    }
+    // The rule's edit, then the engine's own handling of the message, as one undo step.
+    let edits = state.doc.edits.0;
+    let mut effects = apply(state, edit);
+    state.doc.merge_next = state.doc.edits.0 != edits;
+    let handled = if state.doc.outline.is_some() {
+        crate::outline::rules::update(state, msg)
+    } else {
+        None
+    };
+    match handled {
+        Some(more) => effects.extend(more),
+        None => update::plain(state, msg.clone(), &mut effects),
+    }
+    state.doc.merge_next = false;
+    Some(effects)
 }
 
 /// The messages input rules see: those that edit through the keyboard or the clipboard.
@@ -741,14 +784,9 @@ fn takes_input(msg: &Msg) -> bool {
 /// Applies an edit as one undo step. A malformed edit (ranges out of order or past the end)
 /// changes nothing and says so.
 pub(crate) fn apply(state: &mut State, edit: Edit) -> Vec<Effect> {
-    let len = state.doc.text.len_chars();
-    let mut at = 0;
-    for &(from, to, _) in &edit.changes {
-        if from < at || to < from || to > len {
-            state.view.status = Some("a command's edit was out of range; nothing changed".into());
-            return Vec::new();
-        }
-        at = to;
+    if !edit.in_range(state.doc.text.len_chars()) {
+        state.view.status = Some("a command's edit was out of range; nothing changed".into());
+        return Vec::new();
     }
     let pins = if edit.keep_gaps {
         crate::outline::rules::pins_all(state)

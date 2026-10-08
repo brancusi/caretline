@@ -269,6 +269,11 @@ pub struct Document {
     /// Counts recorded edits (a change of text or marks), for `update`'s own bookkeeping.
     #[serde(skip)]
     pub(crate) edits: EditCount,
+    /// The next recorded edit folds into the current revision: an input rule's edit and the
+    /// engine's default after it ([`crate::Edit::then_default`]) are one undo step. Set and
+    /// cleared within one message.
+    #[serde(skip)]
+    pub(crate) merge_next: bool,
     /// The changes applied to the text during the current message, for rebasing the other
     /// views. Emptied by every update.
     #[serde(skip)]
@@ -486,6 +491,7 @@ impl Document {
             undo_floor: false,
             derived: OutlineCache::default(),
             edits: EditCount::default(),
+            merge_next: false,
             change_log: ChangeLog::default(),
             touched: Touched::all(),
             host: crate::host::Host::default(),
@@ -764,6 +770,7 @@ impl From<StateInput> for State {
             undo_floor: input.undo_floor,
             derived: OutlineCache::default(),
             edits: EditCount::default(),
+            merge_next: false,
             change_log: ChangeLog::default(),
             touched: Touched::all(),
             host: crate::host::Host::default(),

@@ -4,6 +4,13 @@
 
 ### Added
 
+- `Edit::then_default` (and the constructor `Edit::then_default()`): an input rule's edit that
+  adjusts what the engine does with the message rather than replacing it. The rule's changes,
+  selection and marks are applied, then the engine handles the message as it would have (an
+  outline's Enter splits the block with the same marker, number and tag; a key types), and the
+  two are one undo step that restores the selection from before the message. A rule that
+  wants Enter to drop the spaces after the caret deletes them and lets the engine split,
+  instead of reimplementing the split. Left out of JSON while false; a command ignores it.
 - `update_with_changes(&mut State, Msg) -> (Vec<Effect>, Option<ChangeSet>)`,
   `update_doc_with_changes(doc, views, acting, msg)` and `Session::apply_with_changes` /
   `Session::apply_on_with_changes`: what `update`, `update_doc` and `Session::apply` do, also
@@ -90,6 +97,8 @@
 
 ### Breaking
 
+- `Edit` has a new public field, `then_default`: a struct literal that names every field adds
+  `then_default: false` (or ends in `..Edit::default()`, as the docs' do).
 - `Msg` is `#[non_exhaustive]` (as `Effect` is): a `match` on it outside the crate needs a
   wildcard arm, and new kinds of message are no longer breaking. Its variants' fields are not,
   so hosts still build messages with struct literals; a field added to a variant stays a
