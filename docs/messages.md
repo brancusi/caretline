@@ -155,7 +155,7 @@ Backspace, Delete, the word and line deletes, typing, copy, cut and paste also f
 | `MoveBlock { dir }` | `{"msg":"move_block","dir":"backward"}` | Swaps the caret's block and its children with the previous or next sibling |
 | `SelectBlock { id }` | `{"msg":"select_block","id":3}` | Selects a block's content |
 | `SelectWordAt { pos }` | `{"msg":"select_word_at","pos":12}` | Selects the word at a char position; a `click` with `extend` right after extends by words |
-| `Edit { changes, join }` | `{"msg":"edit","changes":[[0,5,"Hello"]],"join":false}` | A host's own edit, one undo step: each `[from, to, text]` replaces chars `[from, to)` of the current text (in order, apart). `join`: folded into the last undo step |
+| `Edit { changes, join }` | `{"msg":"edit","changes":[[0,5,"Hello"]],"join":false}` | A host's own edit, one undo step: each `[from, to, text]` replaces chars `[from, to)` of the current text (in order, apart), applied as the least change, so text it puts back as it was keeps its marks ([embedding](embedding.md#rewriting-a-range-keeps-its-marks)). `join`: folded into the last undo step |
 | `InsertBlocks { after, blocks }` | `{"msg":"insert_blocks","after":3,"blocks":[{"kind":"bullet","text":"Call Ana"}]}` | Inserts host blocks after a block, or at the start without `after`. One undo step |
 | `PastePlain { text }` | `{"msg":"paste_plain","text":"a\nb"}` | Pastes as paragraphs with their line breaks kept |
 

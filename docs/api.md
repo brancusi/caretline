@@ -51,7 +51,7 @@ log. There's no terminal crate and no ratatui.
 | `Session`, `protocol::*` | `caretline` | A state with a rev and a trace, and the [protocol](protocol.md) in process: see [Session](#session) |
 | `Marks`, `Mark`, `MarkId`, `MarkAttrs` | `caretline` | Block identity that survives edits, with the host's payload: see [Block marks](#block-marks) |
 | `marks::{Clipboard, ClipMark, MarkDelta, Fixup, is_line_start}`, `update::mark_only_edit` | `caretline::marks`, `::update` | The register with carried marks, the per-revision deltas, a host's undoable mark edit |
-| `OutlineConfig`, `Outline`, `BlockInfo`, `Kind`, `NewBlock`, `outline::{markdown, derive, content, Hang}` | `caretline`, `::outline` | Block documents: [structure](structure.md) and the [Markdown grammar](markdown.md) over the same buffer |
+| `OutlineConfig`, `Outline`, `BlockInfo`, `Kind`, `NewBlock`, `outline::{markdown, derive, content, Hang}` | `caretline`, `::outline` | Block documents: [structure](structure.md) and the [Markdown grammar](markdown.md) over the same buffer; `Document::take_touched` says [which blocks changed](#what-changed-since-you-last-looked) |
 | `outline_keymap`, `keymap_for`, `script_to_msgs_for` | `caretline` | A block document's keys |
 | `Host`, `Ctx`, `Edit`, `MarkOp`, `Decoration`, `Deco` | `caretline` | Your app's [extensions](embedding.md#extending-the-engine): commands, input rules (`Edit::then_default`: [adjust the engine's own action](embedding.md#adjusting-what-enter-does)), decorations |
 | `ExtFns`, `ExtOut`, `Observed` | `caretline` | [View values and their reducers](embedding.md#view-values-and-ext-reducers): `Host::ext`, `Msg::Ext`, `View::ext` |
@@ -111,7 +111,9 @@ off by default: on, Tab closes the blank row above a block it nests directly und
 above, and Shift-Tab adds none back (`OutlineConfig::default().with_nest_joins(true)`; see
 [structure.md](structure.md#blank-rows-and-nest_joins)).
 
-`view.config.scroll_past_end` lets the view scroll past the document's last row, as an editor's
+Three settings in `view.config` shape scrolling: `scrolloff` (rows of margin kept around the
+caret), `page_overlap` (rows of the previous screen a page motion keeps, default 0) and
+`scroll_past_end`, which lets the view scroll past the document's last row, as an editor's
 "scroll beyond last line" does, so writing at the end of a long page keeps the caret's
 `scrolloff` margin below it instead of scrolling the page under a caret on the last row.
 `ScrollPastEnd::Off` (the default) keeps the last row at the bottom; `Margin` allows as many
@@ -124,6 +126,7 @@ use caretline::{ScrollPastEnd, ViewConfig};
 
 let config = ViewConfig::default()
     .with_scrolloff(3)
+    .with_page_overlap(2)
     .with_scroll_past_end(ScrollPastEnd::Margin);
 ```
 
@@ -556,6 +559,37 @@ update(&mut s, Msg::InsertNewline);                 // a new item below
 update(&mut s, Msg::InsertText { text: "Call Ana".into() });
 update(&mut s, Msg::Indent);                        // nested under the first
 assert_eq!(markdown::to_file(&s), "- Pay rent\n  - Call Ana\n");
+```
+
+### What changed since you last looked
+
+A host that mirrors the blocks (a database row per block, a search index) asks
+`state.doc.take_touched()` after each message and re-reads only that range. It returns the
+chars that changed since the last call, as `[from, to)` in the current text, or `None` when
+nothing did; the first call after a load or a repair (and after `enable_outline`) gives the
+whole text. In a block document the range covers whole blocks: every block whose text, kind,
+depth, tag, blank row or mark (its payload too) changed, and the blocks a change reshaped past
+its own chars, such as the block after one whose kind changed or the lines a code fence takes
+in. Text an edit put back as it was doesn't count, so the range is as small as the change and
+never misses a block that changed ([performance.md](performance.md#touched-ranges)).
+
+A host's own edit is applied as the least change: rewrite the whole text to change one block,
+and only that block is touched; every other block keeps its mark, id and payload.
+
+```rust
+use caretline::outline::markdown;
+use caretline::{update, Msg, OutlineConfig, Viewport};
+
+let mut s = markdown::load("- a\n- b\n- c\n", None, Viewport { width: 40, height: 6 }, OutlineConfig::default());
+s.doc.take_touched();                               // the whole text, after the load
+let ids: Vec<_> = s.blocks().unwrap().blocks.iter().map(|b| b.id).collect();
+
+let all = s.doc.text.len_chars();
+update(&mut s, Msg::Edit { changes: vec![(0, all, "- a\n- B\n- c".into())], join: false });
+assert_eq!(s.doc.take_touched(), Some((4, 7)));     // "- B": the one block that changed
+let after: Vec<_> = s.blocks().unwrap().blocks.iter().map(|b| b.id).collect();
+assert_eq!(ids, after);                             // every block kept its id
+assert_eq!(s.doc.take_touched(), None);
 ```
 
 ## Session

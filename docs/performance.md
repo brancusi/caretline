@@ -151,7 +151,7 @@ rest shifted. Block ids and attributes are read from the marks for every block. 
 reuse can't follow (a block that started only by its mark loses it, a mark on a reused line
 that isn't a block start) falls back to a whole derivation. Debug builds check every
 incremental result against the whole derivation. `Document::take_touched` gives a host the
-same changed range, so a host mirroring blocks re-reads only those.
+same changed range, so a host mirroring blocks re-reads only those ([api.md](api.md#what-changed-since-you-last-looked)).
 
 ### Touched ranges
 
@@ -170,6 +170,9 @@ The range is as small as the change, whatever path the change took:
   block until one is as it was (the next block's default blank row, the lines a code fence
   takes in). The comparison stops at the first unchanged block, so it costs about the blocks
   that changed.
+- **Never less.** The range may hold a block that ends up as it was (a block an edit
+  changed and changed back between two calls), never miss one that changed: a host that
+  re-reads it is in step. A load, a repair or `enable_outline` touches everything.
 
 On a 5,000-block page with the caret on an empty last block (release build,
 `cargo test --release --test touched -- --nocapture`):

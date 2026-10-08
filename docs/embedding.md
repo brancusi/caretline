@@ -365,7 +365,7 @@ returns an `Edit` or the reason it can't run (shown in the status bar, nothing c
 
 | `Edit` field | Meaning |
 |---|---|
-| `changes` | `[from, to)` replaced by text, in chars of the current text, sorted and apart |
+| `changes` | `[from, to)` replaced by text, in chars of the current text, sorted and apart. Applied as the least change ([below](#rewriting-a-range-keeps-its-marks)) |
 | `selection` | The selection after, in the new text (none: the old one mapped through the changes) |
 | `marks` | `MarkOp`s applied after the text: `Mint { pos, attrs }`, `Remove { id }`, `SetGap { id, gap }`, `SetData { id, data }` |
 | `status` | A one-line message for the view |
@@ -376,6 +376,18 @@ returns an `Edit` or the reason it can't run (shown in the status bar, nothing c
 An unknown name changes nothing and says so; a read-only view refuses a command like any edit.
 Bind keys to commands in your app's keymap: caretline's [default keymap](keys.md) binds only
 its own vocabulary.
+
+#### Rewriting a range keeps its marks
+
+A host's edit is minimised before it is applied: each change's new text is compared with the
+chars it replaces, and what both share at the start and the end is left in place. That holds
+for a command's or an input rule's `Edit` and for `Msg::Edit`, as it does for
+`Msg::External`'s `replace` and the protocol's `text.set`. So a host can rewrite a range, even
+the whole text, from its own model without losing anything: blocks the edit leaves as they
+were keep their marks (ids, blank rows and payloads), carets there stay, and
+`Document::take_touched` reports only the blocks that really changed
+([api.md](api.md#what-changed-since-you-last-looked)). The undo step holds only the least
+change too.
 
 ### Input rules
 

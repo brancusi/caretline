@@ -49,7 +49,7 @@ halves' fields side by side, the shape every earlier state has.
 | `quit_armed` | view | A first quit with unsaved changes arms it; the second quits |
 | `marks` | doc | Block marks: numeric ids at line starts, mapped through every edit (see [Block marks](#block-marks)). Left out of the JSON when unused |
 | `mark_log` | doc | What each history revision did to the marks, by revision. Left out of the JSON when empty |
-| `outline` | doc | Set for a [block document](structure.md): its config (indent, [tags](markdown.md#tags), images, numbers). Left out when unset |
+| `outline` | doc | Set for a [block document](structure.md): its config (indent, [tags](markdown.md#tags), images, numbers, [`nest_joins`](structure.md#blank-rows-and-nest_joins)). Left out when unset |
 | `doc_rev` | doc (`rev`) | Goes up by one for every change of the text or the marks, from any view or from elsewhere. Left out while 0 |
 | `undo_floor` | doc | The history was trimmed at a change from elsewhere (the barrier fallback). Left out while false |
 | `word_drag` | view | The word a `select_word_at` selected, while a shift-click may extend it by words |

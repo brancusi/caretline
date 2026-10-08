@@ -77,9 +77,13 @@ and a document that counts as saved (clean). `dirty` is always recomputed. A mis
 never saved. Inside `selection`, `old_visual_position` and `primary_index` are optional.
 
 ```console
-$ caretline send '{"op":"state.set","state":{"text":"hello\nworld\n","selection":{"ranges":[{"anchor":0,"head":5}]},"viewport":{"width":40,"height":10},"config":{"soft_wrap":false}}}'
+$ caretline send '{"op":"state.set","state":{"text":"hello\nworld\n","selection":{"ranges":[{"anchor":0,"head":5}]},"viewport":{"width":40,"height":10},"config":{"soft_wrap":false,"scroll_past_end":"margin"}}}'
 {"result":{"rev":4}}
 ```
+
+`config` is one object for the document and the view: `soft_wrap` is the document's,
+`scrolloff`, `follow`, `page_overlap` and `scroll_past_end` the view's, and a field left out
+keeps its default ([architecture.md](architecture.md#what-state-holds) lists them).
 
 A live editor resizes a pushed state to its terminal. See
 [architecture.md](architecture.md#rehydration) for every default.
