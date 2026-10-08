@@ -1049,9 +1049,10 @@ pub fn clamp_scroll(state: &mut State) {
 
 /// Moves the view the least needed for the primary caret to sit in it, `scrolloff` rows
 /// from the edges where possible (or by the view's [`Follow`] policy). The view is kept off
-/// empty rows below the end of the document only when this moves it; when the caret is
-/// already in place the view stays, empty rows and all (an edit that shortens the document
-/// doesn't pull the text down under the caret).
+/// empty rows below the end of the document (beyond what the view's `scroll_past_end`
+/// allows) only when this moves it; when the caret is already in place the view stays, empty
+/// rows and all (an edit that shortens the document doesn't pull the text down under the
+/// caret).
 pub fn ensure_caret_visible(state: &mut State) {
     follow_caret(state, Cause::Caret);
 }
@@ -1068,6 +1069,16 @@ pub(crate) enum Cause {
     /// click): while it is in the view the view stays, whatever `scrolloff` or the follow
     /// policy say, so the text doesn't move under the pointer. Out of the view, as `Caret`.
     Hit,
+}
+
+/// The furthest top a view of `h` text rows may have: the document's last row at the bottom,
+/// or as far above it as the view's `scroll_past_end` allows.
+pub(crate) fn max_top(layout: &Layout, state: &State, h: usize) -> RowPos {
+    let c = &state.view.config;
+    let past = c.scroll_past_end.rows(h, c.scrolloff);
+    layout
+        .step_rows(layout.end(), -(h as isize - 1 - past as isize))
+        .0
 }
 
 /// [`ensure_caret_visible`], for a message of the given [`Cause`].
@@ -1095,13 +1106,14 @@ pub(crate) fn follow_caret(state: &mut State, cause: Cause) {
         } else if dist > (h - 1 - so) as isize {
             top = layout.step_rows(caret, -((h - 1 - so) as isize)).0;
         }
-        // A view that moves doesn't leave empty rows below the end of the document. Every
-        // visible line takes at least one row, so without folds this can only happen when
-        // the last line is fewer than `h` lines below the top; skipping the walk otherwise
-        // keeps updates cheap in long documents.
+        // A view that moves doesn't leave more empty rows below the end of the document
+        // than `scroll_past_end` allows (none by default). Every visible line takes at least
+        // one row, so without folds this can only happen when the last line is fewer than `h`
+        // lines below the top; skipping the walk otherwise keeps updates cheap in long
+        // documents.
         let moved = top != start || cause == Cause::Scrolled;
         if moved && (layout.last_line().saturating_sub(top.line) < h || !layout.hidden.is_empty()) {
-            let max_top = layout.step_rows(layout.end(), -(h as isize - 1)).0;
+            let max_top = max_top(&layout, state, h);
             // Following down, never back above where the view was: a caret pushed into the
             // bottom margin at the end of the document stays there.
             let floor = if top > start && cause != Cause::Scrolled {

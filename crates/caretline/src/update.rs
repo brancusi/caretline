@@ -1248,12 +1248,12 @@ fn scroll(state: &mut State, rows: i32) {
 }
 
 /// The top `rows` rows from the view's top, never past the point where the document's last
-/// row sits at the bottom.
+/// row sits at the bottom (or as far above it as `scroll_past_end` allows).
 fn scrolled_top(layout: &Layout, state: &State, rows: i32) -> crate::layout::RowPos {
     let h = state.text_rows().max(1);
     let top = layout.top(&state.view.scroll);
     let (mut new_top, _) = layout.step_rows(top, rows as isize);
-    let max_top = layout.step_rows(layout.end(), -(h as isize - 1)).0;
+    let max_top = crate::layout::max_top(layout, state, h);
     if rows > 0 && new_top > max_top {
         new_top = max_top.max(top);
     }

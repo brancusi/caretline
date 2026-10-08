@@ -42,7 +42,7 @@ halves' fields side by side, the shape every earlier state has.
 | `path` | doc | Where `save` writes, if anywhere |
 | `history` | doc | Helix's undo tree |
 | `saved_revision`, `saving`, `dirty` | doc | Which history revision is on disk, a save in flight, and whether they differ |
-| `config` | both | In JSON one object: `tab_width`, `soft_wrap`, `line_ending`, `external_undo` and `single_line` are the document's (`doc.config`); `scrolloff`, `status_bar` and `follow` the view's (`view.config`) |
+| `config` | both | In JSON one object: `tab_width`, `soft_wrap`, `line_ending`, `external_undo` and `single_line` are the document's (`doc.config`); `scrolloff`, `status_bar`, `follow`, `page_overlap` and `scroll_past_end` the view's (`view.config`) |
 | `status` | view | A one-line message for the status bar, cleared by the next input |
 | `now_ms` | doc | The clock, as the last `tick` reported it |
 | `run` | doc | The open edit run (for undo grouping), with the view it is typed in |
@@ -128,6 +128,14 @@ A view follows the caret by its `config.follow`: `margin` (the least scroll that
 share of the height). `scroll_view` scrolls without moving the caret and leaves the view
 `free` until the next caret motion or edit.
 
+`config.scroll_past_end` says how far below the document's last row the view may go:
+`off` (the default: the last row stops at the bottom), `margin` (as many empty rows as
+`scrolloff`), `{"rows": n}` or `half` (half the height), never more than the height less one.
+It moves that limit and nothing else. With it at `margin` or more, writing at the end of a long
+page keeps the caret `scrolloff` rows above the bottom, the view scrolling one row a line,
+instead of leaving the caret on the last row with the page scrolling under it. Below, "the end"
+means the last row at the bottom, or this far above it.
+
 The view moves only when asked to or when the caret would otherwise leave it:
 
 - **Passive messages never move it:** `tick`, `frame`, `frame_clock`, `ext`, `show_status`,
@@ -141,11 +149,15 @@ The view moves only when asked to or when the caret would otherwise leave it:
   the caret where the policy wants it doesn't scroll, even when it shortens the document: the
   view keeps its top and shows empty rows below the end, as VS Code and Sublime do.
 - **A view that moves** to bring the caret into sight (opening, a jump such as `doc_end`, a
-  resize that hides the caret) stops with the last row at the bottom, never past it, and
-  never moves back above where it was while following the caret down.
-- **Explicit scrolling** goes past the end no further than before: `scroll` and `scroll_view`
-  stop with the last row at the bottom (or where the view already was), and a page motion's
-  view is kept off empty rows below the end like a jump.
+  resize that hides the caret or puts it in the margin) stops at the end (the last row at the
+  bottom, or as far past it as `scroll_past_end` allows), never further, and never moves back
+  above where it was while following the caret down. A resize that leaves the caret in place
+  keeps the view.
+- **Explicit scrolling** goes past the end no further than `scroll_past_end` allows: `scroll`
+  and `scroll_view` stop there (or where the view already was), and a page motion's view is
+  kept within it like a jump.
+- **`typewriter`** following places the caret's row by its percent, as before:
+  `scroll_past_end` doesn't change it (only how far `scroll_view` goes).
 - **A caret placed by the pointer** (`click`, with or without `extend`, `drag`,
   `select_word_at`, `select_block`) keeps the view while it lands inside it, whatever
   `scrolloff` or the follow policy say, so the text stays under the pointer; `typewriter`

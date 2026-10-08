@@ -1372,6 +1372,276 @@ fn v11_drags_on_an_edge_row_with_ticks_between_scroll_one_row_each() {
 }
 
 // ---------------------------------------------------------------------------------------
+// Scrolling past the end (`ViewConfig::scroll_past_end`): the view may show empty rows below
+// the document's last row, so the caret keeps its margin at the end too.
+
+use caretline::layout::Layout;
+use caretline::ScrollPastEnd;
+
+/// `state_wh` with a margin and a `scroll_past_end`, settled around the caret.
+fn past_end(notation: &str, w: u16, h: u16, so: u16, past: ScrollPastEnd) -> State {
+    let mut s = state_wh(notation, w, h);
+    s.view.config = s
+        .view
+        .config
+        .clone()
+        .with_scrolloff(so)
+        .with_scroll_past_end(past);
+    send(&mut s, [Msg::resize(w, h)]);
+    s
+}
+
+/// The caret's row in the view, and the empty rows below the document's last row.
+fn rows_below(s: &State) -> (isize, isize) {
+    let layout = Layout::new(s);
+    let h = s.text_rows();
+    let top = layout.top(&s.view.scroll);
+    let (caret, _) = layout.pos_coords(s.caret());
+    let row = layout.rows_between(top, caret, h * 2);
+    let last = layout.rows_between(top, layout.end(), h * 2);
+    (row, h as isize - 1 - last)
+}
+
+#[test]
+fn v12_writing_at_the_end_keeps_the_margin_with_scroll_past_end() {
+    twice(|| {
+        // A hundred lines, twenty text rows, a three-row margin, the caret at the end.
+        let end = format!("{}▮", numbered(100));
+        let mut off = past_end(&end, 20, 21, 3, ScrollPastEnd::Off);
+        assert_eq!((off.view.scroll.line, rows_below(&off)), (80, (19, 0)));
+        sendv(&mut off, (0..5).map(|_| Msg::InsertNewline));
+        assert_eq!(
+            (off.view.scroll.line, rows_below(&off)),
+            (85, (19, 0)),
+            "off: the caret on the last row, the page scrolling under it"
+        );
+
+        let mut s = past_end(&end, 20, 21, 3, ScrollPastEnd::Margin);
+        assert_eq!((s.view.scroll.line, rows_below(&s)), (83, (16, 3)));
+        for i in 1..=5 {
+            sendv(&mut s, [Msg::InsertNewline]);
+            assert_eq!(
+                (s.view.scroll.line, rows_below(&s)),
+                (83 + i, (16, 3)),
+                "margin: one row a line, three empty rows below"
+            );
+        }
+        assert_eq!(cursor(&s), Some((0, 16)));
+        let f = frame(&s);
+        let rows: Vec<&str> = f.lines().collect();
+        assert_eq!(rows[11], "line 100");
+        assert!(rows[12..20].iter().all(|r| r.trim().is_empty()));
+        // A jump to the end, from the start, stops with the same margin.
+        sendv(
+            &mut s,
+            [
+                mv(Dir::Backward, By::DocStart),
+                mv(Dir::Forward, By::DocEnd),
+            ],
+        );
+        assert_eq!((s.view.scroll.line, rows_below(&s)), (88, (16, 3)));
+    });
+}
+
+#[test]
+fn v13_rows_and_half_bound_scrolling_past_the_end() {
+    twice(|| {
+        let end = format!("{}▮", numbered(100));
+        // More rows than the margin: following keeps the margin, the wheel goes further.
+        let mut s = past_end(&end, 20, 21, 3, ScrollPastEnd::Rows(5));
+        assert_eq!(rows_below(&s), (16, 3));
+        sendv(&mut s, [Msg::InsertNewline]);
+        assert_eq!(rows_below(&s), (16, 3));
+        sendv(&mut s, [Msg::ScrollView { rows: 100 }]);
+        assert_eq!(rows_below(&s), (14, 5), "the wheel stops five rows past");
+        sendv(&mut s, [Msg::ScrollView { rows: 1 }]);
+        assert_eq!(rows_below(&s), (14, 5), "and no further");
+        // Fewer rows than the margin: the caret at the end sits that many rows up.
+        let mut s = past_end(&end, 20, 21, 3, ScrollPastEnd::Rows(1));
+        assert_eq!(rows_below(&s), (18, 1));
+        sendv(&mut s, [Msg::InsertNewline]);
+        assert_eq!(rows_below(&s), (18, 1));
+        // A huge count is capped: the last row stays in sight.
+        let mut s = past_end(&end, 20, 21, 3, ScrollPastEnd::Rows(500));
+        sendv(&mut s, [Msg::ScrollView { rows: 500 }]);
+        assert_eq!(rows_below(&s), (0, 19));
+        // Half the view: ten rows. `Scroll` drags the caret to the end, a page stops there.
+        let mut s = past_end(&end, 20, 21, 3, ScrollPastEnd::Half);
+        sendv(&mut s, [Msg::Scroll { rows: 100 }]);
+        assert_eq!(rows_below(&s), (9, 10));
+        let start = format!("▮{}", numbered(100));
+        let mut s = past_end(&start, 20, 21, 3, ScrollPastEnd::Half);
+        sendv(&mut s, (0..6).map(|_| mv(Dir::Forward, By::Page)));
+        assert_eq!(line_of(&s), 99);
+        assert_eq!(
+            rows_below(&s).1,
+            10,
+            "a page goes ten rows past, no further"
+        );
+        sendv(&mut s, [mv(Dir::Forward, By::Page)]);
+        assert_eq!(rows_below(&s).1, 10);
+        // Off, the wheel stops with the last row at the bottom, as before.
+        let mut s = past_end(&end, 20, 21, 3, ScrollPastEnd::Off);
+        sendv(&mut s, [Msg::ScrollView { rows: 100 }]);
+        assert_eq!(rows_below(&s), (19, 0));
+    });
+}
+
+#[test]
+fn v14_typewriter_ignores_scroll_past_end() {
+    twice(|| {
+        let end = format!("{}▮", numbered(100));
+        let mut tops = vec![];
+        for past in [
+            ScrollPastEnd::Off,
+            ScrollPastEnd::Margin,
+            ScrollPastEnd::Half,
+        ] {
+            let mut s = past_end(&end, 20, 21, 3, past);
+            s.view.config.follow = Follow::Typewriter { percent: 50 };
+            sendv(&mut s, [Msg::InsertNewline, mv(Dir::Backward, By::Line)]);
+            sendv(&mut s, (0..3).map(|_| Msg::InsertNewline));
+            tops.push((s.view.scroll, rows_below(&s).0));
+        }
+        assert!(tops.iter().all(|t| *t == tops[0]), "{tops:?}");
+        assert_eq!(tops[0].1, 10);
+    });
+}
+
+#[test]
+fn v15_a_resize_keeps_the_caret_and_the_margin() {
+    twice(|| {
+        let end = format!("{}▮", numbered(100));
+        let mut s = past_end(&end, 20, 21, 3, ScrollPastEnd::Margin);
+        assert_eq!((s.view.scroll.line, rows_below(&s)), (83, (16, 3)));
+        // Taller: the caret is in place, the view stays (more empty rows, none taken away).
+        sendv(&mut s, [Msg::resize(20, 25)]);
+        assert_eq!((s.view.scroll.line, rows_below(&s)), (83, (16, 7)));
+        // Shorter: the caret would sit in the margin, the view follows it, three rows past.
+        sendv(&mut s, [Msg::resize(20, 16)]);
+        assert_eq!((s.view.scroll.line, rows_below(&s)), (88, (11, 3)));
+    });
+}
+
+#[test]
+fn v16_wrapped_rows_keep_the_margin_past_the_end() {
+    twice(|| {
+        // Lines two rows each, ten text rows, a two-row margin.
+        let end = format!("{}▮", wrapped_lines(30));
+        let mut s = past_end(&end, 20, 11, 2, ScrollPastEnd::Margin);
+        assert_eq!(rows_below(&s), (7, 2));
+        // Typing wraps the last line onto a third row: the view follows by one row.
+        let top = s.view.scroll;
+        sendv(
+            &mut s,
+            [Msg::InsertText {
+                text: " and some more words".into(),
+            }],
+        );
+        assert_eq!(Layout::new(&s).line_rows(29), 3);
+        assert_eq!(rows_below(&s), (7, 2));
+        assert_ne!(s.view.scroll, top);
+        sendv(&mut s, [Msg::InsertNewline]);
+        assert_eq!(rows_below(&s), (7, 2));
+        // Backspace pulls nothing back.
+        let top = s.view.scroll;
+        sendv(&mut s, [Msg::DeleteBackward]);
+        assert_eq!(s.view.scroll, top);
+        assert_eq!(rows_below(&s), (6, 3));
+    });
+}
+
+#[test]
+fn v17_an_outline_keeps_the_margin_past_the_end() {
+    twice(|| {
+        // Twenty text rows, the default two-row margin, a fold and a host's row above.
+        let mut s = outline(40, 20);
+        s.view.config.scroll_past_end = ScrollPastEnd::Margin;
+        sendv(&mut s, [mv(Dir::Forward, By::DocEnd)]);
+        assert_eq!(rows_below(&s), (17, 2));
+        // A new paragraph (a blank row before it): the view follows, the margin stays.
+        sendv(&mut s, [Msg::InsertNewline]);
+        assert_eq!(rows_below(&s), (17, 2));
+        let top = s.view.scroll;
+        sendv(&mut s, [Msg::DeleteBackward]);
+        assert_eq!(s.view.scroll, top, "joining it back pulls nothing back");
+        // Off, the same document's caret sits on the last row.
+        let mut s = outline(40, 20);
+        sendv(&mut s, [mv(Dir::Forward, By::DocEnd)]);
+        assert_eq!(rows_below(&s), (19, 0));
+    });
+}
+
+#[test]
+fn v18_backspace_at_the_end_past_it_keeps_the_view() {
+    twice(|| {
+        let end = format!("{}▮", numbered(100));
+        let mut s = past_end(&end, 20, 21, 3, ScrollPastEnd::Margin);
+        sendv(&mut s, (0..5).map(|_| Msg::InsertNewline));
+        assert_eq!((s.view.scroll.line, rows_below(&s)), (88, (16, 3)));
+        for i in 1..=5 {
+            sendv(&mut s, [Msg::DeleteBackward]);
+            assert_eq!(
+                (s.view.scroll.line, rows_below(&s)),
+                (88, (16 - i, 3 + i)),
+                "Backspace {i} pulls nothing back"
+            );
+        }
+        // Typing again on the same line doesn't move it either.
+        sendv(&mut s, [Msg::InsertText { text: "x".into() }]);
+        assert_eq!((s.view.scroll.line, rows_below(&s)), (88, (11, 8)));
+    });
+}
+
+#[test]
+fn v19_clicks_and_ticks_past_the_end_keep_the_view() {
+    twice(|| {
+        let end = format!("{}▮", numbered(100));
+        let mut s = past_end(&end, 20, 21, 3, ScrollPastEnd::Margin);
+        assert_eq!(s.view.scroll.line, 83);
+        // On text in the margins, and on the empty rows past the end (the caret goes to the
+        // end).
+        for row in [0, 1, 15, 16, 17, 19] {
+            sendv(&mut s, [click(row)]);
+            assert_eq!(s.view.scroll.line, 83, "a click on row {row}");
+            send(&mut s, [tick(5), tick(10)]);
+            assert_eq!(s.view.scroll.line, 83, "a tick after a click on row {row}");
+        }
+        assert_eq!(line_of(&s), 99);
+        // A key that leaves the caret in place keeps it too.
+        sendv(&mut s, [mv(Dir::Backward, By::Grapheme)]);
+        assert_eq!(s.view.scroll.line, 83);
+    });
+}
+
+#[test]
+fn v20_scroll_past_end_in_json() {
+    let mut s = state_wh("a▮", 20, 5);
+    let json = serde_json::to_value(&s).unwrap();
+    assert!(
+        json["config"].get("scroll_past_end").is_none(),
+        "off is left out"
+    );
+    for (past, value) in [
+        (ScrollPastEnd::Margin, serde_json::json!("margin")),
+        (ScrollPastEnd::Half, serde_json::json!("half")),
+        (ScrollPastEnd::Rows(3), serde_json::json!({"rows": 3})),
+    ] {
+        s.view.config.scroll_past_end = past;
+        let mut json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["config"]["scroll_past_end"], value);
+        let back: State = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(back.view.config.scroll_past_end, past);
+        json["config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("scroll_past_end");
+        let back: State = serde_json::from_value(json).unwrap();
+        assert_eq!(back.view.config.scroll_past_end, ScrollPastEnd::Off);
+    }
+}
+
+// ---------------------------------------------------------------------------------------
 // Status bar
 
 #[test]

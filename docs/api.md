@@ -32,7 +32,7 @@ log. There's no terminal crate and no ratatui.
 | Item | Where | Use it to |
 |---|---|---|
 | `State`, `Config`, `Viewport`, `Scroll` | `caretline` | Hold and configure the editor: one document and one view |
-| `Document`, `View`, `ViewConfig`, `Follow`, `ExternalUndo` | `caretline` | A document and its views, separately: see [Several views](#several-views-of-one-document) |
+| `Document`, `View`, `ViewConfig`, `Follow`, `ScrollPastEnd`, `ExternalUndo` | `caretline` | A document and its views, separately: see [Several views](#several-views-of-one-document) |
 | `CellPx` | `caretline` | One cell's size in device pixels, carried by `Msg::Resize` into `View::cell_px` and `Frame::cell_px`: see [Render](#render) |
 | `update_doc` | `caretline` | Apply a message through one of several views |
 | `update_with_changes`, `update_doc_with_changes`, `ChangeSet`, `Assoc` | `caretline` | Apply a message and get its text changes, to map positions of your own: see [Map your own positions](#map-your-own-positions-through-each-message) |
@@ -104,6 +104,22 @@ The config types (`Config`, `ViewConfig`, `OutlineConfig`, `OutlineLayout`, and 
 when you build a state by hand) are `#[non_exhaustive]`, so new settings never break your build.
 To make one, start from `default()` and chain the `with_` setters:
 `OutlineLayout::default().with_hang_glyphs(true)`.
+
+`view.config.scroll_past_end` lets the view scroll past the document's last row, as an editor's
+"scroll beyond last line" does, so writing at the end of a long page keeps the caret's
+`scrolloff` margin below it instead of scrolling the page under a caret on the last row.
+`ScrollPastEnd::Off` (the default) keeps the last row at the bottom; `Margin` allows as many
+empty rows as `scrolloff`; `Rows(n)` up to `n`; `Half` up to half the view. In JSON it is
+`"scroll_past_end": "margin"` (or `"half"`, or `{"rows": 3}`), left out while off.
+`ScrollPastEnd::rows(h, scrolloff)` says how many empty rows that is for a view of `h` text rows.
+
+```rust
+use caretline::{ScrollPastEnd, ViewConfig};
+
+let config = ViewConfig::default()
+    .with_scrolloff(3)
+    .with_scroll_past_end(ScrollPastEnd::Margin);
+```
 
 `config.single_line` makes the document a one-line text field (a filter box, a prompt): the
 text never holds a line break. Enter changes nothing, line breaks typed, pasted, edited in or

@@ -289,11 +289,15 @@ fn select_all_delete_then_undo() {
 /// click inside the view never scrolls, whatever the margins or the follow policy; a drag
 /// scrolls only on an edge row, one row. A passive message (a tick, a host value's operation, a
 /// status line, a save's result, a copy) never moves it, whatever came before.
+///
+/// After a key or an edit that moved the caret or changed the text, the caret is never
+/// closer to the bottom than the margin, except near the end of the document by no more than
+/// `scroll_past_end` makes up: with it at `margin` or more, never.
 #[test]
 fn the_view_stays_for_edits_and_clicks_inside_it() {
     use caretline::layout::Layout;
-    use caretline::Follow;
-    let (mut edits, mut clicks, mut passives) = (0, 0, 0);
+    use caretline::{Follow, ScrollPastEnd};
+    let (mut edits, mut clicks, mut passives, mut follows) = (0, 0, 0, 0);
     for seed in 0..SEEDS {
         let mut rng = StdRng::seed_from_u64(0x5ca1_ab1e ^ seed);
         let text: Vec<String> = (0..rng.random_range(1..8))
@@ -310,6 +314,14 @@ fn the_view_stays_for_edits_and_clicks_inside_it() {
                 percent: rng.random_range(0..=100),
             };
         }
+        // Its own generator, so the sessions above stay as they were.
+        let mut past_rng = StdRng::seed_from_u64(0x0e2d_0f0f ^ seed);
+        state.view.config.scroll_past_end = match past_rng.random_range(0..5) {
+            0 => ScrollPastEnd::Off,
+            1 | 2 => ScrollPastEnd::Margin,
+            3 => ScrollPastEnd::Rows(past_rng.random_range(0..8)),
+            _ => ScrollPastEnd::Half,
+        };
         for step in 0..STEPS {
             let msg = match rng.random_range(0..5) {
                 0 => Msg::Click {
@@ -327,6 +339,7 @@ fn the_view_stays_for_edits_and_clicks_inside_it() {
                 continue;
             }
             let before = state.view.scroll;
+            let (sel_before, rev_before) = (state.view.selection.clone(), state.doc.rev);
             update(&mut state, msg.clone());
             let ctx = format!("seed {seed} step {step} {msg:?}");
             let h = state.text_rows();
@@ -365,6 +378,30 @@ fn the_view_stays_for_edits_and_clicks_inside_it() {
                 }
                 _ => {}
             }
+            // A following move keeps the bottom margin, or as much of it as the document's end
+            // and `scroll_past_end` leave. (A click, even below the text rows, keeps the view
+            // while the caret lands in it.)
+            let pointer = matches!(msg, Msg::Click { .. } | Msg::Drag { .. });
+            let moved = state.view.selection != sel_before || state.doc.rev != rev_before;
+            if !typewriter && !pointer && moved && !state.view.free && h > 0 {
+                follows += 1;
+                let c = &state.view.config;
+                let so = (c.scrolloff as usize).min((h - 1) / 2);
+                let past = c.scroll_past_end.rows(h, c.scrolloff);
+                let top = layout.top(&state.view.scroll);
+                let (caret, _) = layout.pos_coords(state.caret());
+                let row = layout.rows_between(top, caret, h * 2);
+                let to_end = layout.rows_between(caret, layout.end(), h) as usize;
+                let margin = so.min(past + to_end);
+                assert!(
+                    (0..(h - margin) as isize).contains(&row),
+                    "{ctx}: the caret on row {row} of {h}, margin {margin} ({:?})",
+                    c.scroll_past_end
+                );
+                if past >= so {
+                    assert!(row < (h - so) as isize, "{ctx}: inside the margin");
+                }
+            }
             // Passive messages, any number in any order, never move the view.
             for _ in 0..rng.random_range(0..4) {
                 let msg = match rng.random_range(0..7) {
@@ -394,7 +431,7 @@ fn the_view_stays_for_edits_and_clicks_inside_it() {
         }
     }
     assert!(
-        edits > 1000 && clicks > 1000 && passives > 1000,
-        "{edits} edits, {clicks} clicks, {passives} passive messages"
+        edits > 1000 && clicks > 1000 && passives > 1000 && follows > 1000,
+        "{edits} edits, {clicks} clicks, {passives} passive messages, {follows} follows"
     );
 }
