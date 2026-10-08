@@ -17,8 +17,8 @@ use crate::hub::{self, Hub, Input};
 use crossterm::cursor::SetCursorStyle;
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-    Event, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
-    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    Event, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEvent,
+    MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::terminal::{
     BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
@@ -608,6 +608,79 @@ fn terminal_msgs(state: &State, ev: Event) -> Vec<Msg> {
     }
 }
 
+/// Held-pointer auto-scroll. The engine scrolls a row for each `Msg::Drag` on an edge row,
+/// but a terminal reports a drag only when the pointer moves, so a pointer held still at the
+/// edge would stop. While the button is held and the last drag scrolled the view from an
+/// edge row, the runtime sends that drag again on a timer, through the normal message path
+/// (so the trace records each one and a replay scrolls the same). It stops when the button
+/// is released, the pointer moves off the edge, or a drag no longer scrolls.
+#[derive(Default)]
+struct AutoScroll {
+    /// The cell of the drag to repeat.
+    at: Option<(u16, u16)>,
+    /// When to send it next.
+    next: Option<Instant>,
+}
+
+impl AutoScroll {
+    /// About every 50 ms; faster the further past the last text row the pointer is (the
+    /// status bar, or a pane below), up to four times as fast.
+    fn interval(state: &State, row: u16) -> Duration {
+        let last = (state.text_rows() as u16).saturating_sub(1);
+        let past = row.saturating_sub(last).min(3) as u32;
+        Duration::from_millis(50) / (1 + past)
+    }
+
+    /// The first text row, or the last one or past it.
+    fn on_edge(state: &State, row: u16) -> bool {
+        row == 0 || row + 1 >= state.text_rows() as u16
+    }
+
+    fn stop(&mut self) {
+        *self = AutoScroll::default();
+    }
+
+    /// Follows a mouse event the editor just applied; `scrolled` says whether it moved the
+    /// view.
+    fn mouse(&mut self, state: &State, m: MouseEvent, scrolled: bool, now: Instant) {
+        match m.kind {
+            MouseEventKind::Drag(MouseButton::Left) if scrolled && Self::on_edge(state, m.row) => {
+                self.at = Some((m.column, m.row));
+                self.next = Some(now + Self::interval(state, m.row));
+            }
+            MouseEventKind::Drag(_)
+            | MouseEventKind::Down(_)
+            | MouseEventKind::Up(_)
+            | MouseEventKind::Moved => self.stop(),
+            _ => {}
+        }
+    }
+
+    /// Sends the held drag again if it is due.
+    fn poll(&mut self, hub: &mut Hub, now: Instant, quit: &mut bool) {
+        let (Some((col, row)), Some(due)) = (self.at, self.next) else {
+            return;
+        };
+        if now < due {
+            return;
+        }
+        if !Self::on_edge(hub.session.state(), row) {
+            return self.stop();
+        }
+        let before = hub.session.state().view.scroll;
+        // No `tick` before it: a tick isn't a pointer message, so the view would follow the
+        // caret (at the edge row) by its scrolloff and jump more than a row.
+        dispatch_local(hub, vec![Msg::Drag { col, row }], quit, "terminal");
+        if hub.session.state().view.scroll == before {
+            return self.stop();
+        }
+        // On a schedule from the last send; after a stall, from now rather than in a burst.
+        let period = Self::interval(hub.session.state(), row);
+        let next = due + period;
+        self.next = Some(if next <= now { now + period } else { next });
+    }
+}
+
 /// Applies messages from the local user (or the runtime itself), performing their effects,
 /// and tells subscribers.
 fn dispatch_local(hub: &mut Hub, msgs: Vec<Msg>, quit: &mut bool, source: &str) {
@@ -707,7 +780,9 @@ fn event_loop(
 
     // The keys overlay (F1 or Alt-?): its scroll offset while it is shown.
     let mut help: Option<usize> = None;
+    let mut auto = AutoScroll::default();
     let process = |hub: &mut Hub,
+                   auto: &mut AutoScroll,
                    demo: &mut Option<Box<dyn Demo>>,
                    term: &mut Option<(u16, u16)>,
                    help: &mut Option<usize>,
@@ -819,11 +894,21 @@ fn event_loop(
                     }
                 }
             }
+            let mouse = match &ev {
+                Event::Mouse(m) => Some(*m),
+                _ => None,
+            };
+            let scroll_before = hub.session.state().view.scroll;
             let msgs = terminal_msgs(hub.session.state(), ev);
             if !msgs.is_empty() {
                 let mut all = vec![Msg::Tick { now_ms: now_ms() }];
                 all.extend(msgs);
                 dispatch_local(hub, all, quit, "terminal");
+            }
+            if let Some(m) = mouse {
+                let state = hub.session.state();
+                let scrolled = state.view.scroll != scroll_before;
+                auto.mouse(state, m, scrolled, Instant::now());
             }
         }
     };
@@ -877,6 +962,7 @@ fn event_loop(
             }
             None => next_frame = None,
         }
+        auto.poll(hub, now, &mut quit);
         let demo_wake = demo.as_mut().and_then(|d| d.poll(hub, now));
         let key = |hub: &Hub, demo: &Option<Box<dyn Demo>>, help: Option<usize>| {
             (
@@ -937,10 +1023,15 @@ fn event_loop(
         // Sleep until input, the next repaint a pending change is waiting for, the next
         // clock frame or the demo's next step, whichever is first.
         let dirty = drawn != Some(key(hub, &demo, help));
-        let wake = [dirty.then_some(paint_at).flatten(), next_frame, demo_wake]
-            .into_iter()
-            .flatten()
-            .min();
+        let wake = [
+            dirty.then_some(paint_at).flatten(),
+            next_frame,
+            demo_wake,
+            auto.next,
+        ]
+        .into_iter()
+        .flatten()
+        .min();
         let input = match wake {
             Some(t) => match rx.recv_timeout(t.saturating_duration_since(Instant::now())) {
                 Ok(input) => Some(input),
@@ -955,7 +1046,7 @@ fn event_loop(
         if let Some(input) = input {
             stats.inputs += 1;
             process(
-                hub, &mut demo, &mut term, &mut help, &mut gfx, input, &mut quit,
+                hub, &mut auto, &mut demo, &mut term, &mut help, &mut gfx, input, &mut quit,
             );
             // Apply everything already queued before drawing again.
             while !quit {
@@ -963,7 +1054,8 @@ fn event_loop(
                     Ok(input) => {
                         stats.inputs += 1;
                         process(
-                            hub, &mut demo, &mut term, &mut help, &mut gfx, input, &mut quit,
+                            hub, &mut auto, &mut demo, &mut term, &mut help, &mut gfx, input,
+                            &mut quit,
                         )
                     }
                     Err(_) => break,

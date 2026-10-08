@@ -4,6 +4,12 @@
 
 ### Added
 
+- Held-pointer auto-scroll: a drag held still on the first or last text row (or past it,
+  on the status bar) keeps scrolling. While the button is down and the last drag scrolled
+  the view, the editor sends the same `drag` again about every 50 ms (faster past the last
+  text row), through the normal message path, so the trace records each one and a replay
+  scrolls the same. It stops on release, when the pointer moves off the edge, or when the
+  view can't scroll further.
 - `caretline serve --exit-with-parent`: the server exits (removing its socket) once the
   process that started it is gone, even if that process was killed and could clean nothing
   up. Checked every 100 ms (macOS has no parent-death signal). Off by default: a server
