@@ -76,8 +76,9 @@ pub use explain::{Arrow, Candidate, Explained, Explanation, Tried};
 pub use frame::{Edited, FrameResolver, map_anchors, observe};
 pub use geom::{Rect, Side};
 pub use model::{
-    AgentDim, Anchor, Applied, BlockId, Content, HINT, Hint, Layer, LayerOp, Layers, Limits, Owner,
-    Part, Pulse, Reason, Refusal, Ring, ScreenPos, Selector, Spotlight, apply, expire,
+    AgentDim, Anchor, Applied, BlockId, Content, HINT, HeadRule, Hint, Layer, LayerOp, Layers,
+    Limits, Owner, Part, Pulse, Reason, Refusal, Ring, ScreenPos, Selector, Spotlight, apply,
+    expire,
 };
 pub use place::{
     AVOID, Attach, CellKind, Edge, Grid, MAX_WIDTH, MeasureCtx, Mode, NARROW_COLS, NARROW_ROWS,

@@ -225,6 +225,9 @@ pub(crate) fn no_arrow(n: NoArrow) -> &'static str {
             "no_way: no route round the other layers, holes, protected cells and wide graphemes"
         }
         NoArrow::HeadOnText => "head_on_text: every cell beside the anchor is text or a word gap",
+        NoArrow::HeadOffAnchorRows => {
+            "head_off_anchor_rows: no arrow could end on one of the anchor's own rows (head: on_anchor_rows)"
+        }
     }
 }
 

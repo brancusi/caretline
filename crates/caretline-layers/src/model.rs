@@ -437,6 +437,31 @@ pub struct Layer {
     /// two-thirds of the area).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_width: Option<u16>,
+    /// Where the arrow's head may end ([`HeadRule`]; default anywhere clear beside the
+    /// anchor).
+    #[serde(default, skip_serializing_if = "HeadRule::is_any")]
+    pub head: HeadRule,
+}
+
+/// Where an arrow's head may end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeadRule {
+    /// On any clear cell beside the anchor (the default).
+    #[default]
+    Any,
+    /// Only on one of the anchor's own rows: beside it, approached from the side, never above
+    /// or below it, where a head on a neighbouring row reads as pointing at that row (a table's
+    /// next row, the amount beside it). Placement takes a box whose arrow can end so; when none
+    /// can, the box is placed with no arrow (`NoArrow::HeadOffAnchorRows`). Wire
+    /// `"head": "on_anchor_rows"`.
+    OnAnchorRows,
+}
+
+impl HeadRule {
+    pub fn is_any(&self) -> bool {
+        *self == HeadRule::Any
+    }
 }
 
 fn is_false(b: &bool) -> bool {
@@ -462,6 +487,7 @@ impl Layer {
             hide_off_screen: false,
             place: Vec::new(),
             max_width: None,
+            head: HeadRule::Any,
         }
     }
 
@@ -478,6 +504,12 @@ impl Layer {
 
     pub fn with_arrow(mut self) -> Layer {
         self.arrow = true;
+        self
+    }
+
+    /// Where its arrow's head may end ([`HeadRule`]).
+    pub fn with_head(mut self, head: HeadRule) -> Layer {
+        self.head = head;
         self
     }
 

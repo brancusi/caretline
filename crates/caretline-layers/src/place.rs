@@ -16,7 +16,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::explain::{Arrow, Candidate, Explained, Explanation, why_won};
 use crate::geom::{Rect, Side};
-use crate::model::{Anchor, Layer, Layers, Owner, Part, Pulse, ScreenPos};
+use crate::model::{Anchor, HeadRule, Layer, Layers, Owner, Part, Pulse, ScreenPos};
 use crate::resolve::{Off, Resolve, Resolved};
 use crate::route::{self, Dir, Field};
 
@@ -175,6 +175,9 @@ pub enum NoArrow {
     /// the anchor is text or between words. The arrow is dropped rather than drawn over the
     /// text; the box and the ring still mark the anchor.
     HeadOnText,
+    /// The layer's [`HeadRule::OnAnchorRows`]: an arrow would route, but none from any
+    /// candidate box can end on one of the anchor's own rows. The box is placed without it.
+    HeadOffAnchorRows,
 }
 
 /// A layer placed. The host draws its content in `rect` (a box or a one-row strip), the chip,
@@ -434,6 +437,8 @@ fn plan_one(
 
     // Set when the box's arrow could only end on text (`NoArrow::HeadOnText`).
     let mut head_on_text = false;
+    // Set when it could only end off the anchor's rows (`NoArrow::HeadOffAnchorRows`).
+    let mut off_rows = false;
     // An off-screen anchor gets an edge chip; the box docks against it.
     let mut dock: Option<(Rect, Side)> = None;
     if let (Some(o), Target::Off(_, which, _)) = (off, &t) {
@@ -528,6 +533,7 @@ fn plan_one(
                     false,
                     true,
                     hard,
+                    layer.head,
                     trace.as_deref_mut(),
                 )
                 .map(|(r, s, _)| (r, Some(s), None)),
@@ -541,6 +547,7 @@ fn plan_one(
                     layer.arrow,
                     false,
                     hard,
+                    layer.head,
                     trace.as_deref_mut(),
                 )
                 .map(|(r, s, path)| (r, Some(s), path)),
@@ -590,7 +597,7 @@ fn plan_one(
                     // it) a fresh one.
                     let to = nearest(&anchor, &r);
                     let path = path.or_else(|| {
-                        let field = CostField::new(grid, taken, &anchor, avoid, r);
+                        let field = CostField::new(grid, taken, &anchor, avoid, r).rule(layer.head);
                         route::route(
                             &field,
                             r,
@@ -603,11 +610,27 @@ fn plan_one(
                         )
                         .path()
                     });
-                    // None: would a way with its head on text have reached it?
-                    if path.is_none() {
+                    // None: would a way off the anchor's rows have reached it?
+                    if path.is_none() && layer.head != HeadRule::Any {
+                        let field = CostField::new(grid, taken, &anchor, avoid, r);
+                        off_rows = route::route(
+                            &field,
+                            r,
+                            side,
+                            to,
+                            area,
+                            u32::MAX,
+                            None,
+                            &mut route::Scratch::default(),
+                        )
+                        .path()
+                        .is_some();
+                    }
+                    // Or one with its head on text?
+                    if path.is_none() && !off_rows {
                         let field = CostField {
                             loose: true,
-                            ..CostField::new(grid, taken, &anchor, avoid, r)
+                            ..CostField::new(grid, taken, &anchor, avoid, r).rule(layer.head)
                         };
                         head_on_text = route::route(
                             &field,
@@ -678,6 +701,8 @@ fn plan_one(
             NoArrow::NoBox
         } else if off.is_some() {
             NoArrow::Docked
+        } else if off_rows {
+            NoArrow::HeadOffAnchorRows
         } else if head_on_text {
             NoArrow::HeadOnText
         } else {
@@ -1284,6 +1309,8 @@ struct CostField<'a> {
     own: Rect,
     /// Any cell it may enter may hold the head (only to tell `head_on_text` from `no_way`).
     loose: bool,
+    /// The head only on one of the anchor's rows ([`HeadRule::OnAnchorRows`]).
+    rows: bool,
 }
 
 impl<'a> CostField<'a> {
@@ -1301,6 +1328,15 @@ impl<'a> CostField<'a> {
             avoid,
             own,
             loose: false,
+            rows: false,
+        }
+    }
+
+    /// The same, holding the head to the layer's rule.
+    fn rule(self, head: HeadRule) -> CostField<'a> {
+        CostField {
+            rows: head == HeadRule::OnAnchorRows,
+            ..self
         }
     }
 }
@@ -1330,6 +1366,9 @@ impl Field for CostField<'_> {
     /// (`[ ]▶item`, `is▲quick`), where it reads as part of the text.
     fn head(&self, x: u16, y: u16) -> bool {
         let g = self.grid;
+        if self.rows && !self.anchor.iter().any(|r| y >= r.y && y < r.bottom()) {
+            return false;
+        }
         if self.loose {
             return true;
         }
@@ -1477,6 +1516,7 @@ fn place(
     arrow: bool,
     flush: bool,
     hard: bool,
+    head: HeadRule,
     trace: Option<&mut Explained>,
 ) -> Option<(Rect, Side, Option<route::Path>)> {
     let area = grid.area;
@@ -1660,7 +1700,7 @@ fn place(
         // can't. The winner is the least of them all, whatever order they're routed in, so
         // it doesn't depend on which boxes a first guess ranked together (`route_all`).
         let mut arrows = trace.as_ref().map(|_| Vec::new());
-        let b = route_all(&cands, anchor, avoid, grid, taken, arrows.as_mut());
+        let b = route_all(&cands, anchor, avoid, grid, taken, head, arrows.as_mut());
         let r = b.as_ref().map(|b| keep(b.rect, b.side));
         if let Some(tr) = trace {
             let winner = b
@@ -1798,6 +1838,7 @@ fn route_all(
     avoid: &[Rect],
     grid: &Grid,
     taken: &Taken,
+    head: HeadRule,
     mut trace: Option<&mut Vec<(usize, Arrow)>>,
 ) -> Option<Scored> {
     let area = grid.area;
@@ -1813,7 +1854,7 @@ fn route_all(
             None => groups.push((c.side, near[i], c.far, vec![i])),
         }
     }
-    let open = CostField::new(grid, taken, anchor, avoid, Rect::default());
+    let open = CostField::new(grid, taken, anchor, avoid, Rect::default()).rule(head);
     // Where a head may go beside each anchor rect, on any side.
     let mut heads: Vec<(Rect, Vec<(u16, u16)>)> = Vec::new();
     for g in &groups {
@@ -1849,7 +1890,7 @@ fn route_all(
                 // A far box's corridor is long: before searching it, the cells to the nearest
                 // head (one each, at least) must leave it a chance.
                 !far || {
-                    let field = CostField::new(grid, taken, anchor, avoid, c.rect);
+                    let field = CostField::new(grid, taken, anchor, avoid, c.rect).rule(head);
                     route::heads_bound(&field, c.rect, c.side, n, heads_of(n))
                         .is_none_or(|lb| can_win(c.score + lb * 5, c, &best))
                 }
@@ -1868,7 +1909,7 @@ fn route_all(
             .iter()
             .map(|&i| {
                 let c = &cands[i];
-                let field = CostField::new(grid, taken, anchor, avoid, c.rect);
+                let field = CostField::new(grid, taken, anchor, avoid, c.rect).rule(head);
                 let lb = goal
                     .bound(&field, c.rect, c.side, n)
                     .or_else(|| route::heads_bound(&field, c.rect, c.side, n, heads_of(n)));
@@ -1887,7 +1928,7 @@ fn route_all(
                 Some(b) if !b.miss && b.avoid == c.avoid => b.score.saturating_sub(c.score) / 5,
                 _ => u32::MAX,
             };
-            let field = CostField::new(grid, taken, anchor, avoid, c.rect);
+            let field = CostField::new(grid, taken, anchor, avoid, c.rect).rule(head);
             let routed = route::route(
                 &field,
                 c.rect,

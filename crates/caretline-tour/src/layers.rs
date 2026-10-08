@@ -92,6 +92,7 @@ fn layer(
     out.hide_off_screen = l.place.hide_off_screen;
     out.place = l.place.sides.clone();
     out.max_width = l.place.max_width;
+    out.head = l.place.head;
     out
 }
 

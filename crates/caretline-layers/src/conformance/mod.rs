@@ -28,7 +28,7 @@ use serde_json::Value;
 
 use crate::explain::Explanation;
 use crate::geom::Rect;
-use crate::model::{Anchor, Layer, LayerOp, Layers, Limits, apply};
+use crate::model::{Anchor, HeadRule, Layer, LayerOp, Layers, Limits, apply};
 use crate::place::{
     Attach, CellKind, Edge, Grid, MAX_WIDTH, MeasureCtx, Mode, NoArrow, Opts, Plan, Planned,
     Renderers, Size, plan_explained, plan_with,
@@ -118,6 +118,8 @@ pub enum Kind {
     RouteCrosses,
     /// An arrow's head is on text or in a gap between words.
     HeadOnText,
+    /// A layer with `head: on_anchor_rows` has an arrow whose head is off its anchor's rows.
+    HeadOffAnchorRows,
     /// `no_arrow` is missing, set without cause, or gives the wrong reason.
     NoArrowReason,
     /// A box covers avoid cells though a clear box was in reach, or `covers_avoid` miscounts.
@@ -353,6 +355,7 @@ pub fn check_plan(plan: &Plan, scene: &Scene<'_>) -> Vec<Violation> {
         let layer = scene.layers.get(&p.id);
         dock(p, &mut out);
         route(p, &panels, &routes, grid, &mut out);
+        head_rows(p, layer, &mut out);
         no_arrow(p, layer, &mut out);
         regions(p, plan, &mut out);
     }
@@ -547,6 +550,29 @@ fn route(
     }
 }
 
+/// With `head: on_anchor_rows`, the head is on one of the anchor's rows.
+fn head_rows(p: &Planned, layer: Option<&Layer>, out: &mut Vec<Violation>) {
+    let (Some(rt), Some(l)) = (&p.route, layer) else {
+        return;
+    };
+    if l.head != HeadRule::OnAnchorRows {
+        return;
+    }
+    let Some(h) = rt.steps.last() else { return };
+    let rows = p
+        .anchor
+        .as_ref()
+        .map(|a| a.rects.as_slice())
+        .unwrap_or_default();
+    if !rows.iter().any(|r| h.y >= r.y && h.y < r.bottom()) {
+        out.push(Violation::new(
+            Some(&p.id),
+            Kind::HeadOffAnchorRows,
+            format!("the head ({},{}) is off the anchor's rows", h.x, h.y),
+        ));
+    }
+}
+
 fn no_arrow(p: &Planned, layer: Option<&Layer>, out: &mut Vec<Violation>) {
     let Some(layer) = layer else { return };
     let mut bad = |d: String| out.push(Violation::new(Some(&p.id), Kind::NoArrowReason, d));
@@ -573,7 +599,10 @@ fn no_arrow(p: &Planned, layer: Option<&Layer>, out: &mut Vec<Violation>) {
             };
             let ok = match want {
                 Some(w) => n == w,
-                None => matches!(n, NoArrow::NoWay | NoArrow::HeadOnText),
+                None => {
+                    matches!(n, NoArrow::NoWay | NoArrow::HeadOnText)
+                        || (n == NoArrow::HeadOffAnchorRows && layer.head == HeadRule::OnAnchorRows)
+                }
             };
             if !ok {
                 bad(format!(
