@@ -65,6 +65,29 @@ remaining difference is the view walk the bottom of the view still needs). Keepi
 view at the very end of a document also walks up from the end, so the last screen of a
 document costs a few microseconds more than the middle.
 
+### Counting rows at a new width
+
+When a panel narrows a long page, every line's rows are counted again from scratch. A line
+whose drawn text is printable ASCII (U+0020 to U+007E: one cell per char, nothing that joins
+the next, a space the only whitespace) is wrapped by word-wrap arithmetic instead of walking
+it through the grapheme formatter: the same rules (words move whole, a word longer than
+`max_wrap` or one that began its row breaks at the column, an outline's hanging spaces, the
+carried indent), the same row starts. `Layout::line_rows`, the row walks behind scrolling and
+keeping the caret in view, and the wrap cache of long lines use it; a tab, a control
+character or anything outside ASCII sends the line to the formatter, which stays the
+reference (`layout::tests::ascii_rows_match_the_formatter` compares the two over random lines
+at every width from 1 to 120).
+
+5,000 outline blocks of one ~75-character line each, a fresh `Layout` and every line's
+`line_rows` (release, `cargo test --release --test scale counting -- --nocapture`):
+
+| View width | Rows per block | Before | Now |
+|---|---|---|---|
+| 100 | 1 | 0.61 ms | 0.60 ms |
+| 70 | 2 | 14.1 ms (2.8 µs per line) | 1.04 ms (0.21 µs per line) |
+| 50 | 2 | 13.8 ms | 1.05 ms |
+| 30 | 3 | 13.7 ms | 1.06 ms |
+
 ## Stress test (live editor, driven over the socket)
 
 | Stage | Result |

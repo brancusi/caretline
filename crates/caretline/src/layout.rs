@@ -574,6 +574,25 @@ impl Layout {
 
     /// Formats `e` on from its last known row until `need` is met.
     fn extend(&self, e: &mut LineRows, lf: &LineFormat, need: Need) {
+        if e.rows.len() == 1 {
+            // Every row of a printable ASCII line at once, by word-wrap arithmetic.
+            let start = e.start();
+            let mut rows = Vec::new();
+            let fast = self.fast_rows(e.line, lf, |offset, col| {
+                rows.push(RowStart {
+                    char_idx: start + offset,
+                    col,
+                })
+            });
+            if let Some((_, indent)) = fast {
+                e.rows = rows;
+                e.indent = indent;
+                e.complete = true;
+                e.next_line =
+                    (e.line < self.last_line()).then(|| self.text().line_to_char(e.line + 1));
+                return;
+            }
+        }
         let last = e.rows.len() - 1;
         let mut formatter = self.formatter_from(e.line, lf, last, e.rows[last], e.indent);
         while let Some(g) = formatter.next() {
@@ -701,18 +720,88 @@ impl Layout {
     }
 
     fn text_rows_with(&self, line: usize, lf: &LineFormat) -> usize {
-        if !self.fmt_of(lf).soft_wrap || self.fits_one_row(line, lf) {
+        let fmt = self.fmt_of(lf);
+        if !fmt.soft_wrap {
             return 1;
+        }
+        let text = self.drawn_text(line, lf);
+        if surely_fits(text, fmt.viewport_width as usize, fmt.tab_width as usize) {
+            return 1;
+        }
+        match self.ascii_text(text, fmt) {
+            // A printable ASCII line is counted by word-wrap arithmetic; a long one goes
+            // through the wrap cache (filled the same way), which later lookups reuse.
+            Some((text, n)) if n < LONG_LINE_CHARS => {
+                return ascii_rows(&text.as_bytes()[..n], n == text.len(), fmt, |_, _| {}).0;
+            }
+            Some(_) => {}
+            None if self.fits_one_row(line, lf) => return 1,
+            None => {}
         }
         if self.is_long(line, lf) {
             self.known_row(line, lf, Need::All);
             let cache = self.cache.borrow();
-            let key = fmt_key(self.fmt_of(lf));
+            let key = fmt_key(fmt);
             if let Some(e) = cache.0.iter().find(|e| e.fmt == key && e.line == line) {
                 return e.rows.len();
             }
         }
         self.formatted_rows_with(line, lf)
+    }
+
+    /// Line `line` from its drawn text's start, its break included.
+    fn drawn_text(&self, line: usize, lf: &LineFormat) -> RopeSlice<'_> {
+        // `Rope::line` skips the full-slice bookkeeping `RopeSlice::line` pays.
+        let text = self.rope.line(line);
+        if lf.skip == 0 {
+            text
+        } else {
+            text.slice(lf.skip.min(text.len_chars())..)
+        }
+    }
+
+    /// A line's `text` from [`Layout::drawn_text`], with the length of its drawn text, when
+    /// `fmt` wraps it and the drawn text is printable ASCII ([`ascii_fast`]) so that
+    /// [`ascii_rows`] can find its rows: the text is followed by the line's break, or by
+    /// nothing on the last line. `None`: the line must be formatted.
+    fn ascii_text<'a>(
+        &self,
+        text: RopeSlice<'a>,
+        fmt: &TextFormat,
+    ) -> Option<(std::borrow::Cow<'a, str>, usize)> {
+        if !fmt.soft_wrap || !fmt.wrap_indicator.is_empty() || !self.annotations.is_empty() {
+            return None;
+        }
+        let text: std::borrow::Cow<'a, str> = text.into();
+        let n = text
+            .bytes()
+            .position(|b| !ascii_fast(b))
+            .unwrap_or(text.len());
+        let tail = &text[n..];
+        if !tail.is_empty() && crate::helix::LineEnding::from_str(tail).is_none() {
+            return None;
+        }
+        Some((text, n))
+    }
+
+    /// The rows of line `line` by word-wrap arithmetic ([`ascii_rows`]), when
+    /// [`Layout::ascii_text`] allows: `on_row(offset, col)` for each row's first grapheme,
+    /// `offset` counted from the drawn text's start. Returns the row count and the indent
+    /// level the formatter reports, or `None` when the line must be formatted.
+    fn fast_rows(
+        &self,
+        line: usize,
+        lf: &LineFormat,
+        on_row: impl FnMut(usize, usize),
+    ) -> Option<(usize, Option<usize>)> {
+        let fmt = self.fmt_of(lf);
+        let (text, n) = self.ascii_text(self.drawn_text(line, lf), fmt)?;
+        Some(ascii_rows(
+            &text.as_bytes()[..n],
+            n == text.len(),
+            fmt,
+            on_row,
+        ))
     }
 
     /// The rows the formatter gives line `line`.
@@ -753,13 +842,7 @@ impl Layout {
         let fmt = self.fmt_of(lf);
         let width = fmt.viewport_width as usize;
         let tab = fmt.tab_width as usize;
-        // `Rope::line` skips the full-slice bookkeeping `RopeSlice::line` pays.
-        let text = self.rope.line(line);
-        let rest = if lf.skip == 0 {
-            text
-        } else {
-            text.slice(lf.skip.min(text.len_chars())..)
-        };
+        let rest = self.drawn_text(line, lf);
         if surely_fits(rest, width, tab) {
             return true;
         }
@@ -1205,6 +1288,121 @@ fn surely_fits(line: RopeSlice<'_>, width: usize, tab: usize) -> bool {
     1 + bytes + tabs * tab.saturating_sub(1) < width
 }
 
+/// Whether a byte of a line's drawn text lets the line take the fast path: printable ASCII,
+/// U+0020 to U+007E. Each is one grapheme, one cell wide, that never joins the next, and a
+/// space is the only whitespace among them. A tab (its width depends on its column), a control
+/// character and anything outside ASCII (wide, combining, an emoji) send the line to the
+/// formatter.
+fn ascii_fast(b: u8) -> bool {
+    (b' '..=b'~').contains(&b)
+}
+
+/// Where the formatter starts the rows of a line whose drawn text `s` is printable ASCII
+/// ([`ascii_fast`]), soft-wrapped with `fmt` (no wrap indicator, no annotations), followed by
+/// its line break or, with `eof`, the end of the text. Calls `on_row(offset, col)` for each
+/// row's first grapheme (`offset == s.len()` is the break or the end) and returns the row
+/// count and the first indent level [`DocumentFormatter::indent_level`] reports while the
+/// line is yielded (what the [`WrapCache`] keeps).
+///
+/// It is `DocumentFormatter::advance_to_next_word` with every grapheme one cell wide: words
+/// end at a space (prose, `hang_spaces`) or at any non-word char (code); a word that doesn't
+/// fit moves to the next row whole (carrying the indent) unless it began its row or is longer
+/// than `max_wrap`, when it breaks at the row's end; with `hang_spaces` a space that doesn't
+/// fit hangs past the row's end, and a break or the end right after it stays on that row. The
+/// formatter stays the reference: `tests::ascii_rows_match_the_formatter` checks one against
+/// the other.
+fn ascii_rows(
+    s: &[u8],
+    eof: bool,
+    fmt: &TextFormat,
+    mut on_row: impl FnMut(usize, usize),
+) -> (usize, Option<usize>) {
+    let width = fmt.viewport_width as usize;
+    let max_wrap = fmt.max_wrap as usize;
+    let retain = fmt.max_indent_retain as usize;
+    let n = s.len();
+    // As the formatter's `char_pos`, `visual_pos`, `row_start`, `hung` and `indent_level`:
+    // the next grapheme (`n` is the break or the end), the column and row the next word
+    // starts at, the column its row starts at, whether the row ends in hanging whitespace,
+    // and the line's indent.
+    let mut p = 0;
+    let mut col = 0;
+    let mut row = 0;
+    let mut row_start = 0;
+    let mut hung = false;
+    let mut indent: Option<usize> = None;
+    let mut reported: Option<usize> = None;
+    let mut rows = 0;
+    while p <= n {
+        let first = p;
+        // The word's graphemes, each one cell: also its width.
+        let mut len = 0;
+        while p <= n {
+            let end = p == n;
+            let b = if end { b' ' } else { s[p] };
+            let at = col + len;
+            let fits = at < width || (fmt.soft_wrap_at_text_width && end && at == width);
+            if !fits && !(hung && end) {
+                if fmt.hang_spaces && !end && b == b' ' {
+                    // The space hangs past the row's end; the next row starts after it.
+                    p += 1;
+                    len += 1;
+                    hung = true;
+                    break;
+                }
+                if col == row_start {
+                    // The word began its row: it breaks here.
+                    if len > 0 {
+                        break;
+                    }
+                } else if len > max_wrap {
+                    // A long word breaks at the row's end.
+                    break;
+                } else {
+                    // The word moves to the next row whole.
+                    let carry = match indent {
+                        Some(i) if i <= retain => i,
+                        Some(_) => 0,
+                        None => {
+                            indent = Some(0);
+                            0
+                        }
+                    };
+                    row += 1;
+                    col = carry;
+                    row_start = carry;
+                    hung = false;
+                    continue;
+                }
+            }
+            p += 1;
+            len += 1;
+            let space = end || b == b' ';
+            if !space && indent.is_none() {
+                indent = Some(col);
+            } else if end && !eof {
+                // A line break resets the indent; the end of the text (a space) doesn't.
+                indent = None;
+            }
+            let boundary = space || (!fmt.hang_spaces && !(b.is_ascii_alphanumeric() || b == b'_'));
+            if boundary {
+                break;
+            }
+        }
+        // The formatter yields the word after building it.
+        if reported.is_none() {
+            reported = indent;
+        }
+        if row == rows {
+            on_row(first, col);
+            rows += 1;
+        }
+        debug_assert!(row < rows, "every row starts with a grapheme");
+        col += len;
+    }
+    (rows, reported)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1347,30 +1545,59 @@ mod tests {
     /// layout from scratch: the same states, frames, coordinates and row counts.
     #[test]
     fn wrap_cache_agrees_with_layout_from_scratch() {
+        wrap_cache_check(
+            &[
+                "a",
+                "word ",
+                "words and more ",
+                "\t",
+                "界",
+                "🙂",
+                "e\u{301}",
+                "  ",
+                "long-unbroken-token-that-goes-on",
+                "x",
+                "x",
+                "x",
+                " ",
+            ],
+            0,
+        );
+    }
+
+    /// The same with printable ASCII only, so long lines fill the cache by [`ascii_rows`].
+    #[test]
+    fn wrap_cache_of_ascii_lines_agrees_with_layout_from_scratch() {
+        wrap_cache_check(
+            &[
+                "a",
+                "word ",
+                "words and more ",
+                "  ",
+                "long-unbroken-token-that-goes-on",
+                "x",
+                "x",
+                "x",
+                " ",
+                "(a.b)",
+            ],
+            0x5bd1_e995,
+        );
+    }
+
+    fn wrap_cache_check(pieces: &[&str], salt: u32) {
         use crate::msg::{By, Dir, Msg};
         use crate::update::update;
         use crate::view::view;
-        let pieces = [
-            "a",
-            "word ",
-            "words and more ",
-            "\t",
-            "界",
-            "🙂",
-            "e\u{301}",
-            "  ",
-            "long-unbroken-token-that-goes-on",
-            "x",
-            "x",
-            "x",
-            " ",
-        ];
         for seed in 1..=seeds() {
-            let mut next = xorshift(0x9e37_79b9 ^ seed.wrapping_mul(0x85eb_ca6b));
+            let mut next = xorshift(0x9e37_79b9 ^ seed.wrapping_mul(0x85eb_ca6b) ^ salt);
             let mut text = String::new();
             for l in 0..(1 + next() % 3) {
                 if next().is_multiple_of(2) {
-                    text.push_str(["", "  ", "\t", "        "][next() as usize % 4]);
+                    let indent = ["", "  ", "\t", "        "][next() as usize % 4];
+                    if indent != "\t" || pieces.contains(&"\t") {
+                        text.push_str(indent);
+                    }
                 }
                 let n = if l == 0 || next().is_multiple_of(2) {
                     300 + next() % 600
@@ -1462,5 +1689,279 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A random line of printable ASCII: words, punctuation, runs of spaces (leading and
+    /// trailing too), words longer than a row, or nothing.
+    fn ascii_line(next: &mut impl FnMut() -> u32) -> String {
+        let pieces = [
+            "a", "word", "words", "x", "_x_", "-", ".", "(a.b)", "foo-bar", "i.e.,", "42", " ",
+            " ", " ", "  ", "     ",
+        ];
+        let mut line = String::new();
+        if next().is_multiple_of(8) {
+            return line;
+        }
+        if next().is_multiple_of(3) {
+            line.push_str(&" ".repeat(next() as usize % 12));
+        }
+        for _ in 0..(next() % 40) {
+            match next() % 10 {
+                0 => line.push_str(&"y".repeat(1 + next() as usize % 150)),
+                1..=4 => line.push(' '),
+                _ => line.push_str(pieces[next() as usize % pieces.len()]),
+            }
+        }
+        if next().is_multiple_of(3) {
+            line.push_str(&" ".repeat(next() as usize % 6));
+        }
+        line
+    }
+
+    /// The row starts and indent the formatter gives the first line of `text`, as
+    /// [`Layout::extend`] records them.
+    fn formatter_rows(text: &str, fmt: &TextFormat) -> (Vec<(usize, usize)>, Option<usize>) {
+        let rope = Rope::from(text);
+        let annotations = TextAnnotations::default();
+        let mut f = DocumentFormatter::new_at_prev_checkpoint(rope.slice(..), fmt, &annotations, 0);
+        let mut rows = Vec::new();
+        let mut indent = None;
+        while let Some(g) = f.next() {
+            if g.line_idx != 0 {
+                break;
+            }
+            if indent.is_none() {
+                indent = f.indent_level();
+            }
+            assert!(g.visual_pos.row <= rows.len(), "{text:?}: a row skipped");
+            if g.visual_pos.row == rows.len() {
+                rows.push((g.char_idx, g.visual_pos.col));
+            }
+        }
+        (rows, indent)
+    }
+
+    /// The word-wrap fast path finds exactly the formatter's rows (where each starts, at what
+    /// column, and the indent it carries) for random printable ASCII lines at every width
+    /// from 1 to 120: code wrapping, prose with and without hanging spaces, before a line
+    /// break and at the end of the text.
+    #[test]
+    fn ascii_rows_match_the_formatter() {
+        let config = Config::default();
+        let mut next = xorshift(0x1b87_3593);
+        let mut cases = 0;
+        for _ in 0..(2500 * seeds()) {
+            let line = ascii_line(&mut next);
+            let width = 1 + (next() % 120) as u16;
+            let mut code = text_format(&config, width, true);
+            let mut prose = prose_format(&config, width, true, false);
+            let mut hang = prose_format(&config, width, true, true);
+            for fmt in [&mut code, &mut prose, &mut hang] {
+                // Below 11 columns layout doesn't wrap; the arithmetic must hold there too.
+                fmt.soft_wrap = true;
+            }
+            for fmt in [&code, &prose, &hang] {
+                for eof in [false, true] {
+                    let text = if eof {
+                        line.clone()
+                    } else {
+                        format!("{line}\nnext")
+                    };
+                    let want = formatter_rows(&text, fmt);
+                    let mut rows = Vec::new();
+                    let (n, indent) =
+                        ascii_rows(line.as_bytes(), eof, fmt, |o, c| rows.push((o, c)));
+                    let ctx = format!(
+                        "{line:?} at {width}, hang {}, max_wrap {}, eof {eof}",
+                        fmt.hang_spaces, fmt.max_wrap
+                    );
+                    assert_eq!(rows, want.0, "{ctx}: rows");
+                    assert_eq!(n, rows.len(), "{ctx}: count");
+                    assert_eq!(indent, want.1, "{ctx}: indent");
+                    cases += 1;
+                }
+            }
+        }
+        assert!(cases >= 90_000);
+    }
+
+    /// The rows a fresh formatter gives line `line` of `layout` from its drawn text's start
+    /// (no cache, no fast path), with the indent [`Layout::extend`] records.
+    fn walked_rows(layout: &Layout, line: usize) -> (Vec<(usize, usize)>, Option<usize>) {
+        let lf = layout.line_format(line);
+        let start = layout.content_range(line, &lf).0;
+        let at = RowStart {
+            char_idx: start,
+            col: 0,
+        };
+        let mut f = layout.formatter_from(line, &lf, 0, at, None);
+        let mut rows = Vec::new();
+        let mut indent = None;
+        while let Some(g) = f.next() {
+            if g.line_idx != line {
+                break;
+            }
+            if indent.is_none() {
+                indent = f.indent_level();
+            }
+            if g.visual_pos.row == rows.len() {
+                rows.push((g.char_idx - start, g.visual_pos.col));
+            }
+        }
+        (rows, indent)
+    }
+
+    /// The place of `pos` by a fresh formatter walk from its line's start.
+    fn walked_coords(layout: &Layout, pos: usize) -> (RowPos, usize) {
+        let line = layout.text().char_to_line(pos);
+        let lf = layout.line_format(line);
+        let start = layout.content_range(line, &lf).0;
+        let pos = pos.max(start);
+        let at = RowStart {
+            char_idx: start,
+            col: 0,
+        };
+        let mut f = layout.formatter_from(line, &lf, 0, at, None);
+        let mut last = crate::helix::Position::default();
+        while let Some(g) = f.next() {
+            last = g.visual_pos;
+            if f.next_char_pos() > pos {
+                break;
+            }
+        }
+        (
+            RowPos {
+                line,
+                row: last.row + lf.before,
+            },
+            last.col + lf.x,
+        )
+    }
+
+    /// In outline layouts (blocks at several depths, markers skipped, prose wrapping with and
+    /// without a hang) and in plain text, every line's rows, row starts and caret places are
+    /// the formatter's, whether a line takes the fast path, the wrap cache (long lines) or
+    /// neither.
+    #[test]
+    fn layout_rows_of_ascii_lines_match_the_formatter() {
+        use crate::outline::{markdown, OutlineConfig};
+        let mut next = xorshift(0x27d4_eb2f);
+        let mut fast = 0;
+        for case in 0..(40 * seeds()) {
+            let mut md = String::new();
+            for _ in 0..(1 + next() % 12) {
+                let depth = next() as usize % 5;
+                let marker = ["- ", "1. ", "- [a] ", ""][next() as usize % 4];
+                let mut body = ascii_line(&mut next);
+                if next().is_multiple_of(4) {
+                    // A long line, laid out through the wrap cache.
+                    while body.len() < LONG_LINE_CHARS {
+                        body.push_str(" more words and a-hyphenated-word");
+                    }
+                }
+                md.push_str(&format!(
+                    "{}{marker}{}\n",
+                    "  ".repeat(depth),
+                    body.trim_start()
+                ));
+            }
+            let width = 11 + (next() % 110) as u16;
+            let mut state = markdown::load(
+                &md,
+                None,
+                Viewport { width, height: 20 },
+                OutlineConfig::default().with_tags("a".into()),
+            );
+            if !case.is_multiple_of(4) {
+                state.view.layout = Some(
+                    OutlineLayout::default()
+                        .with_column(20 + (next() % 80) as u16)
+                        .with_min_column(5 + (next() % 20) as u16),
+                );
+            }
+            let layout = Layout::new(&state);
+            for line in 0..=layout.last_line() {
+                let lf = layout.line_format(line);
+                let ctx = format!("case {case}, {md:?} at {width}, line {line}");
+                let want = walked_rows(&layout, line);
+                let mut rows = Vec::new();
+                if let Some((n, indent)) = layout.fast_rows(line, &lf, |o, c| rows.push((o, c))) {
+                    assert_eq!((rows.clone(), indent), want, "{ctx}: fast rows");
+                    assert_eq!(n, rows.len(), "{ctx}");
+                    fast += 1;
+                }
+                let text_rows = if layout.fmt_of(&lf).soft_wrap {
+                    want.0.len()
+                } else {
+                    1
+                };
+                assert_eq!(layout.text_rows_of(line), text_rows, "{ctx}: rows");
+                assert_eq!(
+                    layout.line_rows(line),
+                    lf.before + text_rows + lf.after,
+                    "{ctx}: line rows"
+                );
+            }
+            let len = layout.text().len_chars();
+            for _ in 0..20 {
+                let pos = next() as usize % (len + 1);
+                let at = layout.pos_coords(pos);
+                assert_eq!(
+                    at,
+                    walked_coords(&layout, pos),
+                    "case {case}, {md:?}: {pos}"
+                );
+            }
+        }
+        assert!(fast > 0);
+    }
+
+    /// Lines with a tab, a wide char, an emoji, a combining mark or a control char are
+    /// formatted; printable ASCII lines take the fast path.
+    #[test]
+    fn only_printable_ascii_takes_the_fast_path() {
+        let lines = [
+            ("plain words, punctuation (and) more_words ~", true),
+            ("", true),
+            ("   trailing   ", true),
+            ("a\ttab", false),
+            ("wide 界 char", false),
+            ("emoji 🙂 here", false),
+            ("combining e\u{301} mark", false),
+            ("control \u{1} char", false),
+            ("delete \u{7f} char", false),
+            ("no-break\u{a0}space", false),
+        ];
+        let text: Vec<&str> = lines.iter().map(|(l, _)| *l).collect();
+        for eol in ["\n", "\r\n"] {
+            let state = State::new(
+                &text.join(eol),
+                None,
+                Viewport {
+                    width: 20,
+                    height: 10,
+                },
+            );
+            let layout = Layout::new(&state);
+            for (line, (s, ascii)) in lines.iter().enumerate() {
+                let lf = layout.line_format(line);
+                let fast = layout.fast_rows(line, &lf, |_, _| {});
+                assert_eq!(fast.is_some(), *ascii, "{s:?}");
+                assert_eq!(layout.line_rows(line), layout.formatted_rows(line), "{s:?}");
+            }
+        }
+        // Without soft wrap there is nothing to count.
+        let state = State::new(
+            "words",
+            None,
+            Viewport {
+                width: 8,
+                height: 10,
+            },
+        );
+        let layout = Layout::new(&state);
+        assert!(layout
+            .fast_rows(0, &layout.line_format(0), |_, _| {})
+            .is_none());
     }
 }
