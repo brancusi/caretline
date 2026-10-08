@@ -18,28 +18,52 @@
         ]
       },
       "rect": {
-        "x": 28,
-        "y": 9,
-        "w": 52,
-        "h": 4
+        "x": 62,
+        "y": 2,
+        "w": 18,
+        "h": 7
       },
       "mode": "box",
-      "side": "below",
+      "side": "right",
       "route": {
         "junction": [
-          50,
-          9
+          62,
+          5
         ],
         "attach": {
-          "edge": "top",
-          "offset": 22
+          "edge": "left",
+          "offset": 3
         },
         "steps": [
           {
-            "x": 50,
-            "y": 8,
-            "enter": "up",
-            "leave": "up"
+            "x": 61,
+            "y": 5,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 60,
+            "y": 5,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 59,
+            "y": 5,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 58,
+            "y": 5,
+            "enter": "left",
+            "leave": "down"
+          },
+          {
+            "x": 58,
+            "y": 6,
+            "enter": "down",
+            "leave": "down"
           }
         ]
       },
@@ -57,10 +81,10 @@
   "regions": [
     {
       "rect": {
-        "x": 28,
-        "y": 9,
-        "w": 52,
-        "h": 4
+        "x": 62,
+        "y": 2,
+        "w": 18,
+        "h": 7
       },
       "id": "L-1"
     }

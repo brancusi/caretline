@@ -125,6 +125,19 @@
   document, but `observe` mapped every text anchor through it, so typing in `main` (page A)
   shifted a hint scoped to `panel:1` (page B), or dropped it when page B was shorter. Anchors
   scoped to views that don't show the edited document are now left alone (`Edited`).
+- An arrow's head never lands on text. In a tight list it ended on a letter, a hyphen inside
+  a word, or the gap between two words (`[ ]▶item`, `is▲quick`). The head now ends only on
+  a clear cell beside the anchor: blank, with nothing beside it on its row but the anchor.
+  Routing and placement hold to it (a box whose arrow can end clear beats one whose can't),
+  and an arrow that can't end on the side its box faces ends on another. When every cell
+  beside the anchor is text, the arrow is dropped and `Planned.no_arrow` is the new
+  `head_on_text` (`NoArrow::HeadOnText`); the box and ring still mark the anchor. Goldens:
+  `word`, `agent` and `spotlight` at 80×24 and the CLI's `demo-layers.scrolled.60x20` place
+  their boxes and arrows anew, each head on a blank row beside the anchor. At 100×40
+  (release, least of ten runs alternating with the previous build): a box with its arrow
+  22.4 µs (was 27.3), a spotlight with an arrow 35.9 µs (was 37.6), a box alone 5.7 µs
+  (unchanged): sides with a clear head are routed first, a side with none skips its search,
+  and the router reuses its memory across a plan's routes.
 - A strip for an off-screen anchor goes on the edge the anchor lies beyond: the bottom for
   one below (the last free row, so above a protected last row or the edge chip), the top for
   one above. A layer whose anchor lay below fell back to the top row, away from it and its

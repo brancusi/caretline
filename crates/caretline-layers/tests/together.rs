@@ -481,6 +481,81 @@ fn the_host_sizes_a_chip_from_its_anchor_and_direction() {
     assert_eq!(p.layers[1].chip.unwrap().w, 5);
 }
 
+/// A tight checklist: one item per row, no blank rows between.
+fn checklist() -> Grid {
+    let mut grid = Grid::new(80, 24).with_area(Rect::new(0, 0, 80, 23));
+    for (y, row) in [
+        "[ ] buy milk and some bread",
+        "[ ] call the well-known plumber",
+        "[ ] file the forms",
+    ]
+    .iter()
+    .enumerate()
+    {
+        grid.mark_text(2, 5 + y as u16, row);
+    }
+    grid
+}
+
+/// Whether an arrow's head is on a clear cell: blank, nothing but the anchor beside it on
+/// its row.
+fn clear_head(grid: &Grid, p: &Planned) -> bool {
+    let route = p.route.as_ref().expect("a route");
+    let head = route.steps.last().unwrap();
+    let anchor = &p.anchor.as_ref().unwrap().rects;
+    let beside = |x: u16| {
+        grid.kind(x, head.y) == CellKind::Blank || anchor.iter().any(|r| r.contains(x, head.y))
+    };
+    grid.kind(head.x, head.y) == CellKind::Blank
+        && beside(head.x.saturating_sub(1))
+        && beside(head.x + 1)
+}
+
+#[test]
+fn an_arrow_head_never_lands_on_text_in_a_tight_list() {
+    let grid = checklist();
+    let mut m = AnchorMap::new();
+    // The middle item's checkbox, the box to its right: the cell after `]` is the gap before
+    // "call". The head goes round to the clear cell left of the checkbox instead.
+    let boxed = host(&mut m, "box", Rect::new(2, 6, 3, 1));
+    let mut l = Layer::new(boxed).with_content(card()).with_arrow();
+    l.place = vec![Side::Right];
+    let p = plan(&all(vec![l]), &m, &grid, &sized(20, 3));
+    let l = &p.layers[0];
+    assert!(clear_head(&grid, l), "{:?}", l.route);
+    let head = l.route.as_ref().unwrap().steps.last().unwrap();
+    assert_eq!((head.x, head.y, head.leave), (1, 6, Dir::Right));
+    // Its item's text, from any side: every route has a clear head.
+    for side in Side::DEFAULT {
+        let call = host(&mut m, "call", Rect::new(6, 6, 4, 1));
+        let mut l = Layer::new(call).with_content(card()).with_arrow();
+        l.place = vec![side];
+        let p = plan(&all(vec![l]), &m, &grid, &sized(20, 3));
+        let l = &p.layers[0];
+        if l.route.is_some() {
+            assert!(clear_head(&grid, l), "{side:?}: {:?}", l.route);
+        }
+    }
+    // "well" in "well-known", hemmed in by its own line and the items above and below: every
+    // cell beside it is a letter, the hyphen or a word gap. The arrow is dropped, and the
+    // plan says why.
+    let well = host(&mut m, "well", Rect::new(15, 6, 4, 1));
+    let p = plan(
+        &all(vec![Layer::new(well).with_content(card()).with_arrow()]),
+        &m,
+        &grid,
+        &sized(20, 3),
+    );
+    let l = &p.layers[0];
+    assert_eq!(l.mode, Some(Mode::Box));
+    assert_eq!(l.route, None);
+    assert_eq!(l.no_arrow, Some(NoArrow::HeadOnText));
+    assert_eq!(
+        serde_json::to_value(NoArrow::HeadOnText).unwrap(),
+        json!("head_on_text")
+    );
+}
+
 /// A host that adds an attribution line (`from <actor>`) inside an agent's box, and sizes
 /// the box for it.
 struct Attributed;

@@ -18,28 +18,106 @@
         ]
       },
       "rect": {
-        "x": 0,
-        "y": 19,
-        "w": 49,
+        "x": 34,
+        "y": 9,
+        "w": 46,
         "h": 4
       },
       "mode": "box",
-      "side": "below",
+      "side": "above",
       "route": {
         "junction": [
-          15,
-          19
+          36,
+          12
         ],
         "attach": {
-          "edge": "top",
-          "offset": 15
+          "edge": "bottom",
+          "offset": 2
         },
         "steps": [
           {
-            "x": 15,
-            "y": 18,
-            "enter": "up",
-            "leave": "up"
+            "x": 36,
+            "y": 13,
+            "enter": "down",
+            "leave": "down"
+          },
+          {
+            "x": 36,
+            "y": 14,
+            "enter": "down",
+            "leave": "down"
+          },
+          {
+            "x": 36,
+            "y": 15,
+            "enter": "down",
+            "leave": "left"
+          },
+          {
+            "x": 35,
+            "y": 15,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 34,
+            "y": 15,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 33,
+            "y": 15,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 32,
+            "y": 15,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 31,
+            "y": 15,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 30,
+            "y": 15,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 29,
+            "y": 15,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 28,
+            "y": 15,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 27,
+            "y": 15,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 26,
+            "y": 15,
+            "enter": "left",
+            "leave": "down"
+          },
+          {
+            "x": 26,
+            "y": 16,
+            "enter": "down",
+            "leave": "down"
           }
         ]
       }
@@ -49,9 +127,9 @@
   "regions": [
     {
       "rect": {
-        "x": 0,
-        "y": 19,
-        "w": 49,
+        "x": 34,
+        "y": 9,
+        "w": 46,
         "h": 4
       },
       "id": "L-1"

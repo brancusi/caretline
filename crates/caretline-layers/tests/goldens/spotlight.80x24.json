@@ -18,43 +18,61 @@
         ]
       },
       "rect": {
-        "x": 28,
-        "y": 3,
-        "w": 52,
-        "h": 5
+        "x": 54,
+        "y": 8,
+        "w": 26,
+        "h": 6
       },
       "mode": "box",
-      "side": "above",
+      "side": "right",
       "route": {
         "junction": [
-          32,
-          7
+          54,
+          10
         ],
         "attach": {
-          "edge": "bottom",
-          "offset": 4
+          "edge": "left",
+          "offset": 2
         },
         "steps": [
           {
-            "x": 32,
-            "y": 8,
-            "enter": "down",
-            "leave": "down"
-          },
-          {
-            "x": 32,
-            "y": 9,
-            "enter": "down",
-            "leave": "down"
-          },
-          {
-            "x": 32,
+            "x": 53,
             "y": 10,
-            "enter": "down",
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 52,
+            "y": 10,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 51,
+            "y": 10,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 50,
+            "y": 10,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 49,
+            "y": 10,
+            "enter": "left",
+            "leave": "left"
+          },
+          {
+            "x": 48,
+            "y": 10,
+            "enter": "left",
             "leave": "down"
           },
           {
-            "x": 32,
+            "x": 48,
             "y": 11,
             "enter": "down",
             "leave": "down"
@@ -88,10 +106,10 @@
           "h": 1
         },
         {
-          "x": 28,
-          "y": 3,
-          "w": 52,
-          "h": 5
+          "x": 54,
+          "y": 8,
+          "w": 26,
+          "h": 6
         }
       ]
     }
@@ -99,10 +117,10 @@
   "regions": [
     {
       "rect": {
-        "x": 28,
-        "y": 3,
-        "w": 52,
-        "h": 5
+        "x": 54,
+        "y": 8,
+        "w": 26,
+        "h": 6
       },
       "id": "L-1"
     }
