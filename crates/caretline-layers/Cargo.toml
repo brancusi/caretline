@@ -41,3 +41,8 @@ conformance = []
 [dev-dependencies]
 # The example is a ratatui host that draws its own hint box.
 ratatui = "0.30"
+
+# Built as a test too: with `conformance`, it runs the kit against its own screens and bridge.
+[[example]]
+name = "layers_ratatui"
+test = true

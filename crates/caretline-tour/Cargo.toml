@@ -26,3 +26,7 @@ default = ["caretline"]
 # Editor predicates (`caret_in`, `changed`, `folded`, `selection`, message kinds and commands)
 # answered from caretline types, and `find` anchors resolved in a caretline document.
 caretline = ["dep:caretline", "caretline-layers/caretline"]
+
+[dev-dependencies]
+# Tests run the layers conformance kit over every step of the example walkthrough.
+caretline-layers = { path = "../caretline-layers", version = "0.1", default-features = false, features = ["conformance"] }
