@@ -28,6 +28,11 @@
 - `with_` setters on `Config`, `ViewConfig`, `OutlineConfig` and `OutlineLayout`, one per field
   (`OutlineLayout::default().with_hang_glyphs(true)`).
 - `History::transactions`: every revision's transaction and inversion.
+- `Msg::Drag { col, row }` (`{"msg":"drag","col":4,"row":0}`): the pointer dragged to a
+  screen cell. It extends the selection as `Click` with `extend` does; on the first text row
+  with text above the view it scrolls the view up one row, on the last text row (or past it)
+  with text below down one row, and extends to the row brought in. The `caretline` editor
+  sends its drags as this.
 
 ### Breaking
 
@@ -40,6 +45,7 @@
   `ConfigInput::default()` and set its fields. This release also adds fields to them
   (`Config::single_line`, `ConfigInput::single_line`, `ViewConfig::page_overlap`), which broke
   struct literals anyway. The next release is a minor bump (0.4).
+- `Msg` has a new variant, `Drag`: an exhaustive `match` on `Msg` needs an arm for it.
 
 ### Fixed
 
@@ -57,8 +63,8 @@
 - A caret placed by the pointer (`Msg::Click`, with or without `extend`, `SelectWordAt`,
   `SelectBlock`) inside the view no longer scrolls it by `scrolloff` (or re-centres a
   `Follow::Typewriter` view): the text stays under the pointer. The next key follows the caret
-  as before, and a click below the text rows (a drag past the bottom edge) still scrolls to the
-  caret. The `caretline` editor sends a drag onto the status bar as such a click.
+  as before, and a click below the text rows still scrolls to the caret. Selecting by dragging
+  past an edge scrolls with the new `Msg::Drag`.
 
 ## 0.3.0 (2026-10-07)
 

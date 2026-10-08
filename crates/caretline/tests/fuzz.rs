@@ -292,7 +292,8 @@ fn select_all_delete_then_undo() {
 
 /// The view stays put unless it must move: an edit that leaves the primary caret inside the
 /// view's margins (`scrolloff`) never scrolls, even when it shortens the document, and a
-/// click inside the view never scrolls, whatever the margins or the follow policy.
+/// click inside the view never scrolls, whatever the margins or the follow policy; a drag
+/// scrolls only on an edge row, one row.
 #[test]
 fn the_view_stays_for_edits_and_clicks_inside_it() {
     use caretline::layout::Layout;
@@ -315,11 +316,15 @@ fn the_view_stays_for_edits_and_clicks_inside_it() {
             };
         }
         for step in 0..STEPS {
-            let msg = match rng.random_range(0..4) {
+            let msg = match rng.random_range(0..5) {
                 0 => Msg::Click {
                     col: rng.random_range(0..width),
                     row: rng.random_range(0..state.text_rows() as u16),
                     extend: rng.random_bool(0.3),
+                },
+                1 => Msg::Drag {
+                    col: rng.random_range(0..width),
+                    row: rng.random_range(0..state.text_rows() as u16 + 2),
                 },
                 _ => gen::msg(&mut rng, &state),
             };
@@ -338,6 +343,21 @@ fn the_view_stays_for_edits_and_clicks_inside_it() {
                 Msg::Click { row, .. } if (row as usize) < h => {
                     clicks += 1;
                     assert_eq!(now, (top.line, top.row), "{ctx}: a click scrolled");
+                }
+                // A drag scrolls only on an edge row, and then one row.
+                Msg::Drag { row, .. } => {
+                    let r = row as usize;
+                    let new = layout.top(&state.view.scroll);
+                    let moved = if new < top {
+                        -layout.rows_between(new, top, h)
+                    } else {
+                        layout.rows_between(top, new, h)
+                    };
+                    if r > 0 && r + 1 < h {
+                        assert_eq!(moved, 0, "{ctx}: a drag inside scrolled");
+                    } else {
+                        assert!(moved.abs() <= 1, "{ctx}: a drag scrolled {moved} rows");
+                    }
                 }
                 ref m if is_edit(m) && !typewriter => {
                     let so = (state.view.config.scrolloff as usize).min((h - 1) / 2) as isize;

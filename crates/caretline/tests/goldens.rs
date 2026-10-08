@@ -962,20 +962,20 @@ fn v02_a_click_on_the_margin_rows_keeps_the_view() {
 }
 
 #[test]
-fn v03_a_drag_double_click_or_click_in_a_free_view_keeps_the_view() {
+fn v03_a_shift_click_double_click_or_click_in_a_free_view_keeps_the_view() {
     let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
     place(&mut s, 50, 40);
-    let drag = |row| Msg::Click {
+    let shift = |row| Msg::Click {
         col: 3,
         row,
         extend: true,
     };
-    send(&mut s, [click(10), drag(19)]);
+    send(&mut s, [click(10), shift(19)]);
     assert_eq!((line_of(&s), s.view.scroll.line), (59, 40));
-    send(&mut s, [drag(0)]);
+    send(&mut s, [shift(0)]);
     assert_eq!((line_of(&s), s.view.scroll.line), (40, 40));
-    // Dragged past the bottom edge, the view follows the caret as it always has.
-    send(&mut s, [drag(20)]);
+    // Below the text rows, the view follows the caret as it always has.
+    send(&mut s, [shift(20)]);
     assert_eq!((line_of(&s), s.view.scroll.line), (60, 43));
     assert_eq!(
         s.view.selection.primary().anchor,
@@ -1162,6 +1162,70 @@ fn v07_typewriter_centres_on_keys_not_on_clicks() {
         (41, 31),
         "a key centres it"
     );
+}
+
+fn drag(row: u16) -> Msg {
+    Msg::Drag { col: 3, row }
+}
+
+#[test]
+fn v08_a_drag_on_an_edge_row_scrolls_one_row_a_move() {
+    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+    place(&mut s, 50, 40);
+    let anchor = s.doc.text.line_to_char(50) + 1;
+    send(&mut s, [click(10), drag(5)]);
+    assert_eq!(
+        (line_of(&s), s.view.scroll.line),
+        (45, 40),
+        "inside: no scroll"
+    );
+    send(&mut s, [drag(0)]);
+    assert_eq!(
+        (line_of(&s), s.view.scroll.line),
+        (39, 39),
+        "up a row, to the row it shows"
+    );
+    send(&mut s, [drag(0), drag(0)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (37, 37));
+    send(&mut s, [drag(19)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (57, 38), "down a row");
+    send(&mut s, [drag(20), drag(25)]);
+    assert_eq!(
+        (line_of(&s), s.view.scroll.line),
+        (59, 40),
+        "past the last row, the same"
+    );
+    assert_eq!(s.view.selection.primary().anchor, anchor);
+    // At the top and the end of the document there is nowhere to go.
+    place(&mut s, 5, 0);
+    send(&mut s, [drag(0)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (0, 0));
+    place(&mut s, 90, 80);
+    send(&mut s, [drag(19), drag(20)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (99, 80));
+}
+
+#[test]
+fn v09_an_outline_drag_on_an_edge_row_scrolls_one_row() {
+    let mut s = outline(40, 20);
+    let line = |s: &State, needle: &str| {
+        let text = s.doc.text.to_string();
+        s.doc.text.char_to_line(text.find(needle).unwrap())
+    };
+    let (caret, top) = (line(&s, "Paragraph 25"), line(&s, "Paragraph 20"));
+    place(&mut s, caret, top);
+    // Row 0 is Paragraph 20's blank row: up one row shows Paragraph 19's text.
+    send(&mut s, [click(5), drag(0)]);
+    assert_eq!(line_of(&s), line(&s, "Paragraph 19"));
+    assert_eq!(
+        (s.view.scroll.line, s.view.scroll.row),
+        (line(&s, "Paragraph 19"), 1)
+    );
+    place(&mut s, caret, top);
+    // Row 19 is Paragraph 29's blank row: down one row shows its text.
+    send(&mut s, [click(5), drag(19)]);
+    assert_eq!(line_of(&s), line(&s, "Paragraph 29"));
+    assert_eq!((s.view.scroll.line, s.view.scroll.row), (top, 1));
 }
 
 // ---------------------------------------------------------------------------------------

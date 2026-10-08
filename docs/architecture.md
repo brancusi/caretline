@@ -137,11 +137,16 @@ The view moves only when asked to or when the caret would otherwise leave it:
 - **Explicit scrolling** goes past the end no further than before: `scroll` and `scroll_view`
   stop with the last row at the bottom (or where the view already was), and a page motion's
   view is kept off empty rows below the end like a jump.
-- **A caret placed by the pointer** (`click`, a drag with `extend`, `select_word_at`,
-  `select_block`) keeps the view while it lands inside it, whatever `scrolloff` or the follow
-  policy say, so the text stays under the pointer; `typewriter` re-centres on the next key,
-  not on a click. A drag past the bottom edge (a `click` row below the text rows) puts the
-  caret below the view, which follows it as for a key.
+- **A caret placed by the pointer** (`click`, with or without `extend`, `drag`,
+  `select_word_at`, `select_block`) keeps the view while it lands inside it, whatever
+  `scrolloff` or the follow policy say, so the text stays under the pointer; `typewriter`
+  re-centres on the next key, not on a click. A `click` below the text rows puts the caret
+  below the view, which follows it as for a key.
+- **A drag at an edge** scrolls one row per `drag` message: on the first text row with text
+  above the view, up; on the last text row (or past it) with text below, down. The selection
+  extends to the row brought in. Both edges behave the same, so a runtime only forwards the
+  pointer's row. A runtime sends a `drag` per pointer move, so a pointer held still at the
+  edge doesn't keep scrolling (that would take a timer the engine doesn't have).
 
 ## Changes from elsewhere
 

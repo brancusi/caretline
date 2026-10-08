@@ -99,7 +99,7 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
             state.view.status.clone(),
         )
     });
-    if !passive && !matches!(msg, Msg::Click { extend: true, .. }) {
+    if !passive && !matches!(msg, Msg::Click { extend: true, .. } | Msg::Drag { .. }) {
         state.view.word_drag = None;
     }
     let selection_before = state.view.selection.clone();
@@ -107,7 +107,7 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
     // A caret placed at a screen position: the view stays while the caret is in it.
     let hit = matches!(
         msg,
-        Msg::Click { .. } | Msg::SelectWordAt { .. } | Msg::SelectBlock { .. }
+        Msg::Click { .. } | Msg::Drag { .. } | Msg::SelectWordAt { .. } | Msg::SelectBlock { .. }
     );
     let scroll_before = state.view.scroll;
 
@@ -276,6 +276,18 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
             };
             state.view.selection = Selection::single(range.anchor, range.head);
         }
+        Msg::Drag { col, row } => {
+            let row = drag_edge(state, row);
+            plain(
+                state,
+                Msg::Click {
+                    col,
+                    row,
+                    extend: true,
+                },
+                effects,
+            );
+        }
         Msg::SelectWordAt { pos } => {
             let pos = pos.min(state.doc.text.len_chars());
             let (a, b) = word_at(state.doc.text.slice(..), pos);
@@ -439,6 +451,42 @@ fn plain(state: &mut State, msg: Msg, effects: &mut Vec<Effect>) {
             let line = text.lines().next().unwrap_or("").to_string();
             state.view.status = (!line.is_empty()).then_some(line);
         }
+    }
+}
+
+/// A drag at screen row `row`: on the first text row with rows above the view, scrolls the
+/// view up one row; on the last text row (or past it) with rows below, down one row. Returns
+/// the text row the drag extends to (inside the view).
+fn drag_edge(state: &mut State, row: u16) -> u16 {
+    let h = state.text_rows();
+    if h == 0 {
+        return row;
+    }
+    let last = h - 1;
+    let down = row as usize >= last && (row > 0 || h > 1);
+    let up = row == 0 && !down;
+    if !up && !down {
+        return row;
+    }
+    let layout = Layout::new(state);
+    let top = layout.top(&state.view.scroll);
+    let more = if up {
+        layout.step_rows(top, -1).1 == -1
+    } else {
+        layout.rows_between(top, layout.end(), h) > last as isize
+    };
+    if more {
+        let (top, _) = layout.step_rows(top, if up { -1 } else { 1 });
+        state.view.scroll = Scroll {
+            line: top.line,
+            row: top.row,
+            col: state.view.scroll.col,
+        };
+    }
+    if up {
+        0
+    } else {
+        last as u16
     }
 }
 

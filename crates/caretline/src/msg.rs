@@ -76,6 +76,15 @@ pub enum Msg {
         #[serde(default)]
         extend: bool,
     },
+    /// Extend the selection to a screen cell as the pointer drags (a runtime sends one per
+    /// pointer move with the button held). On the first text row with text above the view,
+    /// the view scrolls up one row and the selection extends to the row it brings in; on the
+    /// last text row (or past it) with text below, down one row. Elsewhere it is a `click`
+    /// with `extend`.
+    Drag {
+        col: u16,
+        row: u16,
+    },
     /// Scroll the view by rows (negative is up). The caret follows if it would leave the view.
     Scroll {
         rows: i32,

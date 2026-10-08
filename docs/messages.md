@@ -54,7 +54,8 @@ paragraphs is one space. Motion by a line, a visual row or a page goes to the st
 | Msg | JSON | Does |
 |---|---|---|
 | `Move { dir, by, extend }` | `{"msg":"move","dir":"forward","by":"word","extend":false}` | Moves every caret. `extend` (default `false`) keeps the anchors, so the selection grows or shrinks |
-| `Click { col, row, extend }` | `{"msg":"click","col":4,"row":0}` | Places the caret at a screen cell, or extends to it. Leaves one range |
+| `Click { col, row, extend }` | `{"msg":"click","col":4,"row":0}` | Places the caret at a screen cell, or extends to it (a shift-click). Leaves one range. Inside the view, the view stays |
+| `Drag { col, row }` | `{"msg":"drag","col":4,"row":0}` | The pointer dragged to a screen cell: extends to it as `click` with `extend`. On the first text row with text above the view, the view scrolls up one row and the selection extends to the row it brings in; on the last text row (or past it) with text below, down one row. A runtime sends one per pointer move |
 | `Scroll { rows }` | `{"msg":"scroll","rows":-3}` | Scrolls the view (negative is up). The caret moves only if it would leave the view |
 | `SelectAll` | `{"msg":"select_all"}` | Selects the whole document |
 | `Collapse` | `{"msg":"collapse"}` | Collapses every range to its caret |
