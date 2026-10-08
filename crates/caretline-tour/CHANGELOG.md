@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased (0.1.0)
+## Unreleased
+
+## 0.1.0 — 2026-10-08
 
 ### Added
 
@@ -23,11 +25,11 @@
   `StepLayer { id, anchor, kind, data, place, capture, avoid }`, `Narration { title?, text }`,
   `Branch { if?, goto }`, `Nudge { after_ms, data }`, `Place`. `parse_toml` and `parse_json`
   are strict: unknown fields are refused everywhere but the opaque `data` and `host`. The
-  single-layer shorthand on a step (`anchor`, `kind`, `data`, `place`, `capture`) reads as
+  single-layer shorthand on a step (`anchor`, `kind`, `data`, `place`, `capture`, `avoid`) reads as
   `layers[0]`, and both together is an error; a layer's id defaults to `<step id>/<index>`.
   Anchors are `caretline_layers::Anchor`s, one or a list, or `{find, in?}`, resolved once by
   the host with `Tour::resolve_finds`. `place` is an object (`sides`, `max_width`, `arrow`,
-  `ring`, `spotlight`, `hide_off_screen`; `max_w` and `connector` are read too) or a list of
+  `ring`, `spotlight`, `hide_off_screen`, `head`; `max_w` and `connector` are read too) or a list of
   sides.
 - `check(&Tour) -> Vec<Problem>`: errors (no steps, duplicate step or layer ids, reserved ids,
   an unknown `goto`, an anchor a predicate names that isn't there, malformed `hint` data) and

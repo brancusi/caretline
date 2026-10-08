@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 — 2026-10-08
+
 ### Added
 
 - Held-pointer auto-scroll: a drag held still on the first or last text row (or past it,

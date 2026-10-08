@@ -20,7 +20,7 @@ serde_json = { workspace = true }
 unicode-segmentation = "1.13"
 # The engine's pinned width table, so wide graphemes measure as in the editor.
 unicode-width = "=0.1.12"
-caretline = { path = "../caretline", version = "0.3", optional = true }
+caretline = { path = "../caretline", version = "0.4", optional = true }
 # zlib for kitty graphics transmission (feature `kitty`): pure Rust, no I/O.
 miniz_oxide = { version = "0.8", optional = true }
 

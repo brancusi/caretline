@@ -19,7 +19,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
 caretline-layers = { path = "../caretline-layers", version = "0.1", default-features = false }
-caretline = { path = "../caretline", version = "0.3", optional = true }
+caretline = { path = "../caretline", version = "0.4", optional = true }
 
 [features]
 default = ["caretline"]

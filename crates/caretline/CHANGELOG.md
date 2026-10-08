@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 — 2026-10-08
+
 ### Added
 
 - Companion crates `caretline-layers` (placement, tracking, pixel transport and host
@@ -149,7 +151,7 @@
   `OutlineConfig::default().with_tags("ab".into())`; for `ConfigInput` (no setters), take
   `ConfigInput::default()` and set its fields. This release also adds fields to them
   (`Config::single_line`, `ConfigInput::single_line`, `ViewConfig::page_overlap`), which broke
-  struct literals anyway. The next release is a minor bump (0.4).
+  struct literals anyway. This release bumps the minor version to 0.4.
 
 ### Fixed
 

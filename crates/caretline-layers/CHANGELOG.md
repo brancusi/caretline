@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0 — 2026-10-08
+
 ### Added
 
 - `HeadRule::OnAnchorRows`, selected with `Layer::with_head` or `"head": "on_anchor_rows"`
@@ -38,7 +40,7 @@
   host's own anchors, `FrameResolver` for a caretline frame (feature `caretline`, default),
   `Chain` for both. `map_anchors` and `observe` move text anchors through the `ChangeSet` an
   editor message made, as caretline's `update_with_changes` (and `update_doc_with_changes`,
-  `Session::apply_with_changes`) returns it. Needs the caretline release that adds them.
+  `Session::apply_with_changes`) returns it. Requires caretline 0.4.
 - `plan(layers, anchors, grid, renderers) -> Plan`: boxes placed by side order with flip,
   shift, the sliver rule and clamp, around other layers, holes, protected cells and (for
   agents) the caret, never splitting a wide grapheme; a one-row strip on narrow areas or when
