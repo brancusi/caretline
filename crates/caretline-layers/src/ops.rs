@@ -4,7 +4,7 @@
 //!
 //! | Op | Request fields | Becomes |
 //! |---|---|---|
-//! | `hint.show` | `anchor` (one or a list), `text`, `title?`, `ttl_ms?`, `place?`, `arrow?` (default true), `ring?` (default true), `avoid?` (one anchor or a list), `actor?` | a push of a [`HINT`] layer |
+//! | `hint.show` | `anchor` (one or a list), `text`, `title?`, `ttl_ms?`, `place?`, `arrow?` (default true), `ring?` (default true), `avoid?` (one anchor or a list), `head?` (`any` or `on_anchor_rows`), `actor?` | a push of a [`HINT`] layer |
 //! | `hint.hide` | `layer` or `all: true`, `actor?` | a pop |
 //! | `layer.push`, `layer.update` | `layer` (a [`Layer`]), `actor?` | a push or update |
 //! | `layer.pop` | `layer`, `owner` or `all: true`, `actor?` | a pop |
@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 
 use crate::geom::Side;
 use crate::model::{
-    Anchor, Applied, Content, Layer, LayerOp, Layers, Owner, Reason, Refusal, Selector,
+    Anchor, Applied, Content, HeadRule, Layer, LayerOp, Layers, Owner, Reason, Refusal, Selector,
 };
 use crate::place::Plan;
 use crate::resolve::Off;
@@ -80,6 +80,8 @@ struct Show {
     ring: bool,
     #[serde(default)]
     avoid: Option<Anchors>,
+    #[serde(default)]
+    head: HeadRule,
 }
 
 #[derive(Deserialize)]
@@ -144,6 +146,7 @@ pub fn parse(op: &str, req: &Value) -> Result<(Request, Option<String>), Refusal
             layer.ttl_ms = s.ttl_ms;
             layer.place = s.place;
             layer.avoid = s.avoid.map(Anchors::list).unwrap_or_default();
+            layer.head = s.head;
             Ok((Request::Apply(LayerOp::Push(layer)), s.actor))
         }
         "layer.push" | "layer.update" => {
@@ -300,6 +303,10 @@ pub fn schema() -> Value {
                 "additionalProperties": false
             },
             "side": {"enum": ["below", "above", "right", "left"]},
+            "head": {
+                "enum": ["any", "on_anchor_rows"],
+                "description": "Where an arrow's head may end: any clear cell beside the anchor (the default), or only on the anchor's own rows."
+            },
             "view": {"type": "string", "minLength": 1, "description": "A view's id, as the host names it (FrameResolver::id)."},
             "owner": {
                 "anyOf": [
@@ -425,7 +432,8 @@ pub fn schema() -> Value {
                     "capture": {"type": "boolean"},
                     "hide_off_screen": {"type": "boolean"},
                     "place": {"type": "array", "items": {"$ref": "#/$defs/side"}},
-                    "max_width": {"anyOf": [u16, {"type": "null"}]}
+                    "max_width": {"anyOf": [u16, {"type": "null"}]},
+                    "head": {"$ref": "#/$defs/head"}
                 },
                 "required": ["anchor"],
                 "additionalProperties": false
@@ -448,7 +456,8 @@ pub fn schema() -> Value {
                 "place": {"type": "array", "items": {"$ref": "#/$defs/side"}},
                 "arrow": {"type": "boolean", "description": "Default true."},
                 "ring": {"type": "boolean", "description": "Default true."},
-                "avoid": {"$ref": "#/$defs/anchors"}
+                "avoid": {"$ref": "#/$defs/anchors"},
+                "head": {"$ref": "#/$defs/head"}
             }), &["anchor", "text"]),
             "layer.push": request("layer.push", json!({"layer": {"$ref": "#/$defs/layer"}}), &["layer"]),
             "layer.update": request("layer.update", json!({"layer": {"$ref": "#/$defs/layer"}}), &["layer"]),

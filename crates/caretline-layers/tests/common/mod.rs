@@ -130,8 +130,37 @@ pub fn plan_over(s: &State, layers: &Layers) -> (Frame, Plan) {
     let frame = view(s);
     let res = FrameResolver::new(&frame).with_doc(&s.doc);
     let grid = Grid::from_frame(&frame);
-    let p = plan(layers, &res, &grid, &renderers());
+    let r = renderers();
+    let p = plan(layers, &res, &grid, &r);
+    conform(layers, &res, &grid, &r, &p);
     (frame, p)
+}
+
+/// The conformance kit's plan and determinism checks on a scene (feature `conformance`):
+/// every golden and property case is a conformance case too.
+pub fn conform(
+    layers: &Layers,
+    anchors: &dyn Resolve,
+    grid: &Grid,
+    renderers: &Renderers,
+    p: &Plan,
+) {
+    #[cfg(feature = "conformance")]
+    {
+        use caretline_layers::conformance::{Scene, check_determinism, check_plan};
+        let scene = Scene::new(layers.clone(), anchors, grid.clone(), renderers);
+        let mut v = check_plan(p, &scene);
+        v.extend(check_determinism(&scene));
+        let lines: Vec<String> = v.iter().map(|v| v.to_string()).collect();
+        assert!(
+            v.is_empty(),
+            "conformance:\n{}\n{}",
+            lines.join("\n"),
+            p.explain()
+        );
+    }
+    #[cfg(not(feature = "conformance"))]
+    let _ = (layers, anchors, grid, renderers, p);
 }
 
 /// The test host's drawing: the frame's text with each plan drawn over it in ASCII, and a map

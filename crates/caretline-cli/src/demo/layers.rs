@@ -328,6 +328,38 @@ mod tests {
         assert!(demo.hide().is_empty());
     }
 
+    /// The layers conformance kit over the demo's scene: at 80×24 and 44×16, with and
+    /// without the spotlight, scrolled so the word is near the top, in the middle and off
+    /// screen.
+    #[test]
+    fn the_demo_scene_keeps_the_layers_invariants() {
+        use caretline_layers::conformance::{OwnedView, OwnedViews, Scene, check_sizes};
+        use caretline_layers::{AnchorMap, Size};
+        let renderers = Renderers::new().register(HINT, HintRenderer);
+        for spotlight in [true, false] {
+            for scroll in [0, 3, 12, 40] {
+                let report = check_sizes(
+                    &|size: Size| {
+                        let mut demo = LayersDemo::new();
+                        demo.spotlight = spotlight;
+                        let mut hub = hub(size.w, size.h);
+                        dispatch_demo(&mut hub, vec![Msg::ScrollView { rows: scroll }]);
+                        let frame = crate::runtime::compose(&hub, 0);
+                        let text = hub.session.state().doc.text.to_string();
+                        let grid = Grid::from_frame(&frame);
+                        let views = OwnedViews::new(AnchorMap::new()).view(OwnedView::new(frame));
+                        Scene::new(demo.layers(&text), views, grid, &renderers)
+                    },
+                    &[Size::new(80, 24), Size::new(44, 16)],
+                );
+                assert!(
+                    report.ok(),
+                    "spotlight {spotlight}, scroll {scroll}:\n{report}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_same_frames_give_the_same_bytes() {
         let run = || {

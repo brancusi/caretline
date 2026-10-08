@@ -4,6 +4,18 @@
 
 ### Added
 
+- `HeadRule::OnAnchorRows`, selected with `Layer::with_head` or `"head": "on_anchor_rows"`
+  on a layer or `hint.show`: an arrow ends beside its anchor on one of its own rows, so
+  a note on a table row cannot point at a neighbouring row. When only a head above or below
+  could reach it, the box remains and `no_arrow` is `head_off_anchor_rows`. `Any` keeps the
+  default behaviour and is left out of JSON.
+- The opt-in `conformance` feature: plan invariants, determinism and JSON round trips,
+  replay, edit mapping across documents and views, a protocol contract, multi-size reports
+  and golden snapshots for a host's integration. The ratatui example, CLI layers demo and
+  walkthrough example run the kit in tests; CI enables it across the workspace.
+- The placement inspector: `Plan::explain()` describes each result; `plan_explained()`
+  also records candidate placements, score components, routing and the reason for the
+  winner. Ordinary `plan()` gathers no explanation data.
 - The crate: placement, tracking and lifecycle for layers (hints, callouts, arrows, rings,
   spotlights) over a caretline host's screen. The host draws them.
 - `Layers`, `Layer`, `LayerOp` and `apply(layers, op, actor, now_ms, &Limits)`: serializable
@@ -137,6 +149,9 @@
 
 ### Fixed
 
+- An agent's strip keeps off the caret, as its box does. When no whole row is free, a
+  strip uses the widest free run of a row instead of covering another layer or a protected
+  area, keeping its ends clear of wide graphemes.
 - An edit to one document no longer moves anchors in another. A `ChangeSet` belongs to one
   document, but `observe` mapped every text anchor through it, so typing in `main` (page A)
   shifted a hint scoped to `panel:1` (page B), or dropped it when page B was shorter. Anchors

@@ -1,0 +1,86 @@
+{
+  "width": 80,
+  "height": 24,
+  "layers": [
+    {
+      "id": "L-1",
+      "z": 0,
+      "agent": false,
+      "owner": "host",
+      "anchor": {
+        "rects": [
+          {
+            "x": 20,
+            "y": 8,
+            "w": 4,
+            "h": 1
+          }
+        ]
+      },
+      "rect": {
+        "x": 17,
+        "y": 11,
+        "w": 48,
+        "h": 4
+      },
+      "mode": "box",
+      "side": "below",
+      "route": {
+        "junction": [
+          18,
+          11
+        ],
+        "attach": {
+          "edge": "top",
+          "offset": 1
+        },
+        "steps": [
+          {
+            "x": 18,
+            "y": 10,
+            "enter": "up",
+            "leave": "up"
+          },
+          {
+            "x": 18,
+            "y": 9,
+            "enter": "up",
+            "leave": "up"
+          },
+          {
+            "x": 18,
+            "y": 8,
+            "enter": "up",
+            "leave": "right"
+          },
+          {
+            "x": 19,
+            "y": 8,
+            "enter": "right",
+            "leave": "right"
+          }
+        ]
+      },
+      "ring": [
+        {
+          "x": 20,
+          "y": 8,
+          "w": 4,
+          "h": 1
+        }
+      ]
+    }
+  ],
+  "spots": [],
+  "regions": [
+    {
+      "rect": {
+        "x": 17,
+        "y": 11,
+        "w": 48,
+        "h": 4
+      },
+      "id": "L-1"
+    }
+  ]
+}

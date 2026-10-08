@@ -284,6 +284,22 @@ fn the_example_walkthrough_matches_the_schema_as_authored_and_as_normalised() {
     valid("tour", &serde_json::to_value(example()).unwrap()).unwrap();
 }
 
+#[test]
+fn a_walkthrough_keeps_the_arrow_head_on_the_row_it_names() {
+    let mut authored = json!({"id": "row-note", "step": [{
+        "id": "beta", "anchor": {"host": {"kind": "row", "key": "beta"}},
+        "data": {"text": "This row."}, "place": {"arrow": true, "head": "on_anchor_rows"}
+    }]});
+    valid("tour", &authored).unwrap();
+    let tour = parse_json(&authored.to_string()).unwrap();
+    let layers = step_layers(&tour, 0, false);
+    assert_eq!(layers[0].head, caretline_layers::HeadRule::OnAnchorRows);
+    valid("tour", &serde_json::to_value(&tour).unwrap()).unwrap();
+    authored["step"][0]["place"]["head"] = json!("other_rows");
+    assert!(parse_json(&authored.to_string()).is_err());
+    assert!(valid("tour", &authored).is_err());
+}
+
 fn accepted() -> Vec<(&'static str, Value)> {
     let tour = serde_json::to_value(example()).unwrap();
     vec![

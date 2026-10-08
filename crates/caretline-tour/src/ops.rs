@@ -282,7 +282,8 @@ pub fn schema() -> Value {
                             "connector": {"type": "boolean"},
                             "ring": flag(ring),
                             "spotlight": flag(spotlight),
-                            "hide_off_screen": {"type": "boolean"}
+                            "hide_off_screen": {"type": "boolean"},
+                            "head": {"enum": ["any", "on_anchor_rows"]}
                         },
                         "additionalProperties": false
                     }

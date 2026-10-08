@@ -33,7 +33,16 @@ caretline = ["dep:caretline"]
 # delete a host's images, and a parser for the terminal's probe replies. Pure: the host
 # rasterises, writes the bytes and reads the replies.
 kitty = ["dep:miniz_oxide"]
+# The host conformance kit (`conformance`): invariant checks over a host's plans at several
+# sizes, replay and determinism, edit mapping across views, a contract for the host's own
+# protocol bridge, and golden snapshots of its screens. Pure, for a host's dev-dependencies.
+conformance = []
 
 [dev-dependencies]
 # The example is a ratatui host that draws its own hint box.
 ratatui = "0.30"
+
+# Built as a test too: with `conformance`, it runs the kit against its own screens and bridge.
+[[example]]
+name = "layers_ratatui"
+test = true

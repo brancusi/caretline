@@ -29,3 +29,7 @@ crossterm = "0.29"
 serde_json = { workspace = true, features = ["preserve_order"] }
 clap = { workspace = true }
 libc = { workspace = true }
+
+[dev-dependencies]
+# Tests run the layers conformance kit over `demo layers`.
+caretline-layers = { path = "../caretline-layers", version = "0.1.0", features = ["kitty", "conformance"] }

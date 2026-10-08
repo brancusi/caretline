@@ -4,6 +4,9 @@
 
 ### Added
 
+- `Place.head` (`"head": "on_anchor_rows"`): passes the arrow-head rule to the step's
+  layers, keeping a table-row callout's head on that row. `Any` is the default and is
+  left out of JSON. Included in the walkthrough schema.
 - `StepLayer.avoid` (and `avoid` as a single-layer field on a step): anchors the layer's box
   and arrow keep off (caretline-layers' `Layer.avoid`), one or a list, `find` included
   (`Tour::resolve_finds` resolves them); in `ops::schema()`. Left out of JSON when empty.

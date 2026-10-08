@@ -10,6 +10,10 @@
 //!   cargo run -p caretline-layers --example layers_ratatui -- --print
 //!
 //! Keys: s toggles a spotlight, q quits.
+//!
+//! `handle` is the host's protocol bridge (a request in, a reply out). `tests/ratatui_host.rs`
+//! runs the conformance kit against this host: its screens at several sizes, the contract
+//! through `handle`, and a golden snapshot.
 
 use caretline_layers::ops::{self, Request};
 use caretline_layers::*;
@@ -125,9 +129,14 @@ fn request(spotlight: bool) -> Value {
     req
 }
 
-fn layers(spotlight: bool) -> Layers {
+fn layers(spotlight: bool, anchors: &AnchorMap, grid: &Grid) -> Layers {
     let mut layers = Layers::default();
     let req = request(spotlight);
+    if !spotlight {
+        // The agent's request, through the host's bridge.
+        let _reply = handle(&mut layers, anchors, grid, &req);
+        return layers;
+    }
     let (parsed, actor) = ops::parse("hint.show", &req).expect("a valid request");
     let Request::Apply(mut op) = parsed else {
         unreachable!()
@@ -253,15 +262,45 @@ fn draw_plan(buf: &mut Buffer, p: &Plan, layers: &Layers) {
     }
 }
 
-fn frame(buf: &mut Buffer, spotlight: bool) {
+/// The host's screen: its own drawing into `buf`, where its rows went, and the grid.
+fn screen(buf: &mut Buffer) -> (AnchorMap, Grid) {
     let area = buf.area;
     let mut anchors = AnchorMap::new();
     let mut grid =
         Grid::new(area.width, area.height).with_area(Rect::new(0, 0, area.width, area.height - 1));
     draw_table(buf, &mut anchors, &mut grid);
-    let renderers = Renderers::new().register(HINT, HintBox);
-    let layers = layers(spotlight);
-    let p = plan(&layers, &anchors, &grid, &renderers);
+    (anchors, grid)
+}
+
+fn renderers() -> Renderers {
+    Renderers::new().register(HINT, HintBox)
+}
+
+/// The host's protocol bridge: a request as its protocol carries it (`op` beside the fields)
+/// in, the reply out. It applies the op to the host's layers, plans this frame and answers
+/// with where the layer landed.
+fn handle(layers: &mut Layers, anchors: &AnchorMap, grid: &Grid, req: &Value) -> Value {
+    let op = req["op"].as_str().unwrap_or_default();
+    let (parsed, actor) = match ops::parse(op, req) {
+        Ok(p) => p,
+        Err(e) => return ops::error(&e),
+    };
+    match parsed {
+        Request::List => ops::list(layers),
+        Request::Apply(op) => match apply(layers, op, actor.as_deref(), 0, &Limits::default()) {
+            Ok(applied) => {
+                let p = plan(layers, anchors, grid, &renderers());
+                ops::reply(&applied, Some(&p))
+            }
+            Err(e) => ops::error(&e),
+        },
+    }
+}
+
+fn frame(buf: &mut Buffer, spotlight: bool) {
+    let (anchors, grid) = screen(buf);
+    let layers = layers(spotlight, &anchors, &grid);
+    let p = plan(&layers, &anchors, &grid, &renderers());
     draw_plan(buf, &p, &layers);
 }
 
@@ -294,4 +333,83 @@ fn main() -> std::io::Result<()> {
     }
     ratatui::restore();
     Ok(())
+}
+
+/// The conformance kit against this host (`cargo test -p caretline-layers --features
+/// conformance --example layers_ratatui`): what any host runs in its own CI.
+#[cfg(all(test, feature = "conformance"))]
+mod tests {
+    use super::*;
+    use caretline_layers::conformance::contract::{self, Fixture};
+    use caretline_layers::conformance::{Scene, check_sizes, snapshot};
+
+    /// The host's screen at a size, with or without the spotlight.
+    fn scene(size: Size, spotlight: bool, renderers: &Renderers) -> Scene<'_> {
+        let mut buf = Buffer::empty(ratatui::layout::Rect::new(0, 0, size.w, size.h));
+        let (anchors, grid) = screen(&mut buf);
+        let layers = layers(spotlight, &anchors, &grid);
+        Scene::new(layers, anchors, grid, renderers)
+    }
+
+    const SIZES: [Size; 5] = [
+        Size::new(140, 40),
+        Size::new(100, 30),
+        Size::new(80, 24),
+        Size::new(72, 16),
+        Size::new(44, 16),
+    ];
+
+    #[test]
+    fn every_screen_size_keeps_the_invariants() {
+        let r = renderers();
+        for spotlight in [false, true] {
+            let report = check_sizes(&|size| scene(size, spotlight, &r), &SIZES);
+            assert!(report.ok(), "{report}");
+            // The narrow screen draws the hint as a strip.
+            assert_eq!(report.sizes[4].strips, ["L-1"], "{report}");
+        }
+    }
+
+    #[test]
+    fn the_bridge_keeps_the_contract() {
+        let mut buf = Buffer::empty(ratatui::layout::Rect::new(0, 0, 80, 24));
+        let (anchors, grid) = screen(&mut buf);
+        let mut layers = Layers::default();
+        let fixture = Fixture::new(AnchorKey::host("row", "r-102"), &anchors);
+        let v = contract::run(
+            &mut |req| handle(&mut layers, &anchors, &grid, req),
+            &fixture,
+        );
+        assert!(v.is_empty(), "{v:#?}");
+    }
+
+    /// A golden of the canonical screen: `LAYERS_GOLDENS=update` rewrites it.
+    #[test]
+    fn the_canonical_screen_matches_its_golden() {
+        let mut buf = Buffer::empty(ratatui::layout::Rect::new(0, 0, 72, 16));
+        let (anchors, grid) = screen(&mut buf);
+        let layers = layers(false, &anchors, &grid);
+        let p = plan(&layers, &anchors, &grid, &renderers());
+        draw_plan(&mut buf, &p, &layers);
+        let text: String = (0..buf.area.height)
+            .map(|y| {
+                let row: String = (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol().to_string())
+                    .collect();
+                row + "\n"
+            })
+            .collect();
+        let got = snapshot(&p, &text);
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/goldens/ratatui.72x16.snap");
+        if std::env::var("LAYERS_GOLDENS").as_deref() == Ok("update") {
+            std::fs::write(&path, &got).unwrap();
+            return;
+        }
+        let want = std::fs::read_to_string(&path).expect("run with LAYERS_GOLDENS=update");
+        assert!(
+            want == got,
+            "golden differs:\n--- want\n{want}\n--- got\n{got}"
+        );
+    }
 }

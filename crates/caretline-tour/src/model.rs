@@ -1,7 +1,7 @@
 //! The authoring format: a [`Tour`] of [`Step`]s, each with layers, narration and the host's
 //! own patch, read strictly from TOML or JSON.
 
-use caretline_layers::{Anchor, Ring, Side, Spotlight};
+use caretline_layers::{Anchor, HeadRule, Ring, Side, Spotlight};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
@@ -401,7 +401,8 @@ pub struct Narration {
 /// A layer's placement request: the sides to try, a width cap, an arrow, a ring, a
 /// spotlight, and whether to show only the edge chip off screen.
 ///
-/// On the wire, an object (`{sides, max_width, arrow, ring, spotlight, hide_off_screen}`;
+/// On the wire, an object (`{sides, max_width, arrow, ring, spotlight, hide_off_screen,
+/// head}`, `head` being `"any"` or `"on_anchor_rows"`;
 /// `max_w` and `connector` are read as `max_width` and `arrow`; `ring` and `spotlight` take
 /// `true` or their object), or a list of sides.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -412,6 +413,8 @@ pub struct Place {
     pub ring: Option<Ring>,
     pub spotlight: Option<Spotlight>,
     pub hide_off_screen: bool,
+    /// Where the arrow's head may end (`caretline_layers::HeadRule`).
+    pub head: HeadRule,
 }
 
 impl Place {
@@ -452,6 +455,8 @@ struct PlaceWire {
     spotlight: Option<Flag<Spotlight>>,
     #[serde(default, skip_serializing_if = "is_false")]
     hide_off_screen: bool,
+    #[serde(default, skip_serializing_if = "HeadRule::is_any")]
+    head: HeadRule,
 }
 
 impl Serialize for Place {
@@ -463,6 +468,7 @@ impl Serialize for Place {
             ring: self.ring.clone().map(Flag::With),
             spotlight: self.spotlight.clone().map(Flag::With),
             hide_off_screen: self.hide_off_screen,
+            head: self.head,
         }
         .serialize(s)
     }
@@ -497,6 +503,7 @@ impl<'de> Deserialize<'de> for Place {
             ring: w.ring.and_then(|f| f.get(Ring::default)),
             spotlight: w.spotlight.and_then(|f| f.get(Spotlight::default)),
             hide_off_screen: w.hide_off_screen,
+            head: w.head,
         })
     }
 }

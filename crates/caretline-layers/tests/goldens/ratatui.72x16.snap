@@ -1,0 +1,103 @@
+--- frame 72x16
+
+  Documents
+
+    Quarterly report        ready
+    Release checklist       draft
+    Onboarding guide        ready
+    Style sheet             stale
+    Archive index ▲         ready
+       ╭──────────┴─ ◆ helper ───────────────────────╮
+       │ Out of date                                 │
+       │ This document changed upstream since it was │
+       │ last opened.                                │
+       ╰─────────────────────────────────────────────╯
+
+
+ s spotlight · q quit
+--- map: # box, = strip, c chip, > arrow, * ring, . dimmed
+
+
+
+
+
+
+    *****************************
+                  >
+       ###############################################
+       ###############################################
+       ###############################################
+       ###############################################
+       ###############################################
+
+
+
+--- plan
+{
+  "height": 16,
+  "layers": [
+    {
+      "agent": true,
+      "anchor": {
+        "rects": [
+          {
+            "h": 1,
+            "w": 29,
+            "x": 4,
+            "y": 6
+          }
+        ]
+      },
+      "id": "L-1",
+      "mode": "box",
+      "owner": "agent:helper",
+      "rect": {
+        "h": 5,
+        "w": 47,
+        "x": 7,
+        "y": 8
+      },
+      "ring": [
+        {
+          "h": 1,
+          "w": 29,
+          "x": 4,
+          "y": 6
+        }
+      ],
+      "route": {
+        "attach": {
+          "edge": "top",
+          "offset": 11
+        },
+        "junction": [
+          18,
+          8
+        ],
+        "steps": [
+          {
+            "enter": "up",
+            "leave": "up",
+            "x": 18,
+            "y": 7
+          }
+        ]
+      },
+      "side": "below",
+      "z": 20
+    }
+  ],
+  "regions": [
+    {
+      "id": "L-1",
+      "rect": {
+        "h": 5,
+        "w": 47,
+        "x": 7,
+        "y": 8
+      }
+    }
+  ],
+  "spots": [],
+  "width": 72
+}
