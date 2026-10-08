@@ -36,7 +36,9 @@ Each file's header lists what changed from upstream. In short:
   row's end starts the next row instead of overflowing it by a cell. A word that starts a row
   breaks there instead of moving to a fresh row, and a grapheme wider than the whole row is
   placed alone on its row. `hang_spaces` adds prose wrapping: whitespace after a word that
-  reaches the row's end hangs past it, and words end at whitespace only.
+  reaches the row's end hangs past it, and words end at whitespace only. A line end or the
+  end of the text right after hanging whitespace stays on that row, so the caret there
+  doesn't get a row of its own.
 - The selection, transaction and history types derive serde, so editor state serializes.
   `Range::old_visual_position` and `Selection::primary_index` may be left out when
   deserializing.

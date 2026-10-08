@@ -154,6 +154,14 @@
   a scroll, a resize, a fold, or a host's `edit`, `command` or `insert_blocks` that moved a
   caret or changed the text. A host that sets a view's selection or rows itself, then relied on
   a `tick` to bring the caret into sight, calls `layout::ensure_caret_visible` instead.
+- In prose (outline) wrapping, the end of the text or a line end right after a space that
+  hangs past the column stays on that row. Typing a space after a word that fills the row no
+  longer adds an empty row for the caret alone (so the page no longer grew a row while typing
+  and shrank one when a save dropped the trailing space); the next character still starts the
+  next row. The caret is drawn right after the hanging space when the view has a cell there,
+  else in the view's last column on the same row; `view::locate` says the same cell, and a
+  click in that last cell (`view::hit`, `Msg::Click`) puts the caret at the row's end. The new
+  `Layout::hangs(line)` says whether a line wraps this way.
 
 ## 0.3.0 (2026-10-07)
 

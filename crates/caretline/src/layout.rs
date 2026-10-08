@@ -240,7 +240,8 @@ pub fn text_format(config: &Config, width: u16, wrap: bool) -> TextFormat {
 /// The text format of an outline block's content: prose wrapping. A word moves to the next
 /// row whole unless it's longer than a row (with `hang`; words end at whitespace); the space after a word that reaches the row's end
 /// stays on that row (the next row starts with the next word); a word that ends exactly at the
-/// row's end before a line break or the end stays.
+/// row's end before a line break or the end stays, and so does a line break or the end right
+/// after hanging space (the caret there is drawn as [`Layout::hangs`] says).
 /// `hang`: there's a cell right of the column for the caret, so a space (or a word that ends
 /// exactly there) may sit at the row's end; without one, the Helix rule (the next row takes
 /// it) keeps the caret on screen.
@@ -424,6 +425,19 @@ impl Layout {
     pub fn line_text_format(&self, line: usize) -> &TextFormat {
         let lf = self.line_format(line);
         self.fmt_of(&lf)
+    }
+
+    /// Whether line `line` wraps as prose with a hang: a row may end in whitespace that hangs
+    /// past its column, with a line end or the end of the text right after it on that row.
+    ///
+    /// The caret's cell on such a row is its column, clamped to the view's last column: where
+    /// there's room right of the text column it's drawn after the hanging whitespace, and
+    /// where there isn't (the text column ends one cell before the view's edge) it's drawn
+    /// in the last cell, on the same row. The row never grows for the caret. A click in that
+    /// last cell puts the caret at the row's end ([`Layout::click_at`]).
+    pub fn hangs(&self, line: usize) -> bool {
+        let fmt = self.line_text_format(line);
+        fmt.soft_wrap && fmt.hang_spaces
     }
 
     /// The view's outline layout, when it has one.
@@ -970,9 +984,18 @@ impl Layout {
 
     /// Where a click at screen column `col` of visual row `at` puts the caret: [`Layout::pos_at`],
     /// except that the right half of a wide grapheme (a CJK character, an emoji) puts it after
-    /// the grapheme, as text fields do.
+    /// the grapheme, as text fields do. On a row whose hanging whitespace runs past the view
+    /// (see [`Layout::hangs`]), a click in the view's last column puts it at the row's end,
+    /// where the caret there is drawn.
     pub fn click_at(&self, at: RowPos, col: usize) -> usize {
         let pos = self.pos_at(at, col);
+        if self.hangs(at.line) && col + 1 >= self.width as usize {
+            let end = self.pos_at(at, usize::MAX);
+            let (row, x) = self.pos_coords(end);
+            if row == at && x >= self.width as usize {
+                return end;
+            }
+        }
         let text = self.text();
         if pos >= text.len_chars() {
             return pos;

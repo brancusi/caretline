@@ -7,7 +7,8 @@
 // `hang_spaces` (prose wrapping); soft wrap checks a grapheme's start column plus its width
 // against the viewport width (`fits`), so a wide grapheme at a row's end starts the next row
 // instead of overflowing by a cell, and a word that starts a row breaks there instead of moving
-// to a fresh row (`row_start`).
+// to a fresh row (`row_start`); with `hang_spaces`, a line end or the end of the text right
+// after hanging whitespace stays on that row (`hung`).
 
 //! The `DocumentFormatter` forms the bridge between the raw document text
 //! and onscreen positioning. It yields the text graphemes as an iterator
@@ -208,6 +209,9 @@ pub struct DocumentFormatter<'t> {
     /// the carried indent on a wrapped row. A word that starts here gains nothing by moving
     /// to a fresh row.
     row_start: usize,
+    /// (caretline) The current row ends in whitespace that hangs past the width
+    /// (`hang_spaces`): a line end or the end of the text after it stays on the row.
+    hung: bool,
     /// In case a long word needs to be split a single grapheme might need to be wrapped
     /// while the rest of the word stays on the same line
     peeked_grapheme: Option<GraphemeWithSource<'t>>,
@@ -243,6 +247,7 @@ impl<'t> DocumentFormatter<'t> {
             exhausted: false,
             indent_level: None,
             row_start: 0,
+            hung: false,
             peeked_grapheme: None,
             word_buf: Vec::with_capacity(64),
             word_i: 0,
@@ -280,6 +285,7 @@ impl<'t> DocumentFormatter<'t> {
             exhausted: false,
             indent_level: indent,
             row_start: col,
+            hung: false,
             peeked_grapheme: None,
             word_buf: Vec::with_capacity(64),
             word_i: 0,
@@ -374,6 +380,7 @@ impl<'t> DocumentFormatter<'t> {
         self.visual_pos.col = indent_carry_over as usize;
         self.visual_pos.row += 1 + virtual_lines;
         self.row_start = self.visual_pos.col;
+        self.hung = false;
         let mut i = 0;
         let mut word_width = 0;
         let wrap_indicator = UnicodeSegmentation::graphemes(&*self.text_fmt.wrap_indicator, true)
@@ -460,19 +467,25 @@ impl<'t> DocumentFormatter<'t> {
             let col = self.visual_pos.col + word_width;
             let char_pos = self.char_pos + word_chars;
             let fmt = self.text_fmt;
-            let (fits, hangs) = match self.peek_grapheme(col, char_pos) {
+            let hung = self.hung;
+            let (fits, hangs, stays) = match self.peek_grapheme(col, char_pos) {
                 None => return,
                 Some(g) => (
                     Self::fits(fmt, g, col),
                     fmt.hang_spaces && g.is_whitespace() && !g.is_newline() && !g.is_eof(),
+                    // (caretline) A line end or the end of the text right after hanging
+                    // whitespace stays on its row, so the caret there sits after the
+                    // whitespace instead of alone on a row of its own.
+                    hung && (g.is_newline() || g.is_eof()),
                 ),
             };
-            if !fits {
+            if !fits && !stays {
                 if hangs {
                     // (caretline) With `hang_spaces`, whitespace that doesn't fit hangs past
                     // the row's end; the next row starts with the next word.
                     let grapheme = self.next_grapheme(col, char_pos).expect("peeked");
                     self.word_buf.push(grapheme);
+                    self.hung = true;
                     return;
                 }
                 if self.visual_pos.col == self.row_start {
@@ -573,6 +586,7 @@ impl<'t> Iterator for DocumentFormatter<'t> {
             self.visual_pos.row += 1 + virtual_lines;
             self.visual_pos.col = 0;
             self.row_start = 0;
+            self.hung = false;
             if !grapheme.is_virtual() {
                 self.line_pos += 1;
             }
