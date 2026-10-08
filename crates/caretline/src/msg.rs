@@ -269,6 +269,64 @@ impl Msg {
         )
     }
 
+    /// Whether, and how, the message may move its view to follow the caret (see
+    /// docs/architecture.md#documents-and-views). Every variant answers here, with no
+    /// wildcard arm, so a new kind of message can't move the view by default.
+    pub(crate) fn view_motion(&self) -> ViewMotion {
+        use ViewMotion::*;
+        match self {
+            // Keys that move the caret or edit, a resize, a scroll, a fold: the view follows
+            // the caret by its policy, `scrolloff` included.
+            Msg::InsertText { .. }
+            | Msg::InsertNewline
+            | Msg::DeleteBackward
+            | Msg::DeleteForward
+            | Msg::DeleteWordBackward
+            | Msg::DeleteWordForward
+            | Msg::DeleteToLineStart
+            | Msg::DeleteToLineEnd
+            | Msg::KillLine
+            | Msg::Move { .. }
+            | Msg::Scroll { .. }
+            | Msg::SelectAll
+            | Msg::Collapse
+            | Msg::Cut
+            | Msg::Paste { .. }
+            | Msg::PastePlain { .. }
+            | Msg::Undo
+            | Msg::Redo
+            | Msg::Resize { .. }
+            | Msg::SoftBreak
+            | Msg::Indent
+            | Msg::Outdent
+            | Msg::MoveBlock { .. }
+            | Msg::ScrollView { .. }
+            | Msg::Fold { .. }
+            | Msg::Unfold { .. }
+            | Msg::ToggleFold { .. } => Follows,
+            // A host's edits and commands: only when they moved the caret or changed the text.
+            Msg::Edit { .. } | Msg::Command { .. } | Msg::InsertBlocks { .. } => IfChanged,
+            // A caret placed at a screen position.
+            Msg::Click { .. }
+            | Msg::Drag { .. }
+            | Msg::SelectWordAt { .. }
+            | Msg::SelectBlock { .. } => Pointer,
+            // Passive messages, and messages that neither move the caret nor change the text.
+            // `External` rebases every view instead (the scroll stays on the text it showed).
+            Msg::Tick { .. }
+            | Msg::Frame { .. }
+            | Msg::FrameClock { .. }
+            | Msg::Saved
+            | Msg::SaveFailed { .. }
+            | Msg::ShowStatus { .. }
+            | Msg::External { .. }
+            | Msg::Ext { .. }
+            | Msg::Copy
+            | Msg::Save
+            | Msg::Quit => Stays,
+        }
+    }
+
     /// A change from outside the editor, applied to the document rather than through a view.
     pub fn is_external(&self) -> bool {
         matches!(self, Msg::External { .. })
@@ -301,6 +359,19 @@ impl Msg {
                 | Msg::Command { .. }
         )
     }
+}
+
+/// How a message may move its view ([`Msg::view_motion`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ViewMotion {
+    /// The view follows the caret by its policy.
+    Follows,
+    /// As `Follows`, only when the message moved a caret or changed the text.
+    IfChanged,
+    /// The caret was placed at a screen position: the view stays while the caret is in it.
+    Pointer,
+    /// The view never moves.
+    Stays,
 }
 
 /// Work for the runtime. `update` never performs I/O; it returns these instead. New kinds may

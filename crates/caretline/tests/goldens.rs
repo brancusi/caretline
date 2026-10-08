@@ -940,92 +940,147 @@ fn place(s: &mut State, line: usize, top: usize) {
     };
 }
 
+thread_local! {
+    /// Whether `sendv` and `send_doc` follow every message with passive ones.
+    static BETWEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Messages that never move a view: the clock, a host value's operation (no reducer: it only
+/// sets the status), a status line. A live runtime sends a `tick` before every batch.
+fn passive() -> [Msg; 3] {
+    [
+        Msg::Tick { now_ms: 1 },
+        Msg::Ext {
+            key: "nobody".into(),
+            op: serde_json::Value::Null,
+        },
+        Msg::ShowStatus { text: "hi".into() },
+    ]
+}
+
+/// `send`, each message followed by the passive ones when `BETWEEN` is set.
+fn sendv(s: &mut State, msgs: impl IntoIterator<Item = Msg>) {
+    for msg in msgs {
+        send(s, [msg]);
+        if BETWEEN.get() {
+            send(s, passive());
+        }
+    }
+}
+
+/// `update_doc`, followed by the passive messages through every view when `BETWEEN` is set.
+fn send_doc(doc: &mut Document, views: &mut [View], acting: usize, msg: Msg) {
+    update_doc(doc, views, acting, msg);
+    if BETWEEN.get() {
+        for v in 0..views.len() {
+            for p in passive() {
+                update_doc(doc, views, v, p);
+            }
+        }
+    }
+}
+
+/// Runs a case as written, then again with passive messages after every message: they must
+/// change nothing it checks.
+fn twice(case: fn()) {
+    case();
+    BETWEEN.set(true);
+    case();
+    BETWEEN.set(false);
+}
+
 #[test]
 fn v01_an_edit_that_shortens_the_document_keeps_the_view() {
-    // Ten text rows, no margin, the caret at the end: the view shows lines 20 to 29.
-    let mut s = state_wh(&format!("{}▮", short_lines(30)), 20, 11);
-    s.view.config.scrolloff = 0;
-    assert_eq!(s.view.scroll.line, 20);
-    send(&mut s, (0..5).map(|_| Msg::InsertNewline));
-    assert_eq!((line_of(&s), s.view.scroll.line), (34, 25));
-    send(&mut s, (0..3).map(|_| mv(Dir::Backward, By::Line)));
-    assert_eq!((line_of(&s), s.view.scroll.line), (31, 25));
-    send(&mut s, [Msg::DeleteBackward]);
-    assert_eq!(
-        (line_of(&s), s.view.scroll.line),
-        (30, 25),
-        "an empty row below the end, as in VS Code and Sublime"
-    );
-    send(&mut s, (0..4).map(|_| Msg::DeleteBackward));
-    assert_eq!(
-        (line_of(&s), s.view.scroll.line),
-        (29, 25),
-        "nor does any further Backspace move it"
-    );
-    // A view moved to bring the caret into sight still keeps off empty rows.
-    send(
-        &mut s,
-        [
-            mv(Dir::Backward, By::DocStart),
-            mv(Dir::Forward, By::DocEnd),
-        ],
-    );
-    assert_eq!((line_of(&s), s.view.scroll.line), (32, 23));
+    twice(|| {
+        // Ten text rows, no margin, the caret at the end: the view shows lines 20 to 29.
+        let mut s = state_wh(&format!("{}▮", short_lines(30)), 20, 11);
+        s.view.config.scrolloff = 0;
+        assert_eq!(s.view.scroll.line, 20);
+        sendv(&mut s, (0..5).map(|_| Msg::InsertNewline));
+        assert_eq!((line_of(&s), s.view.scroll.line), (34, 25));
+        sendv(&mut s, (0..3).map(|_| mv(Dir::Backward, By::Line)));
+        assert_eq!((line_of(&s), s.view.scroll.line), (31, 25));
+        sendv(&mut s, [Msg::DeleteBackward]);
+        assert_eq!(
+            (line_of(&s), s.view.scroll.line),
+            (30, 25),
+            "an empty row below the end, as in VS Code and Sublime"
+        );
+        sendv(&mut s, (0..4).map(|_| Msg::DeleteBackward));
+        assert_eq!(
+            (line_of(&s), s.view.scroll.line),
+            (29, 25),
+            "nor does any further Backspace move it"
+        );
+        // A view moved to bring the caret into sight still keeps off empty rows.
+        send(
+            &mut s,
+            [
+                mv(Dir::Backward, By::DocStart),
+                mv(Dir::Forward, By::DocEnd),
+            ],
+        );
+        assert_eq!((line_of(&s), s.view.scroll.line), (32, 23));
+    });
 }
 
 #[test]
 fn v02_a_click_on_the_margin_rows_keeps_the_view() {
-    // Twenty text rows, a two-row margin, the view from line 40.
-    for (row, line) in [(0, 40), (1, 41), (18, 58), (19, 59)] {
+    twice(|| {
+        // Twenty text rows, a two-row margin, the view from line 40.
+        for (row, line) in [(0, 40), (1, 41), (18, 58), (19, 59)] {
+            let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+            place(&mut s, 50, 40);
+            sendv(&mut s, [click(row)]);
+            assert_eq!(
+                (line_of(&s), s.view.scroll.line),
+                (line, 40),
+                "a click on row {row}"
+            );
+        }
+        // A key after it scrolls as the margin says.
         let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
         place(&mut s, 50, 40);
-        send(&mut s, [click(row)]);
-        assert_eq!(
-            (line_of(&s), s.view.scroll.line),
-            (line, 40),
-            "a click on row {row}"
-        );
-    }
-    // A key after it scrolls as the margin says.
-    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
-    place(&mut s, 50, 40);
-    send(&mut s, [click(0), mv(Dir::Backward, By::Line)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (39, 37));
-    place(&mut s, 50, 40);
-    send(&mut s, [click(19), mv(Dir::Forward, By::Line)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (60, 43));
+        sendv(&mut s, [click(0), mv(Dir::Backward, By::Line)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (39, 37));
+        place(&mut s, 50, 40);
+        sendv(&mut s, [click(19), mv(Dir::Forward, By::Line)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (60, 43));
+    });
 }
 
 #[test]
 fn v03_a_shift_click_double_click_or_click_in_a_free_view_keeps_the_view() {
-    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
-    place(&mut s, 50, 40);
-    let shift = |row| Msg::Click {
-        col: 3,
-        row,
-        extend: true,
-    };
-    send(&mut s, [click(10), shift(19)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (59, 40));
-    send(&mut s, [shift(0)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (40, 40));
-    // Below the text rows, the view follows the caret as it always has.
-    send(&mut s, [shift(20)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (60, 43));
-    assert_eq!(
-        s.view.selection.primary().anchor,
-        s.doc.text.line_to_char(50) + 1
-    );
-    // A double-click on the top row.
-    place(&mut s, 50, 40);
-    let pos = s.doc.text.line_to_char(41) + 2;
-    send(&mut s, [Msg::SelectWordAt { pos }]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (41, 40));
-    // A view scrolled with the wheel (the caret left behind) takes a click where it is.
-    send(&mut s, [Msg::ScrollView { rows: 30 }]);
-    assert_eq!(s.view.scroll.line, 70);
-    send(&mut s, [click(19)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (89, 70));
+    twice(|| {
+        let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+        place(&mut s, 50, 40);
+        let shift = |row| Msg::Click {
+            col: 3,
+            row,
+            extend: true,
+        };
+        sendv(&mut s, [click(10), shift(19)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (59, 40));
+        sendv(&mut s, [shift(0)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (40, 40));
+        // Below the text rows, the view follows the caret as it always has.
+        sendv(&mut s, [shift(20)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (60, 43));
+        assert_eq!(
+            s.view.selection.primary().anchor,
+            s.doc.text.line_to_char(50) + 1
+        );
+        // A double-click on the top row.
+        place(&mut s, 50, 40);
+        let pos = s.doc.text.line_to_char(41) + 2;
+        sendv(&mut s, [Msg::SelectWordAt { pos }]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (41, 40));
+        // A view scrolled with the wheel (the caret left behind) takes a click where it is.
+        sendv(&mut s, [Msg::ScrollView { rows: 30 }]);
+        assert_eq!(s.view.scroll.line, 70);
+        sendv(&mut s, [click(19)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (89, 70));
+    });
 }
 
 /// Lines of 24 chars, two rows each at width 20.
@@ -1038,28 +1093,30 @@ fn wrapped_lines(n: usize) -> String {
 
 #[test]
 fn v04_wrapped_rows_keep_the_view() {
-    // The view starts on the second row of line 20.
-    let mut s = state_wh(&format!("▮{}", wrapped_lines(60)), 20, 11);
-    assert_eq!(caretline::layout::Layout::new(&s).line_rows(20), 2);
-    for row in [0, 1, 8, 9] {
-        place(&mut s, 23, 20);
-        s.view.scroll.row = 1;
-        let top = s.view.scroll;
-        send(&mut s, [click(row)]);
-        assert_eq!(s.view.scroll, top, "a click on row {row}");
-        if row == 0 {
-            assert_eq!(line_of(&s), 20);
+    twice(|| {
+        // The view starts on the second row of line 20.
+        let mut s = state_wh(&format!("▮{}", wrapped_lines(60)), 20, 11);
+        assert_eq!(caretline::layout::Layout::new(&s).line_rows(20), 2);
+        for row in [0, 1, 8, 9] {
+            place(&mut s, 23, 20);
+            s.view.scroll.row = 1;
+            let top = s.view.scroll;
+            sendv(&mut s, [click(row)]);
+            assert_eq!(s.view.scroll, top, "a click on row {row}");
+            if row == 0 {
+                assert_eq!(line_of(&s), 20);
+            }
         }
-    }
-    // An edit that shortens the document, at its end.
-    let mut s = state_wh(&format!("{}▮", wrapped_lines(15)), 20, 11);
-    s.view.config.scrolloff = 0;
-    send(&mut s, (0..3).map(|_| Msg::InsertNewline));
-    send(&mut s, [mv(Dir::Backward, By::Line)]);
-    let top = s.view.scroll;
-    assert_eq!(top.row, 1, "the view starts inside a wrapped line");
-    send(&mut s, [Msg::DeleteBackward]);
-    assert_eq!(s.view.scroll, top);
+        // An edit that shortens the document, at its end.
+        let mut s = state_wh(&format!("{}▮", wrapped_lines(15)), 20, 11);
+        s.view.config.scrolloff = 0;
+        sendv(&mut s, (0..3).map(|_| Msg::InsertNewline));
+        sendv(&mut s, [mv(Dir::Backward, By::Line)]);
+        let top = s.view.scroll;
+        assert_eq!(top.row, 1, "the view starts inside a wrapped line");
+        sendv(&mut s, [Msg::DeleteBackward]);
+        assert_eq!(s.view.scroll, top);
+    });
 }
 
 /// An outline: a folded list, then forty paragraphs (a blank row before each), one with a
@@ -1090,99 +1147,105 @@ fn outline(w: u16, h: u16) -> State {
     let mut layout = OutlineLayout::default();
     layout.extra_rows.insert(ids[30], 1);
     s.view.layout = Some(layout);
-    send(&mut s, [Msg::Fold { id: ids[0] }]);
-    send(&mut s, [Msg::resize(w, h)]);
+    sendv(&mut s, [Msg::Fold { id: ids[0] }]);
+    sendv(&mut s, [Msg::resize(w, h)]);
     s
 }
 
 #[test]
 fn v05_an_outline_keeps_the_view() {
-    let mut s = outline(40, 20);
-    let line = |s: &State, needle: &str| {
-        let text = s.doc.text.to_string();
-        s.doc.text.char_to_line(text.find(needle).unwrap())
-    };
-    let (caret, top) = (line(&s, "Paragraph 25"), line(&s, "Paragraph 20"));
-    // Row 0 is Paragraph 20's blank row, 18 Paragraph 28's text (27 has a host's row).
-    for row in [0, 1, 18] {
+    twice(|| {
+        let mut s = outline(40, 20);
+        let line = |s: &State, needle: &str| {
+            let text = s.doc.text.to_string();
+            s.doc.text.char_to_line(text.find(needle).unwrap())
+        };
+        let (caret, top) = (line(&s, "Paragraph 25"), line(&s, "Paragraph 20"));
+        // Row 0 is Paragraph 20's blank row, 18 Paragraph 28's text (27 has a host's row).
+        for row in [0, 1, 18] {
+            place(&mut s, caret, top);
+            sendv(&mut s, [click(row)]);
+            assert_eq!(s.view.scroll.line, top, "a click on row {row}");
+        }
+        // Row 19 is the blank row before Paragraph 29, whose text is below the view: the caret
+        // goes there and the view follows it.
         place(&mut s, caret, top);
-        send(&mut s, [click(row)]);
-        assert_eq!(s.view.scroll.line, top, "a click on row {row}");
-    }
-    // Row 19 is the blank row before Paragraph 29, whose text is below the view: the caret
-    // goes there and the view follows it.
-    place(&mut s, caret, top);
-    send(&mut s, [click(19)]);
-    assert_eq!(line_of(&s), line(&s, "Paragraph 29"));
-    assert_eq!(s.view.scroll.line, line(&s, "Paragraph 21"));
-    // At the end, joining the last paragraph to the one before shortens the document.
-    send(
-        &mut s,
-        [
-            mv(Dir::Forward, By::DocEnd),
-            mv(Dir::Backward, By::LineStart),
-        ],
-    );
-    let top = s.view.scroll;
-    let rows = caretline::layout::Layout::new(&s).end();
-    send(&mut s, [Msg::DeleteBackward]);
-    assert_ne!(caretline::layout::Layout::new(&s).end(), rows);
-    assert_eq!(s.view.scroll, top);
+        sendv(&mut s, [click(19)]);
+        assert_eq!(line_of(&s), line(&s, "Paragraph 29"));
+        assert_eq!(s.view.scroll.line, line(&s, "Paragraph 21"));
+        // At the end, joining the last paragraph to the one before shortens the document.
+        send(
+            &mut s,
+            [
+                mv(Dir::Forward, By::DocEnd),
+                mv(Dir::Backward, By::LineStart),
+            ],
+        );
+        let top = s.view.scroll;
+        let rows = caretline::layout::Layout::new(&s).end();
+        sendv(&mut s, [Msg::DeleteBackward]);
+        assert_ne!(caretline::layout::Layout::new(&s).end(), rows);
+        assert_eq!(s.view.scroll, top);
+    });
 }
 
 #[test]
 fn v06_two_views_each_keep_their_own() {
-    let mut doc = Document::new(&short_lines(30), None);
-    let end = doc.text.len_chars();
-    let mut views = [0, 1].map(|_| {
-        let mut v = View::new(Viewport {
-            width: 20,
-            height: 11,
+    twice(|| {
+        let mut doc = Document::new(&short_lines(30), None);
+        let end = doc.text.len_chars();
+        let mut views = [0, 1].map(|_| {
+            let mut v = View::new(Viewport {
+                width: 20,
+                height: 11,
+            });
+            v.config.scrolloff = 0;
+            v.selection = Selection::point(end);
+            v
         });
-        v.config.scrolloff = 0;
-        v.selection = Selection::point(end);
-        v
+        for i in 0..2 {
+            send_doc(&mut doc, &mut views, i, Msg::resize(20, 11));
+        }
+        let send1 = |doc: &mut Document, views: &mut [View], msg| send_doc(doc, views, 1, msg);
+        for _ in 0..5 {
+            send1(&mut doc, &mut views, Msg::InsertNewline);
+        }
+        for _ in 0..3 {
+            send1(&mut doc, &mut views, mv(Dir::Backward, By::Line));
+        }
+        assert_eq!(views[1].scroll.line, 25);
+        send1(&mut doc, &mut views, Msg::DeleteBackward);
+        assert_eq!(views[1].scroll.line, 25);
+        // Clicks through view 0 keep view 0, and leave view 1 alone.
+        let top0 = views[0].scroll;
+        for row in [0, 9] {
+            send_doc(&mut doc, &mut views, 0, click(row));
+            assert_eq!(views[0].scroll, top0, "a click on row {row}");
+        }
+        assert_eq!(views[1].scroll.line, 25);
     });
-    for i in 0..2 {
-        update_doc(&mut doc, &mut views, i, Msg::resize(20, 11));
-    }
-    let send1 = |doc: &mut Document, views: &mut [View], msg| update_doc(doc, views, 1, msg);
-    for _ in 0..5 {
-        send1(&mut doc, &mut views, Msg::InsertNewline);
-    }
-    for _ in 0..3 {
-        send1(&mut doc, &mut views, mv(Dir::Backward, By::Line));
-    }
-    assert_eq!(views[1].scroll.line, 25);
-    send1(&mut doc, &mut views, Msg::DeleteBackward);
-    assert_eq!(views[1].scroll.line, 25);
-    // Clicks through view 0 keep view 0, and leave view 1 alone.
-    let top0 = views[0].scroll;
-    for row in [0, 9] {
-        update_doc(&mut doc, &mut views, 0, click(row));
-        assert_eq!(views[0].scroll, top0, "a click on row {row}");
-    }
-    assert_eq!(views[1].scroll.line, 25);
 }
 
 #[test]
 fn v07_typewriter_centres_on_keys_not_on_clicks() {
-    // Twenty text rows, the caret's row at half: row 10.
-    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
-    s.view.config.follow = Follow::Typewriter { percent: 50 };
-    place(&mut s, 50, 40);
-    send(&mut s, [click(0)]);
-    assert_eq!(
-        (line_of(&s), s.view.scroll.line),
-        (40, 40),
-        "the text stays under the pointer"
-    );
-    send(&mut s, [mv(Dir::Forward, By::Line)]);
-    assert_eq!(
-        (line_of(&s), s.view.scroll.line),
-        (41, 31),
-        "a key centres it"
-    );
+    twice(|| {
+        // Twenty text rows, the caret's row at half: row 10.
+        let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+        s.view.config.follow = Follow::Typewriter { percent: 50 };
+        place(&mut s, 50, 40);
+        sendv(&mut s, [click(0)]);
+        assert_eq!(
+            (line_of(&s), s.view.scroll.line),
+            (40, 40),
+            "the text stays under the pointer"
+        );
+        sendv(&mut s, [mv(Dir::Forward, By::Line)]);
+        assert_eq!(
+            (line_of(&s), s.view.scroll.line),
+            (41, 31),
+            "a key centres it"
+        );
+    });
 }
 
 fn drag(row: u16) -> Msg {
@@ -1191,62 +1254,121 @@ fn drag(row: u16) -> Msg {
 
 #[test]
 fn v08_a_drag_on_an_edge_row_scrolls_one_row_a_move() {
-    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
-    place(&mut s, 50, 40);
-    let anchor = s.doc.text.line_to_char(50) + 1;
-    send(&mut s, [click(10), drag(5)]);
-    assert_eq!(
-        (line_of(&s), s.view.scroll.line),
-        (45, 40),
-        "inside: no scroll"
-    );
-    send(&mut s, [drag(0)]);
-    assert_eq!(
-        (line_of(&s), s.view.scroll.line),
-        (39, 39),
-        "up a row, to the row it shows"
-    );
-    send(&mut s, [drag(0), drag(0)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (37, 37));
-    send(&mut s, [drag(19)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (57, 38), "down a row");
-    send(&mut s, [drag(20), drag(25)]);
-    assert_eq!(
-        (line_of(&s), s.view.scroll.line),
-        (59, 40),
-        "past the last row, the same"
-    );
-    assert_eq!(s.view.selection.primary().anchor, anchor);
-    // At the top and the end of the document there is nowhere to go.
-    place(&mut s, 5, 0);
-    send(&mut s, [drag(0)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (0, 0));
-    place(&mut s, 90, 80);
-    send(&mut s, [drag(19), drag(20)]);
-    assert_eq!((line_of(&s), s.view.scroll.line), (99, 80));
+    twice(|| {
+        let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+        place(&mut s, 50, 40);
+        let anchor = s.doc.text.line_to_char(50) + 1;
+        sendv(&mut s, [click(10), drag(5)]);
+        assert_eq!(
+            (line_of(&s), s.view.scroll.line),
+            (45, 40),
+            "inside: no scroll"
+        );
+        sendv(&mut s, [drag(0)]);
+        assert_eq!(
+            (line_of(&s), s.view.scroll.line),
+            (39, 39),
+            "up a row, to the row it shows"
+        );
+        sendv(&mut s, [drag(0), drag(0)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (37, 37));
+        sendv(&mut s, [drag(19)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (57, 38), "down a row");
+        sendv(&mut s, [drag(20), drag(25)]);
+        assert_eq!(
+            (line_of(&s), s.view.scroll.line),
+            (59, 40),
+            "past the last row, the same"
+        );
+        assert_eq!(s.view.selection.primary().anchor, anchor);
+        // At the top and the end of the document there is nowhere to go.
+        place(&mut s, 5, 0);
+        sendv(&mut s, [drag(0)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (0, 0));
+        place(&mut s, 90, 80);
+        sendv(&mut s, [drag(19), drag(20)]);
+        assert_eq!((line_of(&s), s.view.scroll.line), (99, 80));
+    });
 }
 
 #[test]
 fn v09_an_outline_drag_on_an_edge_row_scrolls_one_row() {
-    let mut s = outline(40, 20);
-    let line = |s: &State, needle: &str| {
-        let text = s.doc.text.to_string();
-        s.doc.text.char_to_line(text.find(needle).unwrap())
-    };
-    let (caret, top) = (line(&s, "Paragraph 25"), line(&s, "Paragraph 20"));
-    place(&mut s, caret, top);
-    // Row 0 is Paragraph 20's blank row: up one row shows Paragraph 19's text.
-    send(&mut s, [click(5), drag(0)]);
-    assert_eq!(line_of(&s), line(&s, "Paragraph 19"));
+    twice(|| {
+        let mut s = outline(40, 20);
+        let line = |s: &State, needle: &str| {
+            let text = s.doc.text.to_string();
+            s.doc.text.char_to_line(text.find(needle).unwrap())
+        };
+        let (caret, top) = (line(&s, "Paragraph 25"), line(&s, "Paragraph 20"));
+        place(&mut s, caret, top);
+        // Row 0 is Paragraph 20's blank row: up one row shows Paragraph 19's text.
+        sendv(&mut s, [click(5), drag(0)]);
+        assert_eq!(line_of(&s), line(&s, "Paragraph 19"));
+        assert_eq!(
+            (s.view.scroll.line, s.view.scroll.row),
+            (line(&s, "Paragraph 19"), 1)
+        );
+        place(&mut s, caret, top);
+        // Row 19 is Paragraph 29's blank row: down one row shows its text.
+        sendv(&mut s, [click(5), drag(19)]);
+        assert_eq!(line_of(&s), line(&s, "Paragraph 29"));
+        assert_eq!((s.view.scroll.line, s.view.scroll.row), (top, 1));
+    });
+}
+
+fn tick(now_ms: u64) -> Msg {
+    Msg::Tick { now_ms }
+}
+
+#[test]
+fn v10_a_tick_after_a_click_in_the_margin_keeps_the_view() {
+    // Five text rows, a two-row margin: row 4 is in the bottom margin.
+    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 6);
+    s.view.config.scrolloff = 2;
+    place(&mut s, 42, 40);
+    send(&mut s, [click(4)]);
+    assert_eq!((line_of(&s), s.view.scroll.line), (44, 40));
+    send(&mut s, [tick(10), tick(20)]);
     assert_eq!(
-        (s.view.scroll.line, s.view.scroll.row),
-        (line(&s, "Paragraph 19"), 1)
+        (line_of(&s), s.view.scroll.line),
+        (44, 40),
+        "a tick never moves the view"
     );
-    place(&mut s, caret, top);
-    // Row 19 is Paragraph 29's blank row: down one row shows its text.
-    send(&mut s, [click(5), drag(19)]);
-    assert_eq!(line_of(&s), line(&s, "Paragraph 29"));
-    assert_eq!((s.view.scroll.line, s.view.scroll.row), (top, 1));
+    // Nor does a host value's operation, a status line, a save's result or a copy.
+    send(
+        &mut s,
+        [
+            Msg::Ext {
+                key: "nobody".into(),
+                op: serde_json::Value::Null,
+            },
+            Msg::ShowStatus { text: "hi".into() },
+            Msg::Saved,
+            Msg::Copy,
+            Msg::FrameClock { fps: 60 },
+            Msg::Frame { now_ms: 30 },
+        ],
+    );
+    assert_eq!(s.view.scroll.line, 40);
+    // A key does.
+    send(&mut s, [mv(Dir::Forward, By::Grapheme)]);
+    assert_eq!(s.view.scroll.line, 42);
+}
+
+#[test]
+fn v11_drags_on_an_edge_row_with_ticks_between_scroll_one_row_each() {
+    let mut s = state_wh(&format!("▮{}", numbered(100)), 20, 21);
+    s.view.config.scrolloff = 2;
+    place(&mut s, 50, 40);
+    send(&mut s, [click(10), tick(0)]);
+    for i in 1..=3 {
+        send(&mut s, [tick(i * 16), drag(19), tick(i * 16 + 8)]);
+    }
+    assert_eq!((line_of(&s), s.view.scroll.line), (62, 43));
+    for i in 4..=6 {
+        send(&mut s, [tick(i * 16), drag(0), tick(i * 16 + 8)]);
+    }
+    assert_eq!((line_of(&s), s.view.scroll.line), (40, 40));
 }
 
 // ---------------------------------------------------------------------------------------

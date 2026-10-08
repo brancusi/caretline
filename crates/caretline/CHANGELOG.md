@@ -94,7 +94,7 @@
   wildcard arm, and new kinds of message are no longer breaking. Its variants' fields are not,
   so hosts still build messages with struct literals; a field added to a variant stays a
   breaking change (with `#[serde(default)]`, so recorded JSON still parses). This release
-  adds `Msg::Ext`.
+  adds `Msg::Ext` and `Msg::Drag`.
 - `Msg::Resize` has a third field, `cell_px: Option<CellPx>`. Code that builds it writes
   `Msg::resize(width, height)` (or adds `cell_px: None`); a pattern that names its fields adds
   `..`. Its JSON is unchanged without pixels (`#[serde(default)]`, left out when `None`), so
@@ -112,7 +112,6 @@
   `ConfigInput::default()` and set its fields. This release also adds fields to them
   (`Config::single_line`, `ConfigInput::single_line`, `ViewConfig::page_overlap`), which broke
   struct literals anyway. The next release is a minor bump (0.4).
-- `Msg` has a new variant, `Drag`: an exhaustive `match` on `Msg` needs an arm for it.
 
 ### Fixed
 
@@ -137,6 +136,15 @@
   `Follow::Typewriter` view): the text stays under the pointer. The next key follows the caret
   as before, and a click below the text rows still scrolls to the caret. Selecting by dragging
   past an edge scrolls with the new `Msg::Drag`.
+- A passive message no longer moves the view. A `tick` (which the `caretline` editor, the
+  protocol server and hosts send before every batch), `ext`, `show_status`, `frame`,
+  `frame_clock`, `saved`, `save_failed`, and `copy`, `save` and `quit` leave the scroll where it
+  is; they used to follow the caret by `scrolloff`, so a click in the margin rows, or a `drag`
+  on an edge row, scrolled again one message later (three edge drags with ticks between them
+  scrolled 7 rows, not 3). The view follows the caret only after a key that moves it or edits,
+  a scroll, a resize, a fold, or a host's `edit`, `command` or `insert_blocks` that moved a
+  caret or changed the text. A host that sets a view's selection or rows itself, then relied on
+  a `tick` to bring the caret into sight, calls `layout::ensure_caret_visible` instead.
 
 ## 0.3.0 (2026-10-07)
 

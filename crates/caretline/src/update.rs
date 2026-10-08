@@ -9,7 +9,7 @@ use crate::helix::transaction::Operation;
 use crate::helix::{ChangeSet, Range, RopeSlice, Selection, SmallVec, Tendril, Transaction};
 use crate::layout::{follow_caret, Cause, Layout};
 use crate::marks::{ClipMark, Clipboard, Mark, MarkDelta, Marks};
-use crate::msg::{By, Dir, Effect, Msg};
+use crate::msg::{By, Dir, Effect, Msg, ViewMotion};
 use crate::state::{
     EditRun, RunKind, Scroll, State, RUN_GAP_MS, RUN_MAX_CHARS, RUN_WORD_BREAK_CHARS,
 };
@@ -125,11 +125,7 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
     }
     let selection_before = state.view.selection.clone();
     let scrolls_freely = matches!(msg, Msg::ScrollView { .. });
-    // A caret placed at a screen position: the view stays while the caret is in it.
-    let hit = matches!(
-        msg,
-        Msg::Click { .. } | Msg::Drag { .. } | Msg::SelectWordAt { .. } | Msg::SelectBlock { .. }
-    );
+    let motion = msg.view_motion();
     let scroll_before = state.view.scroll;
 
     let pins = if outline_on {
@@ -188,10 +184,18 @@ pub(crate) fn step(state: &mut State, msg: Msg) -> Vec<Effect> {
     if state.view.free && !scrolls_freely && (edited || state.view.selection != selection_before) {
         state.view.free = false;
     }
-    if state.view.free {
+    // The view moves only for a message that may move it (`Msg::view_motion`): a passive
+    // message, or one that neither moves the caret nor changes the text, leaves it alone.
+    let follows = match motion {
+        ViewMotion::Stays => false,
+        ViewMotion::IfChanged => edited || state.view.selection != selection_before,
+        ViewMotion::Follows | ViewMotion::Pointer => true,
+    };
+    if !follows {
+    } else if state.view.free {
         crate::layout::clamp_scroll(state);
     } else {
-        let cause = if hit {
+        let cause = if motion == ViewMotion::Pointer {
             Cause::Hit
         } else if state.view.scroll != scroll_before {
             Cause::Scrolled
