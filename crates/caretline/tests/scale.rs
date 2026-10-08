@@ -153,3 +153,61 @@ fn typing_in_a_5000_block_outline() {
         }
     }
 }
+
+/// Counting a long page's rows at a new width (a panel narrowing, host request #13): 5,000
+/// outline blocks of one ~75-char line each, a fresh `Layout` and every line's `line_rows`.
+/// Printable ASCII lines take the word-wrap fast path, so the whole page costs well under
+/// 2 ms in a release build. `cargo test --release --test scale -- --nocapture` prints the
+/// numbers; debug builds check the counts only.
+#[test]
+fn counting_5000_outline_rows_at_a_new_width() {
+    use caretline::layout::Layout;
+    use caretline::outline::markdown;
+    use caretline::{OutlineConfig, OutlineLayout};
+    let mut md = String::new();
+    for i in 0..5000 {
+        md.push_str(&format!(
+            "- item {i:04} the quick brown fox jumps over the lazy dog and keeps on running\n"
+        ));
+    }
+    let mut state = markdown::load(
+        &md,
+        None,
+        Viewport {
+            width: 100,
+            height: 40,
+        },
+        OutlineConfig::default(),
+    );
+    // The content takes the whole view: no gutter, no hang, no column limit.
+    state.view.layout = Some(
+        OutlineLayout::default()
+            .with_gutter(0)
+            .with_hang(0)
+            .with_column(1000),
+    );
+    let lines = state.doc.text.len_lines();
+    assert_eq!(lines, 5000);
+    for (width, want) in [(100, 1), (70, 2), (50, 2), (30, 3)] {
+        state.view.viewport.width = width;
+        let mut best = Duration::MAX;
+        for _ in 0..if cfg!(debug_assertions) { 1 } else { 20 } {
+            let t = Instant::now();
+            let layout = Layout::of(&state.doc, &state.view);
+            let rows: usize = (0..lines).map(|l| layout.line_rows(l)).sum();
+            best = best.min(t.elapsed());
+            assert_eq!(rows, want * lines, "width {width}");
+        }
+        let layout = Layout::of(&state.doc, &state.view);
+        for l in 0..lines {
+            assert_eq!(layout.line_rows(l), want, "width {width}, line {l}");
+        }
+        eprintln!(
+            "5,000 outline rows at width {width}: {best:?} ({:.2} µs per line)",
+            best.as_secs_f64() * 1e6 / lines as f64
+        );
+        if !cfg!(debug_assertions) {
+            assert!(best < Duration::from_millis(2), "width {width}: {best:?}");
+        }
+    }
+}

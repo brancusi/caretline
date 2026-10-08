@@ -110,6 +110,17 @@
   with text below down one row, and extends to the row brought in. The `caretline` editor
   sends its drags as this.
 
+### Changed
+
+- Faster row counts for soft-wrapped lines of printable ASCII (perf, no API change). A line
+  whose drawn text is all U+0020 to U+007E is wrapped by word-wrap arithmetic instead of the
+  grapheme formatter: `Layout::line_rows` and `text_rows_of`, the walks behind scrolling,
+  paging and keeping the caret in view, and the wrap cache of long lines. The rows, row
+  starts and caret places are the formatter's exactly; a line with a tab, a control
+  character or anything outside ASCII is formatted as before. Counting the rows of 5,000
+  wrapped outline blocks of ~75 characters at a new width went from 14 ms to 1.0 ms
+  (release).
+
 ### Breaking
 
 - `Edit` has a new public field, `then_default`: a struct literal that names every field adds

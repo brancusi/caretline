@@ -2,7 +2,8 @@
 // at commit ba40e547426b0f9896c8bdc699a4ab11f2b37dbc.
 // SPDX-License-Identifier: MPL-2.0. This file is under the Mozilla Public License 2.0;
 // see LICENSE-MPL-2.0 in the `helix` directory.
-// Changes from upstream: module paths; `Highlight` comes from a local shim; removed `collect_overlay_highlights` (syntax highlighting).
+// Changes from upstream: module paths; `Highlight` comes from a local shim; removed `collect_overlay_highlights` (syntax highlighting);
+// `is_empty` (caretline addition) lets layout take its fast path when there are no annotations.
 
 use std::cell::Cell;
 use std::cmp::Ordering;
@@ -296,6 +297,15 @@ impl Debug for TextAnnotations<'_> {
 }
 
 impl<'a> TextAnnotations<'a> {
+    /// Whether there are no annotations of any kind.
+    ///
+    /// caretline addition: not in upstream Helix.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.inline_annotations.is_empty()
+            && self.overlays.is_empty()
+            && self.line_annotations.is_empty()
+    }
+
     /// Prepare the TextAnnotations for iteration starting at char_idx
     pub fn reset_pos(&self, char_idx: usize) {
         reset_pos(&self.inline_annotations, char_idx, |annot| annot.char_idx);
