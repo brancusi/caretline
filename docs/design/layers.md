@@ -1674,3 +1674,27 @@ differs from the sections above:
     routed.
   - `caretline-tour`'s step layers carry `avoid` (anchors, `find` included), passed to the
     layer's `avoid`; `Grid::avoid` still marks what a host wants kept clear on every step.
+
+
+### 12.8 Host conformance, inspector and row-bound heads
+
+Built for the first public `caretline-layers` and `caretline-tour` 0.1 releases alongside
+caretline 0.4. The screen-level adapters remain the supported integration; the in-frame
+`install(host)` adapters and engine protocol/MCP layer tools described above remain future
+work.
+
+- The optional `conformance` feature checks a host's actual `Scene` values: placement
+  invariants and determinism across sizes, op-log replay, edit mapping between documents,
+  the host's protocol bridge against the shared schema and resolver, and stable frame/plan
+  snapshots. It owns no state and performs no I/O. The CLI layers demo, ratatui example and
+  walkthrough example run these checks in CI. See the
+  [integration guide](../layers.md#testing-your-integration).
+- `Plan::explain()` reads placements in words; `plan_explained` collects candidate scores,
+  renderer measurements, fallback answers, arrow costs and the winning reason while using
+  the same planner. Ordinary `plan` stores none of that diagnostic data.
+- `HeadRule::OnAnchorRows` (`head: "on_anchor_rows"`) lets a host request a sideways head
+  on one of its anchor's own rows, so a table arrow cannot point at a neighbouring record.
+  The default `Any` permits the existing clear-head choices. `NoArrow::HeadOffAnchorRows`
+  distinguishes a route that would work without the row constraint; blocked text and
+  blocked routes retain their own reasons. Walkthrough `place.head` passes this rule through
+  to the step's layers. The conformance kit checks it too.

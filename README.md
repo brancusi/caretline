@@ -27,7 +27,7 @@ Website and docs: **[caretline.app](https://caretline.app)** · crate: [`caretli
 
 ```toml
 [dependencies]
-caretline = "0.3"
+caretline = "0.4"
 ```
 
 Start with the [overview](docs/README.md), the [quickstart](docs/quickstart.md) and
@@ -55,7 +55,7 @@ caretline is developed here, and only here. The flow (also in [AGENTS.md](AGENTS
    CHANGELOG under the new version, bump `crates/*/Cargo.toml`, merge, tag `vX.Y.Z` (the
    [release workflow](.github/workflows/release.yml) builds and publishes the binaries that
    `install.sh` serves), `cargo publish` the crates, and redeploy the site.
-5. **Hosts pull a published version.** A host such as thc depends on `caretline = "0.3"` from
+5. **Hosts pull a published version.** A host such as thc depends on `caretline = "0.4"` from
    crates.io. For a fix that hasn't been released yet, it pins a git revision of this repo
    with `[patch.crates-io] caretline = { git = "https://github.com/brancusi/caretline", rev = "<sha>" }`
    and drops the patch at the next release. A local path patch is fine for development but is

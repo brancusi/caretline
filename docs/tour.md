@@ -1,11 +1,9 @@
 # Walkthroughs
 
-> **New and not released.** [`caretline-tour`](../crates/caretline-tour) is in the repository
-> but not yet on crates.io, and its API may change before its first release. It is built on
-> [`caretline-layers`](layers.md), also unreleased. caretline now has the engine hooks that
-> would keep a walkthrough inside its state and traces (view values and `Msg::Ext`), but this
-> crate doesn't use them yet ([Not built yet](#not-built-yet)): the host keeps the
-> walkthrough's state itself.
+This page covers `caretline-tour` 0.1, built on [`caretline-layers`](layers.md) 0.1.
+The host keeps the walkthrough's state itself. caretline 0.4 has the engine hooks to keep a
+walkthrough inside its state and traces (view values and `Msg::Ext`); this crate's in-frame
+adapter is [future work](#not-built-yet).
 
 A **walkthrough** is a list of steps that shows someone round a host's screen. Each step does
 three things:
@@ -34,12 +32,12 @@ The same ops at the same times give the same state and effects.
 
 ## Add it
 
-Until it is published, depend on it from a checkout or by git revision:
+Use the crates in your host:
 
 ```toml
 [dependencies]
-caretline-tour = { git = "https://github.com/brancusi/caretline", rev = "<full sha>" }
-caretline-layers = { git = "https://github.com/brancusi/caretline", rev = "<full sha>" }
+caretline-tour = "0.1"
+caretline-layers = "0.1"
 ```
 
 The default feature `caretline` adds what needs the engine: `Editor`, which answers the
@@ -142,7 +140,7 @@ error, except inside `data` and `host`, which are opaque. The same walkthrough i
 | `anchor` | One anchor, or a list of fallbacks in order. Any [`caretline-layers` anchor](layers.md#anchors) (`{block}`, `{text}`, `{caret}`, `{host = {kind, key}}`, `{screen}`, with `in` for one view), or `{find = "text", in? = "view"}` |
 | `kind` | Defaults to the walkthrough's `kind` |
 | `data` | What the layer's box shows, for the kind's renderer. A `hint` takes `{title?, text}`. With neither `kind` nor `data`, the layer has no content: a ring or a spotlight alone, no box |
-| `place` | `{sides, max_width, arrow, ring, spotlight, hide_off_screen}` (`ring` and `spotlight` take `true` or their object; `max_w` and `connector` are read as `max_width` and `arrow`), or just a list of sides |
+| `place` | `{sides, max_width, arrow, head, ring, spotlight, hide_off_screen}` (`ring` and `spotlight` take `true` or their object; `max_w` and `connector` are read as `max_width` and `arrow`), or just a list of sides. `head` is `any` by default, or `on_anchor_rows` for a table row or amount ([row-bound heads](layers.md#row-bound-arrow-heads)) |
 | `capture` | A modal step: the host routes keys to the walkthrough |
 | `avoid` | What the box and arrow should keep off, softly ([avoid areas](layers.md#avoid-areas)): one anchor or a list, `find` included (resolved with the anchors). It becomes the layer's `avoid`, so it follows scroll and edits. Also a single-layer field on the step |
 
@@ -444,6 +442,14 @@ fn lint(tour: &Tour) -> bool {
 
 A scene that doesn't call back plans nothing for that step and size. Resolve the `find`s
 first, as for a start, or each one is an `unresolved_find`.
+
+For full integration checks, run the layers [conformance kit](layers.md#testing-your-integration)
+on the scenes your host actually draws: it checks placement invariants, replay, mapping and
+protocol replies. The walkthrough crate's own
+[`tests/conformance.rs`](../crates/caretline-tour/tests/conformance.rs) runs every step of
+[`examples/tour.toml`](../crates/caretline-tour/examples/tour.toml) across several sizes.
+When placement is hard to explain, `Plan::explain()` and `plan_explained` show its anchors,
+box, arrow and candidate scores ([inspector](layers.md#inspect-a-placement)).
 
 ## Ops in your own protocol
 

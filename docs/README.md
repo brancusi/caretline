@@ -140,8 +140,8 @@ builds its own concepts on top with host commands and decorations ([a case study
 | Drive it over JSON lines | [protocol.md](protocol.md) |
 | Let an agent edit alongside you (MCP) | [mcp.md](mcp.md) |
 | Put it inside your own app | [embedding.md](embedding.md) |
-| Point at things on your app's screen: hints, arrows, spotlights (new, unreleased) | [layers.md](layers.md) |
-| Show someone round your app with a step-by-step walkthrough (new, unreleased) | [tour.md](tour.md) |
+| Point at things on your app's screen: hints, arrows, spotlights | [layers.md](layers.md) |
+| Show someone round your app with a step-by-step walkthrough | [tour.md](tour.md) |
 | Write or debug a test | [testing.md](testing.md) |
 | Know how fast it is, and its limits | [performance.md](performance.md) |
 

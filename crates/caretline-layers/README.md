@@ -29,6 +29,14 @@ them.
   keep off each other's boxes, chips, anchors and arrows; an arrow says where it attaches to
   its box, or why there is none (`no_arrow`), and its head is never on text; a box for an
   off-screen anchor docks against its edge chip and touches it (`dock`).
+- **Row-bound heads**: `HeadRule::OnAnchorRows` (`head: "on_anchor_rows"`) keeps an arrow
+  beside the target's own rows, for tables and amounts. When no such head fits, the box and
+  ring remain and the plan explains why its arrow is absent.
+- **Inspector**: `Plan::explain()` describes placements; `plan_explained` returns the same
+  plan with candidate scores, fallback answers and the reason the winner won.
+- **Conformance** (feature `conformance`): pure checks for a host's real scenes, replay,
+  anchor mapping and protocol bridge, plus stable snapshots. Run these in your CI; see
+  [Testing your integration](../../docs/layers.md#testing-your-integration).
 - **Avoid areas**: cells a host marks (`Grid::avoid`: a highlighted band, a table) or a layer
   names (`Layer.avoid`: what its step talks about) are kept clear by boxes and arrows when
   anything else fits; a box goes further out, within the grid's reach, to keep clear, and

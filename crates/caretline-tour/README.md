@@ -31,6 +31,11 @@ keeps the state and draws.
 - **Ops.** `ops::parse` and `ops::reply` for `tour.start`, `tour.step {to}`,
   `tour.restart`, `tour.stop` and `tour.list` in a host's own protocol, and `ops::schema()`.
 
+A step's `place.head = "on_anchor_rows"` keeps its arrow head on the target's own rows,
+for table-row and amount callouts. Enable `caretline-layers/conformance` in tests to check
+walkthrough scenes at several sizes with the shared host conformance kit; see
+[the integration guide](../../docs/layers.md#testing-your-integration).
+
 [`examples/tour.toml`](examples/tour.toml) is a four-step walkthrough over a table and an
 editor.
 The guide, with the format, the reducer's effects, predicates, `plan_steps` and the ops, is

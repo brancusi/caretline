@@ -23,6 +23,9 @@ keys or messages, and the expected result. No terminal, no timing, no mocks.
 | [`caretline/tests/outline_fuzz.rs`](../crates/caretline/tests/outline_fuzz.rs) | Outline properties over random outlines and messages: blocks and marks agree, ids unique, no caret in a marker or an image, undo and redo exact (marks included), kind changes move no other block, host commands (a made-up retagging host) included, cut and paste in place keeps ids, Markdown files round-trip. `CARETLINE_OUTLINE_SEEDS` runs more seeds |
 | [`caretline/tests/keymap.rs`](../crates/caretline/tests/keymap.rs) | Key bindings and the key-script parser |
 | [`caretline/tests/common/mod.rs`](../crates/caretline/tests/common/mod.rs) | Shared helpers: caret notation, `golden`, `keys`, `send`, `frame`, random generators |
+| [`caretline-layers/tests/conformance.rs`](../crates/caretline-layers/tests/conformance.rs) | The shared host conformance kit: placement invariants, deliberately broken plans, determinism, JSON, replay, mapping, protocol contract, stable snapshots and inspector agreement (feature `conformance`) |
+| [`caretline-layers/tests/head.rs`](../crates/caretline-layers/tests/head.rs) | Row-bound arrow heads, clear-cell routing and stable reasons when no head fits |
+| [`caretline-tour/tests/conformance.rs`](../crates/caretline-tour/tests/conformance.rs) | Every example walkthrough step checked on the host's scenes at several sizes (feature `caretline-layers/conformance`) |
 | `caretline/src/helix/**` | Helix's own unit tests, vendored with the code |
 | [`caretline-cli/tests/cli.rs`](../crates/caretline-cli/tests/cli.rs) | The binary: fixtures render to their saved snapshots, traces replay, `--keys` and `--dump-state` round-trip, effects are reported and never performed |
 | [`caretline-cli/tests/common/mod.rs`](../crates/caretline-cli/tests/common/mod.rs) | Shared by the binary's and the MCP server's tests: child processes and scratch directories that clean up after themselves, a pseudo-terminal, deadlines (see [Tests that start processes](#tests-that-start-processes)) |
@@ -49,6 +52,27 @@ cargo test -p caretline --features serde_json/arbitrary_precision
 
 `cargo test -p caretline` on its own runs with neither; `cargo test --workspace` runs it with
 `preserve_order`, which the binaries enable for their own output.
+
+## Host layers integration tests
+
+The layers crate's optional `conformance` feature gives every host the same checks over its
+own screens. Build `conformance::Scene` values using your actual renderer measurements and
+anchor resolver, then run `check_sizes` at wide, normal and narrow sizes. Add replay,
+anchor-mapping and protocol contract checks and commit snapshots of representative screens.
+The [integration guide](layers.md#testing-your-integration) describes the helpers;
+[the inspector](layers.md#inspect-a-placement) explains placement failures.
+
+CI runs the kit against the layers fixtures, ratatui example, CLI layers demo and walkthrough
+example on both Linux and macOS:
+
+```sh
+cargo test --workspace --features caretline-layers/conformance --locked
+```
+
+The default workspace tests do not enable the kit; keep this feature-enabled run in a host's
+CI too. Narrow strips, off-screen chips and omitted arrows can be valid fallbacks: the
+report lists them separately from invariant violations so your goldens can document what
+people see.
 
 ## Tests that start processes
 

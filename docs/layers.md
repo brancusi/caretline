@@ -1,13 +1,11 @@
 # Layers: hints, callouts and spotlights
 
-> **New and not released.** [`caretline-layers`](../crates/caretline-layers) is in the
-> repository but not yet on crates.io, and its API may change before its first release. This
-> page covers what is built (steps 1a and 1b of the [design](../docs/design/layers.md):
-> placement, views, and the kitty plumbing for pixels in Ghostty). The engine hooks it will
-> build on are in caretline (view values, frame passes, `view::locate`, host ops: see
-> [embedding.md](embedding.md#extending-the-engine)); the next steps (in-frame mode through an
-> `install(host)` adapter, protocol and MCP tools) are listed in the design's sections 9 and
-> 12.5. Walkthroughs built on it are [`caretline-tour`](tour.md).
+This page covers `caretline-layers` 0.1: placement, views, the host conformance kit and the
+kitty plumbing for pixels in Ghostty. The engine hooks it builds on are in caretline 0.4
+(view values, frame passes, `view::locate`, host ops: see
+[embedding.md](embedding.md#extending-the-engine)). In-frame integration, protocol and MCP
+tools are [future work](#not-built-yet). Walkthroughs built on layers are
+[`caretline-tour`](tour.md).
 
 `caretline-layers` puts things **over** a host's screen: a hint box beside a word, an arrow
 to a table row, a ring round a block, a spotlight that dims everything else. It decides where
@@ -27,18 +25,17 @@ caretline crate: no theme, glyphs, colours or roles.
 
 ## Add it
 
-Until it is published, depend on it from a checkout or by git revision:
+Use the crate in your host:
 
 ```toml
 [dependencies]
-caretline-layers = { git = "https://github.com/brancusi/caretline", rev = "<full sha>" }
+caretline-layers = "0.1"
 ```
 
 The default feature `caretline` adds what needs the engine: `FrameResolver`, `Grid::from_frame`
 and mapping anchors through the `ChangeSet` each editor message returns
-(`caretline::update_with_changes`, which needs a caretline release newer than 0.3.0; until then
-depend on caretline by git revision too). Without it (`default-features = false`) the crate
-needs only serde, for a host that draws no caretline editor at all. The `kitty` feature (off
+(`caretline::update_with_changes`, in caretline 0.4). Without it
+(`default-features = false`) the crate needs only serde, for a host that draws no caretline editor at all. The `kitty` feature (off
 by default) adds the pixel plumbing ([Pixels in Ghostty](#pixels-in-ghostty)) and only
 `miniz_oxide`.
 
@@ -62,6 +59,7 @@ A **layer** is serializable data:
 | `anchor` | Fallbacks, in order: the first that resolves is used ([Anchors](#anchors)) |
 | `content` | `{kind, data}`, opaque to the crate; none for a layer that only rings or dims |
 | `arrow` | An arrow from the box to the anchor |
+| `head` | `any` (default): any clear cell beside the anchor. `on_anchor_rows`: approach from the side on one of the anchor’s own rows ([Row-bound arrow heads](#row-bound-arrow-heads)) |
 | `ring` | Mark the anchor's cells (`{"pulse": {"period_ms", "cycles"}}` for a host with a frame clock) |
 | `spotlight` | Dim everything but the holes (`{"holes": ["anchor", "box"]}` by default) |
 | `capture` | A modal step, for [walkthroughs](tour.md) (a host may refuse it to agents: `no_agent_capture`) |
@@ -71,7 +69,7 @@ A **layer** is serializable data:
 | `avoid` | Anchors whose cells this layer's box and arrow keep off: the text its step talks about. Resolved every frame like `anchor` (every one that shows), so they follow scrolling and edits; covered only when nothing else fits ([Avoid areas](#avoid-areas)) |
 
 `Layers` holds them (and `hidden`, for "hide all"). In Rust, `Layer::new(anchor)` with
-`with_content`, `with_arrow`, `with_ring`, `with_spotlight` and `with_avoid` builds one.
+`with_content`, `with_arrow`, `with_head`, `with_ring`, `with_spotlight` and `with_avoid` builds one.
 
 Layers change only through **`apply(&mut layers, op, actor, now_ms, &limits)`**, with a
 `LayerOp`: `Push`, `Update`, `Pop` (by id, owner or all), `PopNewest`, `Toggle` or `Clear`.
@@ -343,7 +341,7 @@ The **`Plan`** (serializable) holds, per layer in draw order (`Planned`):
 | `chip` | The edge chip on the edge an off-screen anchor lies beyond |
 | `dock` | A box for an off-screen anchor docks against its own chip: it sits next to the chip and shares part of its edge, and `dock` (`Attach { edge, offset }`) names a cell of that shared edge on the box's border, so the host joins the two there. When no box can touch the chip, the layer is a strip |
 | `route` | The arrow: `junction` on the box's border and the same place as `attach` (`Attach { edge, offset }`: which edge, and how many cells along it from the corner), then `steps`, one cell each with the direction it enters and leaves; the last is the head. Lay out the border round `attach`: a title never sits where the arrow leaves. The head is always on a clear cell beside the anchor: blank, with nothing beside it on its row but the anchor, never on a letter, a hyphen inside a word or the gap between two words |
-| `no_arrow` | Why a layer that asked for an arrow has none: `docked` (the anchor is off screen; the chip points the way), `screen` (a screen position), `no_box` (a strip, or no box), `no_way` (no route round the other layers, holes, protected cells and wide graphemes), `head_on_text` (every cell beside the anchor is text or between words, as in the middle of a tight list: the arrow is dropped rather than drawn over the text; the box and ring still mark the anchor) |
+| `no_arrow` | Why a layer that asked for an arrow has none: `docked` (the anchor is off screen; the chip points the way), `screen` (a screen position), `no_box` (a strip, or no box), `no_way` (no route round the other layers, holes, protected cells and wide graphemes), `head_on_text` (every cell beside the anchor is text or between words, as in the middle of a tight list: the arrow is dropped rather than drawn over the text; the box and ring still mark the anchor), `head_off_anchor_rows` (an arrow could route under `head: any`, but none can end on the anchor’s own rows under `on_anchor_rows`) |
 | `ring` | The anchor's cells to mark |
 | `covers_avoid` | How many of the box's cells are avoid cells: 0 (and left out of the JSON) unless no box in reach kept off them all, so a host's lint can flag it |
 | `owner`, `agent` | Whose layer it is (`Owner::actor()` gives an agent's name), and whether it is an agent's: what the host attributes it by |
@@ -364,6 +362,19 @@ the anchor on another side, pointing at it, and on a left or right edge it never
 the title row. Ties go to the first side listed, which gives flip; a box shifts along its side
 to stay inside the area, reaches the edge rather than leave a sliver of words beside it, and
 falls back to a strip when nothing fits.
+
+### Row-bound arrow heads
+
+A table row or an amount often needs an arrow that points into that same row: a head above
+or below it could look like it points at the neighbouring record. Set `head` to
+`on_anchor_rows`, or use `layer.with_head(HeadRule::OnAnchorRows)` in Rust. Placement tries
+boxes whose arrows can approach from the left or right and end on one of the resolved
+anchor's rows. The usual clear-head and obstacle rules still apply.
+
+When no candidate can do that, the box and ring remain and the arrow is omitted. The plan
+reports `no_arrow: "head_off_anchor_rows"` when an unrestricted head would have routed;
+`head_on_text` and `no_way` still describe blocked text and routes. `HeadRule::Any` is the
+default and keeps the existing placement behaviour.
 
 ### Avoid areas
 
@@ -409,7 +420,7 @@ keeps its own transport and routing (`op` and `view` are its fields):
 
 | Op | Request fields | Becomes |
 |---|---|---|
-| `hint.show` | `anchor` (one or a list), `text`, `title?`, `ttl_ms?`, `place?`, `arrow?` (default true), `ring?` (default true), `avoid?` (one anchor or a list), `actor?` | A push of a `hint` layer |
+| `hint.show` | `anchor` (one or a list), `text`, `title?`, `ttl_ms?`, `place?`, `arrow?` (default true), `ring?` (default true), `head?` (`any` or `on_anchor_rows`), `avoid?` (one anchor or a list), `actor?` | A push of a `hint` layer |
 | `hint.hide` | `layer` or `all: true`, `actor?` | A pop |
 | `layer.push`, `layer.update` | `layer` (a layer as above), `actor?` | A push or an update |
 | `layer.pop` | `layer`, `owner` or `all: true`, `actor?` | A pop |
@@ -437,6 +448,90 @@ it with your protocol, or hand it to an agent's tool definitions. It describes t
 `parse` reads; what `apply` then refuses (no anchor, nothing to show, your `Limits`) isn't in
 it. The crate's tests check it against the ops tests' requests, real replies and the design's
 protocol examples.
+
+## Inspect a placement
+
+`Plan::explain()` describes an existing plan in words: which view answered the anchor,
+where the box or strip landed, its arrow or the reason there is none, docks, avoid cells
+covered, and missing or unrendered layers.
+
+To see the alternatives too, call `plan_explained` instead of `plan`:
+
+```rust
+let (plan, explanation) = caretline_layers::plan_explained(
+    &layers, &anchors, &grid, &renderers,
+);
+println!("{}", plan.explain());
+println!("{explanation}");
+```
+
+The returned `Explanation` records fallback answers, the renderer's measurements per side,
+every candidate weighed, text and avoid coverage, distance, arrow cost or pruning, the
+winner, and any sliver adjustment. `explanation.get(layer_id)` selects one layer; the value
+also serializes to JSON. Ordinary `plan` collects no inspector data, and both calls return
+the same plan.
+
+## Testing your integration
+
+Enable `conformance` for your host's tests. It adds pure checks and no runtime I/O:
+
+```toml
+[dev-dependencies]
+caretline-layers = { version = "0.1", features = ["conformance"] }
+```
+
+Build a `conformance::Scene` from the same layers, resolver, grid and renderers your host
+uses to draw. Check it at ordinary and narrow sizes:
+
+```rust
+use caretline_layers::conformance::{Scene, check_sizes};
+use caretline_layers::Size;
+
+let report = check_sizes(
+    &|size| {
+        let (layers, anchors, grid) = host_scene(size);
+        Scene::new(layers, anchors, grid, &renderers)
+    },
+    &[Size::new(140, 40), Size::new(100, 30), Size::new(80, 24), Size::new(44, 16)],
+);
+assert!(report.ok(), "{report}");
+```
+
+`host_scene` is your host's own drawing fixture. For caretline frames created inside that
+closure, `OwnedView` and `OwnedViews` own the documents and frames and build the resolvers
+with ids, offsets, clips and focus; ordinary hosts can pass an `AnchorMap` directly.
+
+The report runs `check_plan` and `check_determinism` at every size. It checks boxes and chips
+against anchors, protected cells, the caret and each other; wide graphemes; connected arrow
+routes and clear heads (including `OnAnchorRows`); docks; click regions; avoid coverage;
+and that every layer is accounted for. It also checks JSON round-trips and agreement with
+the explained planner. Its table shows strips, missing and off-screen anchors, dropped
+arrows and avoid cells covered, so intentional fallbacks can be reviewed separately from
+violations.
+
+Add the checks that exercise your host's state and bridge:
+
+- `check_replay` compares a recorded op log with the live layers and a second replay.
+- `check_mapping` (feature `caretline`) verifies an edit maps text anchors only in the edited
+  document's views; it leaves other documents' anchors alone.
+- `contract::run` sends canonical `hint.*` and `layer.*` requests through your actual bridge,
+  validates replies against `ops::schema()`, and checks their meaning against your resolver.
+  Give `contract::Fixture` an on-screen host key and, when you have editor views, a scoped
+  text anchor. Unwrap any transport `result` envelope in the bridge closure. Run the
+  requests on fresh test state, with limits that permit the fixture's actor.
+- `snapshot(&plan, &frame_text)` produces a stable golden: your drawn screen, a cell map of
+  layers, and the plan's JSON with sorted keys. Save and compare it in your own test harness;
+  the kit itself writes no files.
+
+The complete examples are the layers
+[`tests/conformance.rs`](../crates/caretline-layers/tests/conformance.rs), the ratatui host's
+[`layers_ratatui.rs`](../crates/caretline-layers/examples/layers_ratatui.rs), and the
+walkthrough [`tests/conformance.rs`](../crates/caretline-tour/tests/conformance.rs).
+Run the repository's integrations with:
+
+```sh
+cargo test --workspace --features caretline-layers/conformance --locked
+```
 
 ## Purity: the rules for a host
 

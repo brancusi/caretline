@@ -20,7 +20,7 @@ caretline is on [crates.io](https://crates.io/crates/caretline): `cargo add care
 
 ```toml
 [dependencies]
-caretline = "0.3"
+caretline = "0.4"
 ```
 
 Its library is `caretline::`; this repository's crate is the same code. For something on
@@ -76,7 +76,7 @@ selects and undoes; `Ctrl-Q` twice quits and prints the text.
 
 ```toml
 [dependencies]
-caretline = "0.3"
+caretline = "0.4"
 ratatui = "0.30"
 crossterm = "0.29"
 ```

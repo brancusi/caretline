@@ -17,7 +17,7 @@ The same operations are available in process through
 $ printf 'hello world\nsecond line\n' > draft.md
 $ printf '%s\n' '{"id":1,"op":"hello"}' '{"id":2,"op":"keys","keys":"<a-right><s-a-right>"}' '{"id":3,"op":"render","w":30,"h":4}' \
     | caretline serve draft.md --size 30x4 --no-clock
-{"id":1,"result":{"proto":1,"version":"0.3.0","rev":0,"ops":["hello","state.get","state.set","text.set","history.get","frame","msgs","keys","render","subscribe","unsubscribe","trace.get","trace.checkpoint","view.open","view.close","view.list","commands.list","keymap.get"],"commands":[]}}
+{"id":1,"result":{"proto":1,"version":"0.4.0","rev":0,"ops":["hello","state.get","state.set","text.set","history.get","frame","msgs","keys","render","subscribe","unsubscribe","trace.get","trace.checkpoint","view.open","view.close","view.list","commands.list","keymap.get"],"commands":[]}}
 {"id":2,"result":{"rev":2,"effects":[],"msgs":[{"msg":"move","dir":"forward","by":"word","extend":false},{"msg":"move","dir":"forward","by":"word","extend":true}],"view":0}}
 {"id":3,"result":{"rev":2,"w":30,"h":4,"format":"text","cursor":[11,0],"frame":"hello world\nsecond line\n\n draft.md         6 sel  1:12\n"}}
 ```
@@ -275,7 +275,7 @@ With a host that has a `shout` command in its catalog and an `app.greet` op:
 {"id":2,"op":"app.greet"}
 {"id":2,"error":{"kind":"op_failed","message":"app.greet needs who"}}
 {"id":3,"op":"hello"}
-{"id":3,"result":{"proto":1,"version":"0.3.0","rev":1,"ops":["hello",…,"keymap.get","app.greet"],"commands":["shout"],"host_ops":["app.greet"],"catalog":[{"id":"app.shout","name":"Shout","description":"Upper-case the caret's line","category":"App","keys":["<f2>"],"msg":{"msg":"command","name":"shout"},"source":"host"}]}}
+{"id":3,"result":{"proto":1,"version":"0.4.0","rev":1,"ops":["hello",…,"keymap.get","app.greet"],"commands":["shout"],"host_ops":["app.greet"],"catalog":[{"id":"app.shout","name":"Shout","description":"Upper-case the caret's line","category":"App","keys":["<f2>"],"msg":{"msg":"command","name":"shout"},"source":"host"}]}}
 ```
 
 ## Revisions
@@ -501,7 +501,7 @@ The status bar says `listening on …/caretline-<pid>.sock`. In another shell:
 
 ```console
 $ caretline send hello
-{"result":{"proto":1,"version":"0.3.0","rev":3,"ops":["hello","state.get","state.set","text.set","history.get","frame","msgs","keys","render","subscribe","unsubscribe","trace.get","trace.checkpoint","view.open","view.close","view.list","commands.list","keymap.get"],"commands":[]}}
+{"result":{"proto":1,"version":"0.4.0","rev":3,"ops":["hello","state.get","state.set","text.set","history.get","frame","msgs","keys","render","subscribe","unsubscribe","trace.get","trace.checkpoint","view.open","view.close","view.list","commands.list","keymap.get"],"commands":[]}}
 $ caretline send keys '<d-down>from another shell'
 {"result":{"rev":24,"effects":[],"msgs":[{"msg":"tick","now_ms":1791353251020},{"msg":"move","dir":"forward","by":"doc_end","extend":false},{"msg":"insert_text","text":"f"}, …],"view":1}}
 $ caretline send render 40x5 --raw
