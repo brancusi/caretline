@@ -38,13 +38,14 @@ Guidance for AI agents (and people) working on caretline. `CLAUDE.md` points her
    The pass is not optional and not folded into the code PR's author: a fresh agent reads the
    change the way a reader of the docs would.
 4. **Release with semver.** At 0.x, a breaking change bumps the minor (0.3 → 0.4); additions
-   and fixes bump the patch. Steps: move Unreleased under the version in the CHANGELOG, bump
-   the versions in `crates/*/Cargo.toml` (and `caretline-cli`'s dependency on `caretline`),
-   merge, tag `vX.Y.Z` and push the tag (`.github/workflows/release.yml` builds the four
-   targets and publishes the release the installer reads), `cargo publish -p caretline`, then
-   `-p caretline-cli`, then redeploy the site, without waiting for the release workflow
-   (it publishes the GitHub release in the background). Run its smoke commands locally
-   before tagging. Releasing is the maintainer's call.
+   and fixes bump the patch. One command, from main on a Mac: `scripts/release.sh X.Y.Z`
+   (`--dry-run` stops before anything is pushed). It checks, bumps caretline-cli and dates its
+   CHANGELOG, tests, builds all four binaries locally (`scripts/dist.sh`, Linux through
+   cargo-zigbuild), merges a release PR, tags, publishes the GitHub release the installer
+   reads, publishes every crate whose version isn't on crates.io yet, and deploys the site.
+   Bump the engine and the other crates in the PR that changes them (and `caretline-cli`'s
+   dependency on `caretline`). The tag's workflow only re-checks each target in the
+   background. Releasing is the maintainer's call.
 5. **Hosts pull from here.** A host depends on a published version (`caretline = "0.3"`). A fix
    still in flight is pinned by git revision in the host's workspace `Cargo.toml`:
 
