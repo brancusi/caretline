@@ -8,8 +8,12 @@ terminal code in the engine, so any session can be saved, driven from a script o
 and replayed exactly.
 
 ```sh
-curl -fsSL https://caretline.app/install.sh | sh && caretline demo
+curl -fsSL https://caretline.app/install.sh | sh -s -- --demo
 ```
+
+That installs `caretline` and opens `caretline demo`, the welcome: what caretline is, then each
+demo as a chapter (a timed showcase, a hands-on tour, an agent co-editing beside you, layers,
+animated scenes) and the commands to take away.
 
 From a checkout, try the **self-running interactive showcase** (not released yet):
 

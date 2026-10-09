@@ -1,0 +1,24 @@
+  #   caretline
+
+      A text editor engine for the terminal.
+      The whole editor is one value: text, carets, undo, folds, views.
+      Save it, send it, replay it exactly. This page is one too.
+
+  ##  Start here
+                                                   ┌───────────────────────────┐
+  •   Watch · what caretline is, in three minutes◀╮│ Watch it work             │
+  •   Learn by doing · the editor, step by step   ╰┤ Twelve timed slides of    │
+  •   Co-edit · an agent types beside you          │ real edits, not pictures: │
+  •   Layers · hints, arrows and spotlights        │ many carets, shared       │
+  •   Scenes · animation streamed into the editor  │ views, an agent's guarded │
+                                                   │ writes, overlays, and     │
+  ##  Then make it yours                           │ checks that run as you    │
+                                                   │ watch. ←→ steps, Space    │
+  •   caretline notes.md --outline                 │ pauses, q comes back      │
+  •   claude mcp add caretline -- caretline-mcp    │ here.                     │
+  •   caretline notes.md --keys 'hi<cr>' --snapshot└───────────────────────────┘
+  •   cargo add caretline
+
+      Every chapter comes back here when it ends. q quits.
+
+ caretline · ↑↓ choose · Enter starts · q quit · cells

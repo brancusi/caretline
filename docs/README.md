@@ -20,7 +20,7 @@ $ caretline --state s.json --keys '<d-down>The end.' --snapshot 40x6
 ## Try it in one line
 
 ```sh
-curl -fsSL https://caretline.app/install.sh | sh && caretline demo
+curl -fsSL https://caretline.app/install.sh | sh -s -- --demo
 ```
 
 A prebuilt binary for macOS or Linux, checked against its sha256 and installed to

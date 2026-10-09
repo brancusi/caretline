@@ -33,7 +33,7 @@ fn scratch(name: &str) -> Scratch {
 #[test]
 fn demo_help_lists_the_demos() {
     let help = run(&["demo", "--help"]);
-    for d in ["tour", "scenes", "agent", "layers", "showcase"] {
+    for d in ["welcome", "tour", "scenes", "agent", "layers", "showcase"] {
         assert!(help.contains(&format!("  {d} ")), "{d} missing:\n{help}");
     }
 }
@@ -83,14 +83,17 @@ fn the_layers_demo_draws_in_cells_headless() {
 
 #[test]
 fn each_demo_draws_its_first_frame_headless() {
-    let tour = run(&["demo", "--snapshot", "80x24"]);
+    let welcome = run(&["demo", "--snapshot", "80x24"]);
+    assert!(welcome.contains("Start here"), "{welcome}");
+    assert_eq!(welcome, run(&["demo", "welcome", "--snapshot", "80x24"]));
+
+    let tour = run(&["demo", "tour", "--snapshot", "80x24"]);
     assert!(tour.contains("Welcome to caretline"), "{tour}");
     assert!(
         tour.lines().last().unwrap().contains("1/11 · "),
         "the hint names step 1:\n{tour}"
     );
     assert!(!tour.contains("[ ]"), "no task syntax in the tour");
-    assert_eq!(tour, run(&["demo", "tour", "--snapshot", "80x24"]));
 
     let agent = run(&["demo", "agent", "--snapshot", "80x30"]);
     assert_eq!(agent.lines().count(), 30);
@@ -147,7 +150,7 @@ fn spawn_demo(args: &[&str], tmp: &Path) -> Pty {
 fn the_tour_runs_live_dumps_and_replays() {
     let tmp = scratch("tour");
     let dir = tmp.join("files");
-    let mut pty = spawn_demo(&["demo", "--dir", dir.to_str().unwrap()], &tmp);
+    let mut pty = spawn_demo(&["demo", "tour", "--dir", dir.to_str().unwrap()], &tmp);
     pty.wait_for(20, "the first hint", |s| s.contains("1/11 · "));
     pty.send(b" and more");
     pty.wait_for(20, "typing", |s| s.contains("and more"));
@@ -160,6 +163,42 @@ fn the_tour_runs_live_dumps_and_replays() {
         s.contains("replayed") && s.contains("identical state")
     });
     pty.send(b"\x11\x11"); // Ctrl-Q twice: leave without saving
+    assert!(pty.exited(), "quit");
+}
+
+/// The welcome page: one golden per kind of line (a chapter, a command to take away).
+#[test]
+fn the_welcome_page_draws_in_cells_headless() {
+    golden(
+        "demo-welcome.80x24.txt",
+        &run(&["demo", "--snapshot", "80x24"]),
+    );
+    golden(
+        "demo-welcome.command.100x30.txt",
+        &run(&["demo", "--snapshot", "100x30", "--keys", "<up><up><up>"]),
+    );
+}
+
+/// Enter on a chapter runs it, and quitting the chapter comes back to the page, ticked.
+#[test]
+fn the_welcome_runs_a_chapter_and_comes_back() {
+    let tmp = scratch("welcome");
+    let dir = tmp.join("files");
+    let mut pty = spawn_demo(&["demo", "--dir", dir.to_str().unwrap()], &tmp);
+    pty.wait_for(20, "the page", |s| {
+        s.contains("Start here") && s.contains("Watch it work")
+    });
+    pty.send(b"\x1b[B"); // Down: the tour
+    pty.wait_for(20, "the tour chosen", |s| s.contains("Hands on"));
+    pty.send(b"\r");
+    pty.wait_for(20, "the tour", |s| s.contains("1/11 · "));
+    pty.send(b"\x11"); // Ctrl-Q: nothing typed, so it quits at once
+    // Back on the page with the next chapter chosen (the tick is a unit test: the
+    // callout may cover it at this size).
+    pty.wait_for(20, "the page again, the next chapter chosen", |s| {
+        s.contains("Start here") && s.contains("You and an agent")
+    });
+    pty.send(b"q");
     assert!(pty.exited(), "quit");
 }
 

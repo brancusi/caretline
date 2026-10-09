@@ -1,7 +1,9 @@
 #!/bin/sh
 # caretline installer: https://caretline.app/install.sh
 #
-#   curl -fsSL https://caretline.app/install.sh | sh && caretline demo
+#   curl -fsSL https://caretline.app/install.sh | sh -s -- --demo
+#
+# installs caretline and starts its welcome demo (without --demo it only installs).
 #
 # Downloads the newest caretline release for this machine (macOS or Linux, arm64 or x86_64)
 # from https://github.com/brancusi/caretline/releases, checks its sha256 and installs
@@ -105,6 +107,13 @@ add_to_path() {
 }
 
 main() {
+	demo=0
+	for arg in "$@"; do
+		case "$arg" in
+			--demo) demo=1 ;;
+			*) err "unknown option $arg (try --demo)" ;;
+		esac
+	done
 	has tar || err "need tar"
 	has uname || err "need uname"
 	target="$(target)"
@@ -154,9 +163,20 @@ main() {
 		say "  export PATH=\"$dir:\$PATH\""
 	fi
 
+	if [ "$demo" = 1 ]; then
+		# stdin is this script's pipe: the demo reads the keyboard from the terminal.
+		if [ -r /dev/tty ]; then
+			say ""
+			"$dir/caretline" demo </dev/tty >/dev/tty || true
+		else
+			say "  no terminal for the demo: run caretline demo"
+		fi
+	fi
+
 	say ""
 	say "Next:"
-	say "  caretline demo            a guided tour, learned by doing"
+	say "  caretline demo            start here: what caretline is, every demo as a chapter"
+	say "  caretline demo tour       the editor, learned by doing"
 	say "  caretline demo scenes     ASCII animations running inside the editor"
 	say "  caretline demo agent      a scripted agent co-editing beside you"
 	say "  caretline notes.md        edit a file (--outline for lists and folds)"
