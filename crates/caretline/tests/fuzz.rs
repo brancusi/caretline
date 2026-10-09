@@ -28,6 +28,49 @@ fn check_selection(state: &State, ctx: &str) {
     }
 }
 
+/// EI8: the screen shows the selection. A cell drawing a char is a caret cell exactly when
+/// the char is under an empty range other than the primary (the primary is the terminal's
+/// cursor), else a selection cell exactly when a range covers it.
+fn check_screen(state: &State, frame: &caretline::view::Frame, ctx: &str) {
+    use caretline::view::Role;
+    let sel = &state.view.selection;
+    let primary = sel.primary_index();
+    for (i, cell) in frame.cells.iter().enumerate() {
+        let Some(c) = cell.char_idx.map(|c| c as usize) else {
+            continue;
+        };
+        let (x, y) = (i % frame.width as usize, i / frame.width as usize);
+        let caret = sel
+            .iter()
+            .enumerate()
+            .any(|(k, r)| k != primary && r.is_empty() && r.head == c);
+        let selected = sel.iter().any(|r| r.from() <= c && c < r.to());
+        let want = if caret && state.view.focused {
+            Role::Caret
+        } else if selected {
+            Role::Selection
+        } else {
+            Role::Text
+        };
+        assert_eq!(cell.role, want, "{ctx}: EI8 cell ({x}, {y}) char {c}");
+    }
+    // And every other empty range is drawn where the cursor would be if it were the primary.
+    if !state.view.focused {
+        return;
+    }
+    for k in (0..sel.len()).filter(|&k| k != primary && sel.ranges()[k].is_empty()) {
+        let mut as_primary = state.clone();
+        as_primary.view.selection.set_primary_index(k);
+        if let Some((x, y)) = view(&as_primary).cursor {
+            assert_eq!(
+                frame.cell(x, y).role,
+                Role::Caret,
+                "{ctx}: EI8 caret {k} not drawn at ({x}, {y})"
+            );
+        }
+    }
+}
+
 fn single_range(state: &State) -> Option<(usize, usize, usize, usize)> {
     if state.view.selection.len() == 1 {
         let r = state.view.selection.primary();
@@ -174,6 +217,7 @@ fn run_seed(seed: u64) -> usize {
             frame.cells.len(),
             state.view.viewport.width as usize * state.view.viewport.height as usize
         );
+        check_screen(&state, &frame, &ctx);
         if step % 10 == 0 {
             for (w, h) in [(1, 1), (2, 200), (200, 2), gen::size(&mut rng)] {
                 let mut sized = state.clone();

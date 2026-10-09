@@ -230,7 +230,8 @@ views, fitted to the new document.
   {"text":" draft.md [+]            1:12 ","spans":[[0,9,"status"],[9,4,"status_accent"],[13,17,"status"]]}]}}
 ```
 
-Roles are `text`, `selection`, `status`, `status_accent` and `hang` (a block's hang, with the
+Roles are `text`, `selection`, `caret` (a caret with no selection other than the primary,
+which is `cursor`), `status`, `status_accent` and `hang` (a block's hang, with the
 [outline layout](structure.md#the-outline-layout)), plus any role name a host's
 [decoration](structure.md#decorations) or [frame pass](embedding.md#frame-passes) uses.
 

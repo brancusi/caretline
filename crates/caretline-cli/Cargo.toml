@@ -16,9 +16,9 @@ name = "caretline"
 path = "src/main.rs"
 
 [dependencies]
-caretline = { path = "../caretline", version = "0.4.0" }
+caretline = { path = "../caretline", version = "0.5.0" }
 # Hints, arrows and spotlights (`caretline demo layers`), and the kitty pixel plumbing.
-caretline-layers = { path = "../caretline-layers", version = "0.1.0", features = ["kitty"] }
+caretline-layers = { path = "../caretline-layers", version = "0.2.0", features = ["kitty"] }
 # The CLI's pixel renderers (panels, arrows, rings, veils) in Ghostty.
 tiny-skia = "0.11.4"
 unicode-segmentation = "1.13"
@@ -32,4 +32,4 @@ libc = { workspace = true }
 
 [dev-dependencies]
 # Tests run the layers conformance kit over `demo layers`.
-caretline-layers = { path = "../caretline-layers", version = "0.1.0", features = ["kitty", "conformance"] }
+caretline-layers = { path = "../caretline-layers", version = "0.2.0", features = ["kitty", "conformance"] }

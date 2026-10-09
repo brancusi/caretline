@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Depends on caretline 0.5 (with the `caretline` feature), whose `Frame` the anchors read.
+
 ## 0.1.0 — 2026-10-09
 
 ### Added

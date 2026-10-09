@@ -572,6 +572,34 @@ fn emoji_and_cjk_render_with_the_caret_on_the_right_cell() {
 }
 
 #[test]
+fn every_caret_is_drawn() {
+    // The primary is the terminal's cursor; the other carets are caret cells, at a line's end
+    // and the document's end too. A selection shows as itself, with no caret cell.
+    use caretline::helix::{Range, Selection};
+    use caretline::view::Role;
+    let mut s = state_wh("▮ab\ncd", 20, 4);
+    s.view.selection = Selection::new(
+        [
+            Range::point(0),
+            Range::point(2),
+            Range::new(3, 4),
+            Range::point(5),
+        ]
+        .into_iter()
+        .collect(),
+        0,
+    );
+    let f = caretline::view(&s);
+    assert_eq!(f.cursor, Some((0, 0)));
+    let carets: Vec<(u16, u16)> = (0..f.height)
+        .flat_map(|y| (0..f.width).map(move |x| (x, y)))
+        .filter(|&(x, y)| f.cell(x, y).role == Role::Caret)
+        .collect();
+    assert_eq!(carets, [(2, 0), (2, 1)]);
+    assert_eq!(f.cell(0, 1).role, Role::Selection);
+}
+
+#[test]
 fn a_keycap_emoji_takes_two_cells() {
     // `1️⃣` starts with an ASCII digit but is an emoji (2 cells), as terminals draw it.
     let mut s = state_wh("▮", 20, 3);

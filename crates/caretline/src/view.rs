@@ -18,6 +18,9 @@ use unicode_segmentation::UnicodeSegmentation;
 pub enum Role {
     Text,
     Selection,
+    /// A caret with no selection, other than the primary one (the terminal's cursor,
+    /// [`Frame::cursor`]): a terminal has one cursor, so the others are cells.
+    Caret,
     Status,
     /// The dirty marker and other emphasis in the status bar.
     StatusAccent,
@@ -396,7 +399,7 @@ impl Frame {
     }
 
     /// The rows with ANSI styling: the selection in reverse video, the status bar
-    /// highlighted, the caret as an underlined reverse cell (a snapshot has no
+    /// highlighted, every caret as an underlined reverse cell (a snapshot has no
     /// terminal cursor), dimmed cells faint and ringed ones underlined.
     pub fn to_ansi(&self) -> String {
         let mut out = String::new();
@@ -430,6 +433,7 @@ fn sgr(role: Role, cursor: bool) -> &'static str {
         (_, true) => "\x1b[7;4m",
         (Role::Text, _) => "",
         (Role::Selection, _) => "\x1b[30;46m",
+        (Role::Caret, _) => "\x1b[7;4m",
         (Role::Status, _) => "\x1b[30;47m",
         (Role::StatusAccent, _) => "\x1b[1;30;47m",
         (Role::Hang, _) => "\x1b[2m",
@@ -495,6 +499,23 @@ pub fn render_plain(doc: &Document, view: &View) -> Frame {
         .map(|r| (r.from(), r.to()))
         .collect();
     let selected = |pos: usize| ranges.iter().any(|&(f, t)| f <= pos && pos < t);
+    // Every range shows: a selection in its role, an empty one as a caret. The terminal has
+    // one cursor (the primary's), so the other carets are cells.
+    let primary = view.selection.primary_index();
+    let carets: Vec<usize> = if view.focused {
+        let mut c: Vec<usize> = view
+            .selection
+            .iter()
+            .enumerate()
+            .filter(|&(i, r)| i != primary && r.is_empty())
+            .map(|(_, r)| r.head)
+            .collect();
+        c.sort_unstable();
+        c
+    } else {
+        Vec::new()
+    };
+    let is_caret = |pos: usize| carets.binary_search(&pos).is_ok();
     let outline = layout.outline().cloned();
     let geometry = layout.geometry().cloned();
 
@@ -596,7 +617,9 @@ pub fn render_plain(doc: &Document, view: &View) -> Frame {
                 }
                 let col = (lf.x + g.visual_pos.col) as isize - hscroll as isize - offset as isize;
                 let w = g.width();
-                let role = if selected(g.char_idx) {
+                let role = if is_caret(g.char_idx) {
+                    Role::Caret
+                } else if selected(g.char_idx) {
                     Role::Selection
                 } else {
                     Role::Text
@@ -620,7 +643,7 @@ pub fn render_plain(doc: &Document, view: &View) -> Frame {
                 let idx = Some(g.char_idx as u32);
                 match &g.raw {
                     Grapheme::Newline => {
-                        if role == Role::Selection {
+                        if role != Role::Text {
                             frame.put_at(cx, sy, " ", 1, role, idx, limit);
                         }
                     }
@@ -631,6 +654,9 @@ pub fn render_plain(doc: &Document, view: &View) -> Frame {
                     }
                     Grapheme::Other { g: s } => {
                         if g.source.is_eof() {
+                            if role == Role::Caret {
+                                frame.put_at(cx, sy, " ", 1, role, idx, limit);
+                            }
                             continue;
                         }
                         frame.put_at(cx, sy, printable(s), w, role, idx, limit);

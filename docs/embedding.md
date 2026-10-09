@@ -134,6 +134,8 @@ fn draw_editor(f: &mut Frame, area: Rect, state: &State) {
             let style = match cell.role {
                 Role::Text => Style::default(),
                 Role::Selection => Style::default().add_modifier(Modifier::REVERSED),
+                // A caret other than the primary: the terminal's cursor shows only the primary.
+                Role::Caret => Style::default().add_modifier(Modifier::REVERSED),
                 Role::Status | Role::StatusAccent | Role::Hang => Style::default().add_modifier(Modifier::DIM),
                 // A role a host named in a decoration: `frame.role_name(cell.role)` says which.
                 Role::Named(_) => Style::default(),

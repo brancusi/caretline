@@ -1,7 +1,7 @@
 [package]
 name = "caretline-mcp"
 description = "An MCP server for caretline: agents read and edit a live editor alongside a person, with guarded writes, attribution and exact replay"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 license = "MIT"
 repository.workspace = true
@@ -14,7 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 # The engine, for headless sessions in process. Live editors are reached over their socket.
-caretline = { path = "../caretline", version = "0.4" }
+caretline = { path = "../caretline", version = "0.5" }
 # The official MCP SDK (Apache-2.0).
 rmcp = { version = "3.5", default-features = false, features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "time"] }

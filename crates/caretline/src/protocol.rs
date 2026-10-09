@@ -239,6 +239,7 @@ pub fn role_name(role: Role) -> &'static str {
     match role {
         Role::Text => "text",
         Role::Selection => "selection",
+        Role::Caret => "caret",
         Role::Status => "status",
         Role::StatusAccent => "status_accent",
         Role::Hang => "hang",
