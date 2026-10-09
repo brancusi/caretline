@@ -21,9 +21,25 @@ Guidance for AI agents (and people) working on caretline. `CLAUDE.md` points her
 1. **Land it here first.** Every change to the engine, the CLI, the MCP server, the docs or
    the site is a PR to brancusi/caretline. Never patch caretline inside a host repo (such as
    brancusi/thought-control); an engine bug found there is fixed here, then pulled in.
-2. **Write the CHANGELOG line in the same PR.** Public API changes go under **Unreleased** in
-   `crates/caretline/CHANGELOG.md` (CI's `changelog` job enforces it for the API files;
-   `no-changelog` label for internal-only changes).
+2. **Write the CHANGELOG line in the same PR, with its Try it command.** Public API changes go
+   under **Unreleased** in `crates/caretline/CHANGELOG.md` (CI's `changelog` job enforces it
+   for the API files; `no-changelog` label for internal-only changes), the CLI's in
+   `crates/caretline-cli/CHANGELOG.md`. **Every change ships a one-line demo** anyone can
+   paste to see it working, ending its CHANGELOG entry, its commit message and its PR body:
+
+   ```
+   Try it: `curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- doctor --keys`
+   ```
+
+   `--ref main` builds main from source (into a cache; the installed caretline is left
+   alone), and everything after `--` is `caretline`'s arguments. Pick the command that shows
+   *this* change: a demo, a file opened with the right flags, a headless `--keys … --snapshot`,
+   or a new subcommand; add a small demo mode when none shows it. When the engine changed,
+   show it through the CLI (or the playground). A change nobody can see says so:
+   `Try it: none (internal: …)`. `scripts/check-try.sh` (run by preflight and the release)
+   fails on an entry without one, and `scripts/release.sh` rewrites `--ref main` to
+   `--version X.Y.Z`, so the release notes install the release. When reporting a finished
+   change to the maintainer, lead with its Try it line.
 3. **After every merge, run a docs-and-site pass with a dedicated subagent.** Spawn a separate
    agent whose only task is documentation for that merge. Give it the PR (number and diff). It:
    - updates `docs/*.md` where behaviour, API, keys, messages, protocol or CLI changed;

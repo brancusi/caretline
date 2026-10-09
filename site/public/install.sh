@@ -5,6 +5,16 @@
 #
 # installs caretline and starts its welcome demo (without --demo it only installs).
 #
+# Options:
+#   --demo             start the welcome demo after installing
+#   --version X.Y.Z    install that release (default: the newest; CARETLINE_VERSION too)
+#   --ref REF          build an unreleased branch or commit of brancusi/caretline from source
+#                      (needs Rust's cargo and git) into a cache, leaving the installed
+#                      caretline alone
+#   -- ARGS...         then run `caretline ARGS...`: how each change's "Try it" line demos it
+#
+#   curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- doctor --keys
+#
 # Downloads the newest caretline release for this machine (macOS or Linux, arm64 or x86_64)
 # from https://github.com/brancusi/caretline/releases, checks its sha256 and installs
 # the `caretline` binary to ~/.local/bin. Releases made before caretline had its own repo
@@ -106,18 +116,60 @@ add_to_path() {
 	printf '%s' "$rc"
 }
 
+# Runs `caretline ARGS...` with the terminal as stdin (stdin is this script's pipe).
+run() { # binary args...
+	bin="$1"
+	shift
+	if (exec </dev/tty) 2>/dev/null; then
+		say ""
+		"$bin" "$@" </dev/tty >/dev/tty || true
+	else
+		say "  no terminal to run it in: run $bin $*"
+	fi
+}
+
+# Builds a branch or commit from source into a cache and runs it. The installed caretline
+# isn't touched.
+from_source() { # ref args...
+	ref="$1"
+	shift
+	has cargo || err "--ref builds from source and needs Rust: https://rustup.rs"
+	has git || err "--ref needs git"
+	cache="${XDG_CACHE_HOME:-$HOME/.cache}/caretline/ref"
+	case "$ref" in
+		*[!0-9a-f]* | ?????? | ????? | ???? | ??? | ?? | ?) pick="--branch" ;;
+		*) pick="--rev" ;;
+	esac
+	say "caretline at $ref (built from source into $cache; the first build takes a few minutes)"
+	CARGO_TARGET_DIR="$cache/target" cargo install --quiet --locked --force \
+		--git "https://github.com/$REPO" "$pick" "$ref" --root "$cache" caretline-cli ||
+		err "couldn't build caretline at $ref"
+	say "  built      $cache/bin/caretline"
+	if [ $# -gt 0 ]; then run "$cache/bin/caretline" "$@"; fi
+}
+
 main() {
 	demo=0
-	for arg in "$@"; do
-		case "$arg" in
+	ref=""
+	version="${CARETLINE_VERSION:-}"
+	while [ $# -gt 0 ]; do
+		case "$1" in
 			--demo) demo=1 ;;
-			*) err "unknown option $arg (try --demo)" ;;
+			--version) [ $# -gt 1 ] || err "--version needs a version, like 0.5.0"; version="$2"; shift ;;
+			--ref) [ $# -gt 1 ] || err "--ref needs a branch or commit, like main"; ref="$2"; shift ;;
+			--) shift; break ;;
+			*) err "unknown option $1 (try --demo, --version X.Y.Z, --ref REF, -- ARGS)" ;;
 		esac
+		shift
 	done
+	if [ "$demo" = 1 ] && [ $# -eq 0 ]; then set -- demo; fi
+	if [ -n "$ref" ]; then
+		from_source "$ref" "$@"
+		return
+	fi
 	has tar || err "need tar"
 	has uname || err "need uname"
 	target="$(target)"
-	version="${CARETLINE_VERSION:-}"
 	version="${version#v}"
 	version="${version#caretline-v}"
 	[ -n "$version" ] || version="$(latest)"
@@ -163,14 +215,8 @@ main() {
 		say "  export PATH=\"$dir:\$PATH\""
 	fi
 
-	if [ "$demo" = 1 ]; then
-		# stdin is this script's pipe: the demo reads the keyboard from the terminal.
-		if [ -r /dev/tty ]; then
-			say ""
-			"$dir/caretline" demo </dev/tty >/dev/tty || true
-		else
-			say "  no terminal for the demo: run caretline demo"
-		fi
+	if [ $# -gt 0 ]; then
+		run "$dir/caretline" "$@"
 	fi
 
 	say ""

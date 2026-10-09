@@ -48,6 +48,11 @@ impl Parser {
         self.buf.extend_from_slice(bytes);
     }
 
+    /// The bytes read and not yet decoded.
+    pub fn buffered(&self) -> &[u8] {
+        &self.buf
+    }
+
     /// Whether bytes are waiting for more (an escape that may be a sequence's start).
     pub fn pending(&self) -> bool {
         !self.buf.is_empty()

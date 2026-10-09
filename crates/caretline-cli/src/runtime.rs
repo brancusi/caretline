@@ -367,7 +367,7 @@ fn layers_mode() -> String {
 /// Returns the pixels and whether the terminal speaks the kitty keyboard protocol. Pixels are
 /// on when the query says OK, the cell size came back, and the terminal is Ghostty or kitty
 /// (or `CARETLINE_LAYERS=pixels`).
-fn probe_terminal(parser: &mut crate::rawin::Parser, pixels: bool) -> (Gfx, bool) {
+pub(crate) fn probe_terminal(parser: &mut crate::rawin::Parser, pixels: bool) -> (Gfx, bool) {
     use crate::rawin::Token;
     use caretline_layers::probe::Probe;
     let mode = layers_mode();
