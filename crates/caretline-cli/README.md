@@ -7,13 +7,14 @@ reopened exactly, and every session replayed message by message.
 ## Try it in one line
 
 ```sh
-curl -fsSL https://caretline.app/install.sh | sh && caretline demo
+curl -fsSL https://caretline.app/install.sh | sh -s -- --demo
 ```
 
 A prebuilt binary for macOS or Linux, checked against its sha256 and installed to
-`~/.local/bin`, then a guided tour that teaches by doing. Two more demos:
-`caretline demo scenes` (ASCII animations running inside the editor) and `caretline demo agent`
-(a scripted agent co-editing beside you over the editor's socket). With Rust instead:
+`~/.local/bin`, then `caretline demo`, the welcome (in `caretline-cli` 0.4.1): what caretline
+is, each demo as a chapter (a timed showcase, a hands-on tour, an agent co-editing beside you,
+layers over the text, animated scenes) and the commands to take away. Each demo also runs on
+its own: `caretline demo showcase`, `tour`, `agent`, `layers` or `scenes`. With Rust instead:
 `cargo install caretline-cli`.
 See the [Quickstart](https://github.com/brancusi/caretline/blob/main/docs/quickstart.md).
 

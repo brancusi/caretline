@@ -18,7 +18,7 @@ See the [Quickstart](quickstart.md) for what the installer does and what the dem
 
 | Command | Does |
 |---|---|
-| `caretline demo [tour\|scenes\|agent\|layers\|showcase]` | Built-in demos, no files needed: see the [Quickstart](quickstart.md) and [Layers over the tour](#layers-over-the-tour). `--snapshot WxH` prints a demo's first frame; `demo agent --headless` runs the agent against a headless editor and prints a JSON report |
+| `caretline demo [welcome\|tour\|scenes\|agent\|layers\|showcase]` | Built-in demos, no files needed; with no name, [the welcome](#the-welcome). See the [Quickstart](quickstart.md) and [Layers over the tour](#layers-over-the-tour). `--snapshot WxH` prints a demo's first frame; `demo agent --headless` runs the agent against a headless editor and prints a JSON report |
 | `caretline [FILE]` | Edit FILE interactively (created on first save) |
 | `caretline FILE --trace T.jsonl` | Edit, recording the session to a trace |
 | `caretline FILE --no-mouse` | Edit without capturing the mouse (by default: click, Shift-click, drag, and a drag held on an edge row keeps scrolling, see [messages.md](messages.md#selecting-by-dragging)) |
@@ -316,7 +316,7 @@ For 120 fps on screen, the terminal must paint that fast too: in WezTerm set
 
 ## The welcome
 
-`caretline demo` (or `caretline demo welcome`) opens the welcome page: what caretline is, every
+`caretline demo` (or `caretline demo welcome`; new in 0.4.1, where 0.4.0 opened the tour) opens the welcome page: what caretline is, every
 other demo as a chapter, and commands to try next. `↑`/`↓` (or `j`/`k`, `Tab`) choose, `Enter`
 or `1`–`5` start a chapter, `p` switches the callout between pixels and cells, `q` quits. A
 chapter that ends comes back to the page, ticked. `--snapshot WxH [--keys …]` prints the page
@@ -324,7 +324,7 @@ headless; `--dir`, `--no-mouse` and `--reduced-motion` pass through to the chapt
 
 ## Timed interactive showcase
 
-`cargo run -p caretline-cli -- demo showcase` (or `./scripts/demo.sh`) runs twelve timed
+`caretline demo showcase` (or `./scripts/demo.sh` from a checkout) runs twelve timed
 slides with real message-driven edits, multiple carets, overlays, a shared-document pane,
 guarded remote writes, structural edits, serialization/replay checks, branded typography,
 ASCII scenes, fractional-pixel motion and a continuous warp-logo finale. No agent is needed.
@@ -361,7 +361,7 @@ history; subscribers can still collect the full stream.
 
 ## Layers over the tour
 
-`caretline demo layers` (not in a release yet: build from a checkout) shows a hint with an
+`caretline demo layers` shows a hint with an
 arrow, a ring and a spotlight over the tour's text, placed by
 [`caretline-layers`](layers.md). The hint points at a word in the "Move" section and follows it
 as the view scrolls; the text is read-only here.
@@ -391,8 +391,7 @@ and the terminal is Ghostty or kitty. `CARETLINE_LAYERS=auto|pixels|cells` overr
 change it asks for the cell size again.
 
 ```sh
-cargo run -p caretline-cli -- demo layers              # from the current checkout
-caretline demo layers                                # if built and on PATH
+caretline demo layers
 CARETLINE_LAYERS=cells caretline demo layers
 caretline demo layers --snapshot 80x24                 # the first frame, in cells
 caretline demo layers --snapshot 60x20 --keys '<down><down>s'   # scrolled, spotlight off

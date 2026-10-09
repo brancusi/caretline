@@ -13,12 +13,14 @@ curl -fsSL https://caretline.app/install.sh | sh -s -- --demo
 
 That installs `caretline` and opens `caretline demo`, the welcome: what caretline is, then each
 demo as a chapter (a timed showcase, a hands-on tour, an agent co-editing beside you, layers,
-animated scenes) and the commands to take away.
+animated scenes) and the commands to take away. The welcome and `--demo` are in
+`caretline-cli` 0.4.1; each demo also runs on its own.
 
-From a checkout, try the **self-running interactive showcase** (not released yet):
+The **self-running interactive showcase** is one of them:
 
 ```sh
-./scripts/demo.sh
+caretline demo showcase
+./scripts/demo.sh          # the same, from a checkout
 ```
 
 Twelve timed slides demonstrate real edits, multi-carets, shared views, branded overlays,

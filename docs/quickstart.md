@@ -29,27 +29,27 @@ one chosen. `q` quits.
 
 The page is itself a caretline outline document: the highlight is the editor's own block
 selection, and the callout is a layer, in pixels in Ghostty and in cells elsewhere (`p`
-switches). `caretline demo --snapshot 80x24` prints it headless.
+switches). `caretline demo --snapshot 80x24` prints it headless. The welcome is new in
+`caretline-cli` 0.4.1; in 0.4.0, `caretline demo` opens the tour.
 
-## Five demos
+## The demos
 
-The tour, scenes and agent demos write their files to a fresh temporary directory, so there
-is nothing to set up. Layers and showcase write no document files; showcase opens a local
+The welcome's five chapters, each also a command of its own. The tour, scenes and agent demos
+write their files to a fresh temporary directory, so there is nothing to set up. Layers and showcase write no document files; showcase opens a local
 editor socket and removes it on exit.
 
 ### `caretline demo showcase`: the interactive presentation
 
-Build from the current checkout (not in the installed release yet). Run this in Ghostty for
-pixel overlays, or any terminal for the cell fallback:
+Run this in Ghostty for pixel overlays, or any terminal for the cell fallback:
 
 ```sh
+caretline demo showcase
+# From a checkout, the same:
 ./scripts/demo.sh
-# Equivalent:
-cargo run -p caretline-cli -- demo showcase
 ```
 
-The executable script also works from another directory when invoked by its absolute path;
-it finds the checkout itself. No agent, credentials or network service is needed. The first
+The script builds and runs the checkout's binary, and also works from another directory when
+invoked by its absolute path; it finds the checkout itself. No agent, credentials or network service is needed. The first
 run compiles the binary; after that the command starts immediately.
 
 Twelve timed slides introduce Caretline and demonstrate **real engine operations**, not
@@ -191,10 +191,8 @@ caretline send --latest keys '<d-down>hello from another shell'
 
 ### `caretline demo layers`: visible overlays
 
-Not released yet: run the current checkout rather than the installed release:
-
 ```sh
-cargo run -p caretline-cli -- demo layers
+caretline demo layers
 ```
 
 The tour's text becomes a read-only backdrop for a hint box, an arrow, a ring round a word
@@ -214,8 +212,8 @@ Try this short walkthrough:
 For a repeatable preview without a terminal:
 
 ```sh
-cargo run -p caretline-cli -- demo layers --snapshot 80x24
-cargo run -p caretline-cli -- demo layers --snapshot 80x24 --keys '<down><down>s'
+caretline demo layers --snapshot 80x24
+caretline demo layers --snapshot 80x24 --keys '<down><down>s'
 ```
 
 The status bar reports `pixels` or `cells`. Inside tmux or screen it normally uses cells;
