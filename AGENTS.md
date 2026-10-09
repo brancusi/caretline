@@ -42,7 +42,9 @@ Guidance for AI agents (and people) working on caretline. `CLAUDE.md` points her
    the versions in `crates/*/Cargo.toml` (and `caretline-cli`'s dependency on `caretline`),
    merge, tag `vX.Y.Z` and push the tag (`.github/workflows/release.yml` builds the four
    targets and publishes the release the installer reads), `cargo publish -p caretline`, then
-   `-p caretline-cli`, then redeploy the site. Releasing is the maintainer's call.
+   `-p caretline-cli`, then redeploy the site, without waiting for the release workflow
+   (it publishes the GitHub release in the background). Run its smoke commands locally
+   before tagging. Releasing is the maintainer's call.
 5. **Hosts pull from here.** A host depends on a published version (`caretline = "0.3"`). A fix
    still in flight is pinned by git revision in the host's workspace `Cargo.toml`:
 
@@ -81,8 +83,12 @@ Guidance for AI agents (and people) working on caretline. `CLAUDE.md` points her
 
 ## Before every commit and push
 
-- **Pushes are paused** until the owner's security review: commit locally after every change;
-  no pushes, tags, releases, crates.io publishes or site deploys.
+- **Local checks gate; GitHub CI never blocks.** Once the local build, tests, clippy/fmt and
+  preflight pass (and the site's build and scan, or the release smoke commands, when they
+  apply), merge, push, tag, publish and deploy straight away. GitHub CI runs in the
+  background as a signal: never wait on it for anything. Look at its results when they land
+  and fix forward in a new PR if something fails. A release whose workflow fails gets the
+  next patch version, not a moved tag.
 - Stage explicit paths (`git add <files>`), never `git add -A` / `git add .`. Build outside the
   checkout (`CARGO_TARGET_DIR` in a scratch area) or in the gitignored `/target`.
 - `scripts/preflight.sh` (`--staged` for the index) must pass: no build output, files over 512 KB,
