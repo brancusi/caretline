@@ -29,6 +29,7 @@ keys or messages, and the expected result. No terminal, no timing, no mocks.
 | `caretline/src/helix/**` | Helix's own unit tests, vendored with the code |
 | [`caretline-cli/tests/cli.rs`](../crates/caretline-cli/tests/cli.rs) | The binary: fixtures render to their saved snapshots, traces replay, `--keys` and `--dump-state` round-trip, effects are reported and never performed |
 | [`caretline-cli/tests/demo.rs`](../crates/caretline-cli/tests/demo.rs) | Demo frames against `tests/goldens`, live PTY controls, socket subscriptions and command-line edits. The showcase's `--headless` report verifies all 13 invariants |
+| [`caretline-cli/src/screen.rs`](../crates/caretline-cli/src/screen.rs) | In-process screen tests, test-only: the runtime's real `draw` writes into memory (`Painter`) and a `vt100` emulator reads the cells back (`Screen`), so a test asserts what the screen shows (the frame, other carets as reverse cells) with no process or pseudo-terminal |
 | [`caretline-cli/tests/common/mod.rs`](../crates/caretline-cli/tests/common/mod.rs) | Shared by the binary's and the MCP server's tests: child processes and scratch directories that clean up after themselves, a pseudo-terminal, deadlines (see [Tests that start processes](#tests-that-start-processes)) |
 
 Run them:
