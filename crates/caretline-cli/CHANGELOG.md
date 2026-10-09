@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.4.2 — 2026-10-09
+
+### Fixed
+
+- The release binaries for 0.4.1's changes (the welcome demo, `install.sh --demo`, the
+  terminal reader fix). 0.4.1's GitHub release failed its smoke test, which still expected
+  the tour as the default demo, so 0.4.1 is on crates.io only.
+
 ## 0.4.1 — 2026-10-09
 
 ### Fixed
