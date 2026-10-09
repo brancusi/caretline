@@ -7,10 +7,17 @@ It comes from the `caretline-cli` crate. Every output on this page is from a rea
 
 ```sh
 curl -fsSL https://caretline.app/install.sh | sh -s -- --demo   # a prebuilt binary, then the welcome demo
+curl -fsSL https://caretline.app/install.sh | sh -s -- --version 0.5.0   # a specific release
+curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- doctor --keys   # try an unreleased branch or commit
 cargo install caretline-cli   # or build it
 cargo install --locked --path crates/caretline-cli   # from a checkout
 cargo run -p caretline-cli -- draft.md                # or run it from the checkout
 ```
+
+`--version X.Y.Z` installs that release. `--ref REF` builds a branch or commit of
+brancusi/caretline from source with cargo into `~/.cache/caretline/ref` and leaves the installed
+binary alone (it needs Rust and git). `-- ARGS` then runs `caretline ARGS` on the terminal: it is
+how each change's `Try it:` line (see [AGENTS.md](../AGENTS.md)) shows the change working.
 
 See the [Quickstart](quickstart.md) for what the installer does and what the demos show.
 
@@ -36,6 +43,7 @@ See the [Quickstart](quickstart.md) for what the installer does and what the dem
 | `caretline --outline FILE` | Edit FILE as [Markdown blocks](markdown.md): lists, headings and blocks with their own keys, Markdown in and out (also for `--new-state` and `serve`) |
 | `caretline --layout FILE` | As `--outline`, with the [outline layout](structure.md#the-outline-layout): markers in a hang with plain glyphs, a column per depth (also for `serve`) |
 | `caretline doctor` | In Ghostty: the keys Ghostty's own bindings take before caretline sees them, and the config lines that hand them over (see [Edit a file](#edit-a-file)) |
+| `caretline doctor --keys` | Live key echo: the bytes the terminal sent, the key caretline decoded and the command it runs. Ctrl-C twice stops |
 | `caretline keys [--outline] [--json]` | Every key and the command it runs, from caretline's [command catalog](keys.md). In the editor, F1 or Alt-? shows the same |
 | `… --no-status-bar` | Hide the status bar (`config.status_bar = false`): every row shows text |
 | `… --max-fps FPS` | Editor: repaint at most this many times a second, coalescing changes in between (default 120; `0` repaints after every batch of input). See [performance.md](performance.md#how-the-live-editor-paints) |
@@ -61,7 +69,8 @@ the option on). caretline turns it on when the terminal supports it. A terminal'
 bindings still come first: Ghostty's defaults keep Cmd-A (it selects the whole terminal
 screen), Cmd-Up and Cmd-Down (jump between prompts), Cmd-Z and Cmd-Shift-Z for themselves.
 `caretline doctor` lists the keys Ghostty takes from caretline's keymap and prints the lines
-that hand them over, such as `keybind = super+a=unbind`. Copy also writes the
+that hand them over, such as `keybind = super+a=unbind`. `caretline doctor --keys` echoes each
+key you press (the bytes, the decoded key, the command), to see what a terminal really sends. Copy also writes the
 system clipboard (`pbcopy`, `wl-copy`, `xclip` or `xsel`, else OSC 52), and paste reads it
 when it can.
 

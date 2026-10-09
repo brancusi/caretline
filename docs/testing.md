@@ -160,6 +160,13 @@ fn e37_cut_is_one_undo_step() {
 Use `<wait:MS>` in a script when undo grouping matters: `"one<wait:2000> two<c-z>"` undoes
 only `" two"`.
 
+## Try it
+
+Every change also ends its CHANGELOG entry, commit and PR with a `Try it:` line, a command
+anyone can paste to see the change working, such as
+`curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- doctor --keys`.
+`scripts/check-try.sh` enforces it; the rule is in [AGENTS.md](../AGENTS.md).
+
 ## Rehydration and replay tests
 
 `rehydrate.rs` checks two promises.
