@@ -120,11 +120,12 @@ add_to_path() {
 run() { # binary args...
 	bin="$1"
 	shift
+	say ""
 	if (exec </dev/tty) 2>/dev/null; then
-		say ""
 		"$bin" "$@" </dev/tty >/dev/tty || true
 	else
-		say "  no terminal to run it in: run $bin $*"
+		# No terminal (CI, a pipe): commands that print, like `sim`, still run.
+		"$bin" "$@" </dev/null || true
 	fi
 }
 
