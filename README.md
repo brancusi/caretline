@@ -70,9 +70,11 @@ caretline is developed here, and only here. The flow (also in [AGENTS.md](AGENTS
    The PR template has the checkbox: "docs and site updated, or N/A because …".
 4. **Releases follow semver.** Breaking API changes bump the minor version while we're at 0.x
    (0.3 → 0.4), additions and fixes bump the patch. A release is: move **Unreleased** in the
-   CHANGELOG under the new version, bump `crates/*/Cargo.toml`, merge, tag `vX.Y.Z` (the
-   [release workflow](.github/workflows/release.yml) builds and publishes the binaries that
-   `install.sh` serves), `cargo publish` the crates, and redeploy the site.
+   CHANGELOG under the new version and bump the crates that changed, then run
+   [`scripts/release.sh X.Y.Z`](scripts/release.sh): it builds all four binaries locally,
+   tags, publishes the GitHub release `install.sh` serves, publishes the crates and redeploys
+   the site. The [release workflow](.github/workflows/release.yml) re-checks each target in
+   the background.
 5. **Hosts pull a published version.** A host such as thc depends on `caretline = "0.4"` from
    crates.io. For a fix that hasn't been released yet, it pins a git revision of this repo
    with `[patch.crates-io] caretline = { git = "https://github.com/brancusi/caretline", rev = "<sha>" }`
