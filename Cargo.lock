@@ -208,7 +208,7 @@ dependencies = [
 
 [[package]]
 name = "caretline-cli"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "caretline",
  "caretline-layers",
