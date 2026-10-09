@@ -202,6 +202,29 @@ fn the_welcome_runs_a_chapter_and_comes_back() {
     assert!(pty.exited(), "quit");
 }
 
+/// The way `install.sh --demo` starts it: keys from `/dev/tty`, not from the shell's stdin.
+/// On macOS, crossterm's kqueue source can't poll `/dev/tty` and spun forever at start-up;
+/// the `use-dev-tty` feature reads it with poll(2).
+#[test]
+fn the_tour_runs_with_keys_from_dev_tty() {
+    let tmp = scratch("devtty");
+    let dir = tmp.join("files");
+    let mut c = Command::new("sh");
+    c.args([
+        "-c",
+        &format!(
+            "'{}' demo tour --dir '{}' </dev/tty >/dev/tty",
+            env!("CARGO_BIN_EXE_caretline"),
+            dir.display()
+        ),
+    ])
+    .env("TMPDIR", &*tmp);
+    let mut pty = Pty::spawn(c, ROWS, COLS);
+    pty.wait_for(20, "the tour", |s| s.contains("1/11 · "));
+    pty.send(b"\x11"); // Ctrl-Q: nothing typed, so it quits at once
+    assert!(pty.exited(), "quit");
+}
+
 #[test]
 fn the_agent_demo_types_beside_the_person() {
     let tmp = scratch("agent");

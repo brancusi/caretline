@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- `install.sh --demo` hung on macOS when a chapter started (the tour, the agent): with keys
+  coming from `/dev/tty`, crossterm's kqueue input source can't poll it and its start-up
+  query spun forever. crossterm now reads `/dev/tty` with poll(2) (its `use-dev-tty`
+  feature). A test runs the tour the way the installer does.
+
 ## 0.4.2 — 2026-10-09
 
 ### Fixed
