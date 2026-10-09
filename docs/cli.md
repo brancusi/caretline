@@ -44,6 +44,7 @@ See the [Quickstart](quickstart.md) for what the installer does and what the dem
 | `caretline --layout FILE` | As `--outline`, with the [outline layout](structure.md#the-outline-layout): markers in a hang with plain glyphs, a column per depth (also for `serve`) |
 | `caretline doctor` | In Ghostty: the keys Ghostty's own bindings take before caretline sees them (derived from a model of Ghostty's keyboard), and the config lines that hand them over (see [Edit a file](#edit-a-file)) |
 | `caretline doctor --keys` | Live key echo: the bytes the terminal sent, the key caretline decoded and the command it runs. Ctrl-C twice stops |
+| `caretline sim TEXT KEYS [--legacy] [--mine] [--config LINE]... [--size WxH]` | Run a key script through a simulated Ghostty, the editor and a terminal emulator, in process (see [Try keys without a terminal](#try-keys-without-a-terminal)) |
 | `caretline keys [--outline] [--json]` | Every key and the command it runs, from caretline's [command catalog](keys.md). In the editor, F1 or Alt-? shows the same |
 | `… --no-status-bar` | Hide the status bar (`config.status_bar = false`): every row shows text |
 | `… --max-fps FPS` | Editor: repaint at most this many times a second, coalescing changes in between (default 120; `0` repaints after every batch of input). See [performance.md](performance.md#how-the-live-editor-paints) |
@@ -81,6 +82,34 @@ when it can.
 
 Saving writes a temporary sibling file and renames it over the target, so a failed write
 never leaves half a file.
+
+## Try keys without a terminal
+
+`caretline sim TEXT KEYS` runs a key script through a simulated Ghostty (its default bindings
+and key encoding), the decoder, the editor and a terminal emulator, all in process. For each
+key it prints the key's path (what Ghostty sent, or that it kept the key, and the command that
+ran) and the selection, then the final screen, checked against the editor's state after every
+key.
+
+In TEXT, `▮` is a caret and `⟦…⟧` surrounds a selection. KEYS is a key script: letters, and
+`<d-a>` (Cmd-A), `<s-left>`, `<c-a-bs>`, `<cr>`, `<wait:500>`.
+
+| Flag | Meaning |
+|---|---|
+| `--legacy` | Without the kitty keyboard protocol |
+| `--mine` | Your Ghostty's bindings (`ghostty +list-keybinds`), not the 1.3.1 defaults |
+| `--config LINE` | A Ghostty config line on top, repeatable |
+| `--size WxH` | The terminal size (default 40x8) |
+
+```sh
+caretline sim 'hello ▮world' '<d-a>x' --config 'keybind = super+a=unbind'
+caretline sim '▮one
+▮two' 'x<s-right>'
+```
+
+The first prints `<d-a>: sent ⎋[97;9u → SelectAll` and `⟦hello world▮⟧`: with the binding
+unbound, Cmd-A reaches the editor. Without the `--config` line Ghostty keeps the key, and the
+path says so.
 
 ## The state, snapshot and replay workflow
 
