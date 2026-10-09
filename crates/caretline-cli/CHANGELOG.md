@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.4 — 2026-10-09
+
 ### Fixed
 
 - The tour and the agent demo always show the way out at the end of their status line:
