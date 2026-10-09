@@ -1,8 +1,8 @@
 # Design: the terminal harness
 
 Status: in progress. Step 0 shipped in caretline 0.5 (`Role::Caret`, the fuzz suite's screen
-invariant EI13, `caretline doctor`). Step 1 (one decoder) is done. Steps 2 to 5 are next, in
-order.
+invariant EI13, `caretline doctor`). Steps 1 (one decoder) and 2 (keyboard model) are done. Steps 3
+to 5 are next, in order.
 
 ## Why
 
@@ -102,6 +102,22 @@ Tests that become possible:
   fails a test.
 - **Round trip**: for every `Key` the keymap names, kitty-encode → `Parser` → `to_key` gives
   the same `Key`. Legacy encoding gives the same key or a documented lossy one.
+
+**Done.** `caretline-cli/src/keyboard/` holds `TermKeyboard` (`press(key) -> Sent::Bytes |
+Paste | Taken`), the Ghostty 1.3.1 defaults fixture, and a table of what Ghostty 1.3.1 really
+sent for 180 key presses (Enter, Tab, Backspace, Delete, Esc, arrows, Home, End, PageUp under
+nine modifier sets, with and without the keyboard protocol), measured with AppleScript's
+`send key` into a raw reader. The model reproduces every row (`matches_what_ghostty_sent`).
+The measurement found that legacy Ghostty sends modified Enter, Tab and Esc as xterm's
+`CSI 27;m;code ~`, which the decoder dropped; it reads them now. Tests:
+`kitty_round_trips_every_key`, `legacy_round_trips_or_is_a_known_loss` (the losses listed),
+`every_binding_reaches_its_command` (default Ghostty keeps a reviewed list; with doctor's fixes
+all reach but Cmd-Q). `doctor::conflicts` is now this model, so the doctor and the tests can't
+disagree. AppleScript sends no bytes for character keys, so letters follow the kitty spec
+unmeasured.
+
+Answered: Ghostty keeps Cmd-Up/Down (and Cmd-Shift-Up/Down) for `jump_to_prompt` even in an
+alternate-screen app (measured: no bytes).
 
 ### Step 3. The screen model: a headless terminal emulator
 

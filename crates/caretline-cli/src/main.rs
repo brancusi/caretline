@@ -9,6 +9,7 @@ mod client;
 mod demo;
 mod doctor;
 mod hub;
+mod keyboard;
 mod keys;
 mod layers;
 mod rawin;

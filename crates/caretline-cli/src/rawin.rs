@@ -294,6 +294,14 @@ fn csi(b: &[u8]) -> Esc {
         .split(':')
         .next()
         .and_then(|s| s.parse::<u32>().ok());
+    // xterm's modifyOtherKeys (`CSI 27;m;code ~`): Ghostty's legacy form for a key with no
+    // other one, such as Shift-Enter.
+    if fin == b'~'
+        && first == Some(27)
+        && let Some(code) = fields.get(2)
+    {
+        return kitty(code, m, kind).map_or(Esc::Skip(n), |ev| Esc::Key(ev, n));
+    }
     let code = match fin {
         b'u' => return kitty(fields[0], m, kind).map_or(Esc::Skip(n), |ev| Esc::Key(ev, n)),
         b'A' => KeyCode::Up,
@@ -693,6 +701,11 @@ mod tests {
             // Lock keys, media keys, lone modifiers: skipped.
             (b"\x1b[57358u", None),
             (b"\x1b[57441;2u", None),
+            // xterm's modifyOtherKeys, Ghostty's legacy form for Shift-Enter and the like
+            // (crossterm drops them).
+            (b"\x1b[27;2;13~", Some("<s-cr>")),
+            (b"\x1b[27;9;97~", Some("<d-a>")),
+            (b"\x1b[27;5;27~", Some("<c-esc>")),
             // Where crossterm differs: Alt and a lone `[` or `O` (crossterm: nothing), and
             // `CSI 1;5R` as Ctrl-F3 (crossterm: a cursor report nobody asked for).
             (b"\x1b[", Some("<a-[>")),
