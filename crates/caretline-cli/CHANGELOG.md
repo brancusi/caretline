@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.3 — 2026-10-09
+
 ### Fixed
 
 - `install.sh --demo` hung on macOS when a chapter started (the tour, the agent): with keys
