@@ -187,7 +187,7 @@ fn no_color() -> bool {
 
 /// The style of a cell's role: built-in roles, and the layer roles the CLI's renderers use
 /// (crate::layers). Other named roles draw plain.
-fn style_in(frame: &Frame, role: Role) -> Style {
+pub(crate) fn style_in(frame: &Frame, role: Role) -> Style {
     use crate::layers::{ACCENT, DIM, INK, PANEL, RULE, VOID};
     let Role::Named(_) = role else {
         return style(role);
@@ -730,8 +730,6 @@ struct Pacing {
     frame_clock: u16,
 }
 
-type Term = Terminal<CrosstermBackend<BufWriter<io::Stdout>>>;
-
 /// Sizes view 0 to the terminal less the demo's pane, and the pane's view to the pane.
 fn fit_views(
     hub: &mut Hub,
@@ -1118,7 +1116,13 @@ fn event_loop(
 ///
 /// A demo's decor dims cells and adds bytes (kitty graphics) after the cells, inside the same
 /// update, so text and pixels change together.
-fn draw(terminal: &mut Term, frame: &Frame, decor: &Decor) -> Result<(), String> {
+/// Paints a frame: roles to styles, ratatui's diff against the last paint, inside a
+/// synchronized update. Any writer works, so tests capture the exact bytes.
+pub(crate) fn draw<W: Write>(
+    terminal: &mut Terminal<CrosstermBackend<W>>,
+    frame: &Frame,
+    decor: &Decor,
+) -> Result<(), String> {
     let _ = queue!(terminal.backend_mut(), BeginSynchronizedUpdate);
     let drawn = terminal
         .draw(|f| {

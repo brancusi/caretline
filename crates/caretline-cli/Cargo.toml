@@ -33,3 +33,4 @@ libc = { workspace = true }
 [dev-dependencies]
 # Tests run the layers conformance kit over `demo layers`.
 caretline-layers = { path = "../caretline-layers", version = "0.2.0", features = ["kitty", "conformance"] }
+vt100 = "0.16"

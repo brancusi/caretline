@@ -1,8 +1,8 @@
 # Design: the terminal harness
 
 Status: in progress. Step 0 shipped in caretline 0.5 (`Role::Caret`, the fuzz suite's screen
-invariant EI13, `caretline doctor`). Steps 1 (one decoder) and 2 (keyboard model) are done. Steps 3
-to 5 are next, in order.
+invariant EI13, `caretline doctor`). Steps 1 (one decoder), 2 (keyboard model) and 3 (headless
+screen) are done. Steps 4 and 5 are next.
 
 ## Why
 
@@ -134,6 +134,17 @@ cursor.
   `CrosstermBackend<Vec<u8>>` (or any `Write`), so the test captures the exact bytes the
   editor would write, diffs between frames included.
 - Replace `tests/common::screen` with the emulator.
+
+**Done.** `caretline-cli/src/screen.rs` (test only): a `Screen` trait (`feed`, `cell`,
+`cursor`, `row`, `text`) over `vt100`, and `Painter`, the runtime's own `draw` (now generic
+over its writer) painting into memory, so a test gets the exact bytes, diffs included. Tests:
+`the_screen_shows_the_frame` (text, colours and reverse of every cell and the cursor match the
+frame, across a selection over a line break, a wide grapheme, and a second diffed paint) and
+`other_carets_are_reverse_cells`. The PTY tests' screen is `vt100` too.
+
+libghostty-vt has a Rust wrapper (`ghostty-vt`), but it builds Ghostty's source with Zig and
+needs Rust 1.96: every contributor and CI would carry that toolchain. `vt100` it is, behind the
+trait, until a test needs Ghostty's exact behaviour.
 
 ### Step 4. The harness: key to screen, in process
 
