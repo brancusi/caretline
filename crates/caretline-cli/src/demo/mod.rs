@@ -108,6 +108,10 @@ pub struct DemoArgs {
     /// scenes --bench: the scene size (default: the editor's text area).
     #[arg(long, value_name = "WxH")]
     size: Option<String>,
+
+    /// Started as a chapter of the welcome: the way out leads back to it.
+    #[arg(skip)]
+    from_welcome: bool,
 }
 
 pub fn main(argv: &[String]) -> Result<(), String> {
@@ -173,6 +177,7 @@ fn welcome_demo(args: &DemoArgs) -> Result<(), String> {
         };
         let mut chapter = args.clone();
         chapter.demo = demo.into();
+        chapter.from_welcome = true;
         run(&chapter)?;
         seen[i] = true;
         let chapters = welcome::ENTRIES.iter().filter(|e| e.demo.is_some()).count();
@@ -248,7 +253,7 @@ pub(crate) fn tour_section(text: &str, line: usize) -> (Option<u32>, u32) {
 pub(crate) fn tour_hint(text: &str, line: usize, mark: Option<u64>) -> String {
     let (section, total) = tour_section(text, line);
     let Some(n) = section else {
-        return "tour done ✦ next: caretline demo agent".into();
+        return "tour done ✦".into();
     };
     let what = match n {
         0 => "↓ to start: the status bar follows the caret".to_string(),
@@ -293,10 +298,16 @@ struct EditorDemo {
     replay: Option<Replay>,
     generation: u64,
     agent: Arc<Mutex<Progress>>,
+    /// The way out, at the end of every hint: "⌃Q quit", or "⌃Q next demo" in the welcome.
+    exit: &'static str,
 }
 
 impl EditorDemo {
     fn hint(&self, hub: &Hub) -> String {
+        format!("{} · {}", self.step_hint(hub), self.exit)
+    }
+
+    fn step_hint(&self, hub: &Hub) -> String {
         match self.kind {
             Kind::Tour => {
                 let state = hub.session.state();
@@ -317,11 +328,11 @@ impl EditorDemo {
                     format!("agent stopped: {e}")
                 } else if p.done {
                     format!(
-                        "agent done: {} writes, {} refused and retried · ⌃P replays you both",
+                        "agent done: {} writes, {} retried · ⌃P replay",
                         p.writes, p.stale
                     )
                 } else if p.started {
-                    "you + agent editing · ⌃Z undoes only yours · ⌃P replay".into()
+                    "you + agent · ⌃Z undoes only yours · ⌃P replay".into()
                 } else {
                     "the agent is connecting… start typing".into()
                 }
@@ -501,6 +512,11 @@ impl Demo for EditorDemo {
                 return KeyAction::Consumed;
             }
         }
+        // The agent's document is the demo's scratch, always changed by the agent: one ⌃Q
+        // leaves, with no "unsaved changes" to confirm.
+        if self.kind == Kind::Agent && ctrl(key) == Some('q') {
+            return KeyAction::Quit;
+        }
         match ctrl(key) {
             Some('o') => self.toggle_fold(hub),
             Some('n') => self.caret_below(hub),
@@ -628,6 +644,11 @@ fn editor_demo(args: &DemoArgs, kind: Kind) -> Result<(), String> {
         replay: None,
         generation: 0,
         agent,
+        exit: if args.from_welcome {
+            "⌃Q next demo"
+        } else {
+            "⌃Q quit"
+        },
     };
     let file = path.to_string_lossy().into_owned();
     let result = runtime::run_interactive(
@@ -735,6 +756,7 @@ pub(crate) fn snapshot(kind: Kind, w: u16, h: u16, keys: Option<&str>) -> Result
         replay: None,
         generation: 0,
         agent: Arc::new(Mutex::new(Progress::default())),
+        exit: "⌃Q quit",
     };
     let rows = if kind == Kind::Agent { pane_rows(h) } else { 0 };
     let state = initial_state(
@@ -864,6 +886,7 @@ mod tests {
             replay: None,
             generation: 0,
             agent: Default::default(),
+            exit: "⌃Q quit",
         };
         demo.after(&mut hub);
         let ctrl_key = |c| Key {

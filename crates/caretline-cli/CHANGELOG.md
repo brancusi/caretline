@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- The tour and the agent demo always show the way out at the end of their status line:
+  "⌃Q quit", or "⌃Q next demo" when started from the welcome. In the agent demo one ⌃Q
+  leaves: its document is scratch the agent keeps changing, so there is no "unsaved
+  changes" to confirm. The tour's last step no longer names a command to type.
+
 ## 0.4.3 — 2026-10-09
 
 ### Fixed

@@ -191,12 +191,23 @@ fn the_welcome_runs_a_chapter_and_comes_back() {
     pty.send(b"\x1b[B"); // Down: the tour
     pty.wait_for(20, "the tour chosen", |s| s.contains("Hands on"));
     pty.send(b"\r");
-    pty.wait_for(20, "the tour", |s| s.contains("1/11 · "));
+    pty.wait_for(20, "the tour, with its way out", |s| {
+        s.contains("1/11 · ") && s.contains("⌃Q next demo")
+    });
     pty.send(b"\x11"); // Ctrl-Q: nothing typed, so it quits at once
     // Back on the page with the next chapter chosen (the tick is a unit test: the
     // callout may cover it at this size).
     pty.wait_for(20, "the page again, the next chapter chosen", |s| {
         s.contains("Start here") && s.contains("You and an agent")
+    });
+    // The agent's document is always changed: still, one ⌃Q leaves.
+    pty.send(b"\r");
+    pty.wait_for(20, "the agent chapter", |s| {
+        s.contains("agent.md") && s.contains("⌃Q next demo")
+    });
+    pty.send(b"\x11");
+    pty.wait_for(20, "the page again, after the agent", |s| {
+        s.contains("Start here") && s.contains("Draw over the text")
     });
     pty.send(b"q");
     assert!(pty.exited(), "quit");
