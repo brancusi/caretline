@@ -118,7 +118,8 @@ jobs:
           "$b" --version
           "$b" --version | grep -qx "caretline $V"
           "$b" demo --help | grep -q 'scenes'
-          "$b" demo --snapshot 80x24 | grep -q 'Welcome to caretline'
+          "$b" demo --snapshot 80x24 | grep -q 'Start here'
+          "$b" demo tour --snapshot 80x24 | grep -q 'Welcome to caretline'
           "$b" demo scenes --snapshot 80x24 | grep -q 'C A R E T L I N E'
           "$b" demo agent --headless > agent.json
           grep -q '"ok": true' agent.json
