@@ -1,7 +1,7 @@
 # Design: the terminal harness
 
 Status: plan. Step 0 shipped in caretline 0.5 (`Role::Caret`, the fuzz suite's screen invariant
-EI8, `caretline doctor`). Steps 1 to 5 are the next work, in order.
+EI13, `caretline doctor`). Steps 1 to 5 are the next work, in order.
 
 ## Why
 
@@ -33,7 +33,7 @@ the terminal layer Helix's own renderer covered and caretline doesn't use.
 | Piece | Where | State |
 |---|---|---|
 | Key notation, keymap as data | `caretline/src/keymap.rs`, `commands.rs` (`default_keymap`, `binding_key`, `key_notation`, `command_for`) | Pure, tested |
-| Engine goldens and fuzz, now with EI8 (screen shows the selection) | `caretline/tests/fuzz.rs` | Checks the `Frame`, not terminal bytes |
+| Engine goldens and fuzz, now with EI13 (screen shows the selection) | `caretline/tests/fuzz.rs` | Checks the `Frame`, not terminal bytes |
 | Byte parser for keys, mouse, paste, replies | `caretline-cli/src/rawin.rs` (`Parser`) | Pure parser, used **only** when the runtime probes for pixels (demos with layers) |
 | crossterm's event reader | `runtime.rs` (`event::read`) | The editor's normal input path: a **second decoder** for the same bytes |
 | `to_key`, `terminal_msgs` | `runtime.rs` | Nearly pure (`terminal_msgs` reads the system clipboard for a paste) |
@@ -119,7 +119,7 @@ h.assert_screen_matches_state();   // the screen-truth oracle
 - One `Harness` drives the same functions the runtime calls (`Parser`, `terminal_msgs`,
   `update`, `compose`, `draw`), with no thread, clock or TTY. Time arrives as messages, as in
   the engine.
-- **The screen-truth oracle** (EI8 lifted from `Frame` to the emulated screen): every caret is
+- **The screen-truth oracle** (EI13 lifted from `Frame` to the emulated screen): every caret is
   the terminal cursor (primary) or a reverse cell (others); every selected char has the
   selection's colours; nothing else does; the text in each row equals the frame's text;
   the cursor is visible when focused. Checked after every step.

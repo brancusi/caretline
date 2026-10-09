@@ -190,14 +190,14 @@ After **every** step it checks:
 | EI4 | Copy changes nothing but the clipboard |
 | EI5 | An edit that made a new revision undoes to exactly the state before it and redoes to exactly the state after |
 | EI6, EI7 | Typing over a selection replaces exactly it; a delete with a selection removes exactly it |
-| EI8 (screen) | The screen shows the selection: in a focused view, a cell drawing a char is a `Caret` cell exactly when an empty range other than the primary sits on it, else a `Selection` cell exactly when a range covers it; each such caret is drawn where the cursor would be if it were the primary |
+| EI13 (screen) | The screen shows the selection: in a focused view, a cell drawing a char is a `Caret` cell exactly when an empty range other than the primary sits on it, else a `Selection` cell exactly when a range covers it; each such caret is drawn where the cursor would be if it were the primary |
 | Effects | Effects are plain values that match the message |
 | `view` | Never panics, at the state's size and at extreme sizes |
 | Serialization | At random points, the state round-trips to the same state and frame |
 | Undo all | Undoing everything gives back the original text |
 
-Separate tests check EI3 and copy-then-paste (cut-then-paste and copy-then-paste in place are
-identities; the source also labels the second EI8) and EI12 (select all, delete, one undo restores everything).
+Separate tests check EI3 and EI8 (cut-then-paste and copy-then-paste in place are
+identities) and EI12 (select all, delete, one undo restores everything).
 
 A failure names its seed and step (`seed 7 step 312: …`). The generator is seeded, so the same
 seed fails the same way every time. To focus on it, temporarily run only that seed in

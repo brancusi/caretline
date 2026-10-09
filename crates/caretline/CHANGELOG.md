@@ -13,7 +13,7 @@
 
 ### Tests
 
-- The fuzz suite checks after every step that the screen shows the selection (EI8): a cell
+- The fuzz suite checks after every step that the screen shows the selection (EI13): a cell
   drawing a char is a caret cell exactly when an empty range other than the primary is on
   it, else a selection cell exactly when a range covers it, and each such caret is drawn
   where the cursor would be if it were the primary.
