@@ -1,7 +1,9 @@
 //! `caretline demo`: built-in demos that need no files. Each writes its documents to a
 //! fresh temporary directory and runs the real editor on them.
 //!
-//! - `tour` (the default): a guided outline that teaches by doing, with the status bar
+//! - `welcome` (the default): where a new user starts: what caretline is, the other demos
+//!   as chapters to run in turn, and the commands to take away.
+//! - `tour`: a guided outline that teaches by doing, with the status bar
 //!   naming the next step, ⌃D to dump the whole editor as JSON and ⌃P to replay the session.
 //! - `scenes`: ASCII animations pushed into the editor with the protocol's `frame` op.
 //! - `agent`: a scripted agent co-editing over the editor's socket, in its own view.
@@ -14,6 +16,7 @@ mod layers;
 mod replay;
 mod scenes;
 mod showcase;
+mod welcome;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -32,15 +35,15 @@ use replay::Replay;
 const TOUR: &str = include_str!("tour.md");
 const AGENT_DOC: &str = include_str!("agent.md");
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(
     name = "caretline demo",
     about = "Built-in demos: no files needed (they write theirs to a temporary directory)",
-    after_help = "Demos:\n  tour     a guided tour of the editor, learned by doing (the default)\n  scenes   ASCII animations (warp, donut, cube, tunnel, plasma, fire) running in the editor\n  agent    co-editing: a scripted agent types beside you over the editor's socket\n  layers   a hint, an arrow and a spotlight over the tour: pixels in Ghostty, cells elsewhere\n  showcase timed, interactive slides: real edits, shared views, overlays and invariant checks\n\nExamples:\n  caretline demo\n  caretline demo scenes\n  caretline demo agent\n  caretline demo layers\n  caretline demo showcase               timed slides, real edits and complex overlays\n  caretline demo --snapshot 80x24          the tour's first frame, headless\n  caretline demo scenes --bench            measure frame rates against a live editor"
+    after_help = "Demos:\n  welcome  start here: what caretline is, every demo as a chapter (the default)\n  tour     a guided tour of the editor, learned by doing\n  scenes   ASCII animations (warp, donut, cube, tunnel, plasma, fire) running in the editor\n  agent    co-editing: a scripted agent types beside you over the editor's socket\n  layers   a hint, an arrow and a spotlight over the tour: pixels in Ghostty, cells elsewhere\n  showcase timed, interactive slides: real edits, shared views, overlays and invariant checks\n\nExamples:\n  caretline demo                        start here\n  caretline demo tour\n  caretline demo scenes\n  caretline demo agent\n  caretline demo layers\n  caretline demo showcase               timed slides, real edits and complex overlays\n  caretline demo --snapshot 80x24          the welcome page, headless\n  caretline demo scenes --bench            measure frame rates against a live editor"
 )]
 pub struct DemoArgs {
     /// Which demo.
-    #[arg(default_value = "tour", value_parser = ["tour", "scenes", "agent", "layers", "showcase"])]
+    #[arg(default_value = "welcome", value_parser = ["welcome", "tour", "scenes", "agent", "layers", "showcase"])]
     demo: String,
 
     /// Print the demo's first frame at WIDTHxHEIGHT and exit (headless).
@@ -111,13 +114,69 @@ pub fn main(argv: &[String]) -> Result<(), String> {
     let args = DemoArgs::parse_from(
         std::iter::once("caretline demo".to_string()).chain(argv.iter().cloned()),
     );
+    run(&args)
+}
+
+fn run(args: &DemoArgs) -> Result<(), String> {
     match args.demo.as_str() {
-        "scenes" => scenes::main(&args),
+        "scenes" => scenes::main(args),
         "agent" if args.headless => agent::headless(),
-        "agent" => editor_demo(&args, Kind::Agent),
-        "layers" => layers_demo(&args),
-        "showcase" => showcase::main(&args),
-        _ => editor_demo(&args, Kind::Tour),
+        "agent" => editor_demo(args, Kind::Agent),
+        "layers" => layers_demo(args),
+        "showcase" => showcase::main(args),
+        "tour" => editor_demo(args, Kind::Tour),
+        _ => welcome_demo(args),
+    }
+}
+
+/// `caretline demo`: the welcome page, then each chapter the person starts from it, back to
+/// the page when the chapter ends, with the chapter ticked and the next one chosen.
+fn welcome_demo(args: &DemoArgs) -> Result<(), String> {
+    if let Some(size) = &args.snapshot {
+        let (w, h) = crate::parse_size(size)?;
+        let frame = welcome::snapshot(w, h, args.keys.as_deref())?;
+        print!(
+            "{}",
+            if args.format == "ansi" {
+                frame.to_ansi()
+            } else {
+                frame.to_text()
+            }
+        );
+        return Ok(());
+    }
+    let mut seen = vec![false; welcome::ENTRIES.len()];
+    let mut chosen = 0;
+    loop {
+        let (width, height) = crossterm::terminal::size().unwrap_or((80, 24));
+        let state = welcome::state(&seen, chosen, Viewport { width, height });
+        let start = std::rc::Rc::new(std::cell::Cell::new(None));
+        runtime::run_interactive(
+            state,
+            runtime::Interactive {
+                trace: None,
+                mouse: !args.no_mouse,
+                listen: None,
+                file: None,
+                trace_limit: caretline::session::DEFAULT_TRACE_LIMIT,
+                max_fps: 120,
+                frame_clock: 0,
+                stats: false,
+                demo: Some(Box::new(welcome::WelcomeDemo::new(start.clone()))),
+            },
+        )?;
+        let Some(i) = start.get() else {
+            return Ok(());
+        };
+        let Some(demo) = welcome::ENTRIES[i].demo else {
+            return Ok(());
+        };
+        let mut chapter = args.clone();
+        chapter.demo = demo.into();
+        run(&chapter)?;
+        seen[i] = true;
+        let chapters = welcome::ENTRIES.iter().filter(|e| e.demo.is_some()).count();
+        chosen = (i + 1..chapters).find(|&k| !seen[k]).unwrap_or(i);
     }
 }
 

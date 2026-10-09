@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- `caretline demo` opens a welcome page, where a new user starts: what caretline is, the five
+  demos as chapters (showcase, tour, agent, layers, scenes) and commands to take away. Enter
+  starts the chapter under the highlight and returns to the page when it ends, the chapter
+  ticked and the next one chosen. The page is an outline document: the highlight is a block
+  selection, and the callout beside it a layer (pixels in Ghostty, cells elsewhere).
+- The installer takes `--demo`: `curl -fsSL https://caretline.app/install.sh | sh -s -- --demo`
+  installs and starts the welcome, reading keys from the terminal, even before the install
+  directory is on `PATH`.
+
+### Changed
+
+- The tour is no longer the default demo: run it with `caretline demo tour`.
+
 ## 0.4.0 — 2026-10-09
 
 ### Added

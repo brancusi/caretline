@@ -1,4 +1,4 @@
-// Renders the tour preview on the landing page: `caretline demo --snapshot` after a growing
+// Renders the tour preview on the landing page: `caretline demo tour --snapshot` after a growing
 // key script, one frame per step, converted from ANSI to HTML spans. Writes
 // public/tour/frames.json (committed, so the site builds without the binary).
 //
@@ -68,7 +68,7 @@ let keys = '';
 const frames = [];
 for (const [k, ms] of steps) {
   keys += k;
-  const ansi = execFileSync(bin, ['demo', '--snapshot', SIZE, '--format', 'ansi', '--keys', keys], { encoding: 'utf8' });
+  const ansi = execFileSync(bin, ['demo', 'tour', '--snapshot', SIZE, '--format', 'ansi', '--keys', keys], { encoding: 'utf8' });
   frames.push({ ms, html: html(ansi) });
 }
 const version = execFileSync(bin, ['--version'], { encoding: 'utf8' }).trim();

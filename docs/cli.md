@@ -6,7 +6,7 @@ It comes from the `caretline-cli` crate. Every output on this page is from a rea
 ## Install
 
 ```sh
-curl -fsSL https://caretline.app/install.sh | sh && caretline demo   # a prebuilt binary, then the tour
+curl -fsSL https://caretline.app/install.sh | sh -s -- --demo   # a prebuilt binary, then the welcome demo
 cargo install caretline-cli   # or build it
 cargo install --locked --path crates/caretline-cli   # from a checkout
 cargo run -p caretline-cli -- draft.md                # or run it from the checkout
@@ -313,6 +313,14 @@ caretline demo scenes --bench --fps 120 --scene donut,plasma --seconds 5
 
 For 120 fps on screen, the terminal must paint that fast too: in WezTerm set
 `config.max_fps = 120`, on a 120 Hz display.
+
+## The welcome
+
+`caretline demo` (or `caretline demo welcome`) opens the welcome page: what caretline is, every
+other demo as a chapter, and commands to try next. `↑`/`↓` (or `j`/`k`, `Tab`) choose, `Enter`
+or `1`–`5` start a chapter, `p` switches the callout between pixels and cells, `q` quits. A
+chapter that ends comes back to the page, ticked. `--snapshot WxH [--keys …]` prints the page
+headless; `--dir`, `--no-mouse` and `--reduced-motion` pass through to the chapters.
 
 ## Timed interactive showcase
 

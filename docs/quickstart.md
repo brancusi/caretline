@@ -1,9 +1,9 @@
 # Quickstart
 
-Try caretline in one line. This installs the `caretline` binary and opens a guided tour:
+Try caretline in one line. This installs the `caretline` binary and opens its welcome page:
 
 ```sh
-curl -fsSL https://caretline.app/install.sh | sh && caretline demo
+curl -fsSL https://caretline.app/install.sh | sh -s -- --demo
 ```
 
 The installer picks the build for your machine (macOS or Linux, Apple silicon, ARM or x86-64),
@@ -17,6 +17,19 @@ Prefer to build it yourself? With a Rust toolchain:
 ```sh
 cargo install caretline-cli
 ```
+
+## Start here: `caretline demo`
+
+`caretline demo` opens the welcome: a page that says what caretline is, lists the five demos
+below as chapters, and ends with the commands to take away (editing your own file, letting an
+agent in over MCP, driving the editor headless, embedding the engine). `↑`/`↓` choose a line;
+a callout beside it says what the chapter shows and which keys it uses. `Enter` (or `1`–`5`)
+starts the chapter; when it ends you are back on the page, the chapter ticked and the next
+one chosen. `q` quits.
+
+The page is itself a caretline outline document: the highlight is the editor's own block
+selection, and the callout is a layer, in pixels in Ghostty and in cells elsewhere (`p`
+switches). `caretline demo --snapshot 80x24` prints it headless.
 
 ## Five demos
 
@@ -115,7 +128,7 @@ For repeatable validation or snapshots without a terminal:
 ./scripts/demo.sh --snapshot 100x30 --keys '<wait:168000>' # the full timed run, no sleeping
 ```
 
-### `caretline demo`: the tour
+### `caretline demo tour`: the tour
 
 A short document you work down with `↓`. The status bar names the keys for the section the
 caret is in.

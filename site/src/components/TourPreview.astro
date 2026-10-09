@@ -1,13 +1,13 @@
 ---
-// The tour, as frames rendered by the real binary (`caretline demo --snapshot --keys …`,
+// The tour, as frames rendered by the real binary (`caretline demo tour --snapshot --keys …`,
 // scripts/tour-frames.mjs). The first frame is in the page; the rest load and play on view.
 import data from '../../public/tour/frames.json';
 const first = data.frames[0].html;
 ---
 <figure class="tp" data-tour-preview>
-  <div class="tp__bar"><span class="tp__dots" aria-hidden="true">● ● ●</span><span>$ caretline demo</span><span class="dim">{data.size}</span></div>
+  <div class="tp__bar"><span class="tp__dots" aria-hidden="true">● ● ●</span><span>$ caretline demo tour</span><span class="dim">{data.size}</span></div>
   <pre class="tp__screen" aria-label="caretline demo: a guided tour in the terminal: typing, several carets at once, undo, indenting, folding, a second view and dumping the state"><Fragment set:html={first} /></pre>
-  <figcaption class="dim">Frames from the real binary, <code>caretline demo --snapshot {data.size} --keys …</code>: the same engine, headless.</figcaption>
+  <figcaption class="dim">Frames from the real binary, <code>caretline demo tour --snapshot {data.size} --keys …</code>: the same engine, headless.</figcaption>
 </figure>
 <script is:inline>
   (function () {
