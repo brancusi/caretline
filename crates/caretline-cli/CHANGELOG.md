@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- `caretline doctor --keys`: press keys and see, live, the bytes the terminal sent, the key
+  caretline read and the command it runs. A key that prints nothing never reached caretline.
+  `install.sh` takes `--version X.Y.Z`, `--ref REF` (build a branch or commit from source,
+  leaving the installed caretline alone) and `-- ARGS` (then run `caretline ARGS`), so every
+  change's "Try it" line is one command.
+
+  Try it: `curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- doctor --keys`
+
 ### Changed
 
 - One input decoder: the editor reads the terminal's bytes with its own parser always, not
@@ -12,6 +22,9 @@
   now get the keyboard protocol too, so Esc no longer waits out the lone-ESC timeout there.
   Where crossterm dropped a key the parser now reads it: Alt-`[` and Alt-Shift-O at the end
   of a read, and two ESCs as two Esc presses.
+
+  Try it: `curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- doctor --keys`
+  (Esc shows as `⎋[27u`, Cmd-A as `⎋[97;9u` once Ghostty passes it)
 
 ## 0.5.0 — 2026-10-09
 

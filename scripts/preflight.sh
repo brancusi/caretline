@@ -14,6 +14,8 @@
 #   4. content: no home folders, real temp or agent scratch paths, the local user name, private repo
 #      URLs or claude.ai links (generic paths like /tmp or /private/tmp alone are fine);
 #   5. content: nothing that looks like a credential.
+# And for the repo as it stands: every CHANGELOG entry under Unreleased has a `Try it:` line
+# (scripts/check-try.sh).
 # A path in .preflight-allow (one regex per line) skips checks 2–4 for it. Exit 1 lists every hit.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -70,6 +72,8 @@ while IFS= read -r f; do
   m=$(show "$f" | grep -nEo -- "$secret" | head -1 | cut -c1-24) || true
   [ -n "$m" ] && hit "$f" "looks like a credential: ${m}…"
 done <<< "$files"
+
+scripts/check-try.sh >/dev/null || fail=1
 
 if [ $fail = 1 ]; then
   echo "preflight: FAILED ($mode $range). Unstage or fix the files above; nothing here may reach the public repo." >&2

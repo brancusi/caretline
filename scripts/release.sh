@@ -4,8 +4,9 @@
 #   scripts/release.sh 0.4.3              the whole release
 #   scripts/release.sh 0.4.3 --dry-run    steps 1–4 only: nothing is pushed or published
 #
-#   1. check   on main, clean, level with origin; the version is new
-#   2. bump    caretline-cli to the version; its CHANGELOG's Unreleased becomes the version
+#   1. check   on main, clean, level with origin; the version is new; every entry has Try it
+#   2. bump    caretline-cli to the version; its CHANGELOG's Unreleased becomes the version,
+#              and every `--ref main` Try-it line becomes `--version X.Y.Z`
 #   3. test    fmt, the workspace tests, preflight
 #   4. build   the four binaries into dist/ (scripts/dist.sh)
 #   5. land    a release PR, merged; the tag vX.Y.Z pushed
@@ -38,6 +39,7 @@ git fetch -q origin
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "main isn't level with origin/main"
 git rev-parse -q --verify "refs/tags/v$v" >/dev/null && die "v$v is already tagged"
 grep -q '^## Unreleased' "$cl" || die "$cl has no Unreleased section"
+scripts/check-try.sh >/dev/null || die "every Unreleased entry needs a Try it: line"
 say "   main at $(git rev-parse --short HEAD), releasing $v"
 
 step "2. bump"
@@ -47,13 +49,18 @@ rm crates/caretline-cli/Cargo.toml.bak
 today=$(date +%Y-%m-%d)
 awk -v h="## $v — $today" '!done && /^## Unreleased/ { print; print ""; print h; done=1; next } { print }' "$cl" >"$cl.new"
 mv "$cl.new" "$cl"
+# Try-it lines built main from source until now; from here they install this release.
+for f in crates/*/CHANGELOG.md; do
+	sed -i.bak "s/install\.sh | sh -s -- --ref main --/install.sh | sh -s -- --version $v --/" "$f"
+	rm "$f.bak"
+done
 $cargo metadata -q --format-version 1 >/dev/null # Cargo.lock takes the new version
 say "   caretline-cli $v, CHANGELOG dated $today"
 
 step "3. test"
 $cargo fmt --all --check
 $cargo test -q --workspace --locked
-git add crates/caretline-cli/Cargo.toml "$cl" Cargo.lock
+git add crates/caretline-cli/Cargo.toml crates/*/CHANGELOG.md Cargo.lock
 scripts/preflight.sh --staged
 
 step "4. build"
