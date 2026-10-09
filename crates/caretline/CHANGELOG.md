@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Breaking
+
+- `Role::Caret`: every caret with no selection, other than the primary, is drawn as a cell
+  in this role (wire name `"caret"`), so several carets show on screen. A terminal has one
+  cursor, which stays the primary's (`Frame::cursor`); before, the other carets were in the
+  state but not on screen. A selection shows as itself, so the `frame` op's highlights draw
+  as before. A host that matches every `Role` adds the arm; `to_ansi` draws it like the
+  cursor (reverse and underlined).
+
+### Tests
+
+- The fuzz suite checks after every step that the screen shows the selection (EI8): a cell
+  drawing a char is a caret cell exactly when an empty range other than the primary is on
+  it, else a selection cell exactly when a range covers it, and each such caret is drawn
+  where the cursor would be if it were the primary.
+
 ## 0.4.0 — 2026-10-09
 
 ### Demo

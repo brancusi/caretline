@@ -227,6 +227,7 @@ fn style(role: Role) -> Style {
     match role {
         Role::Text => Style::default(),
         Role::Selection => Style::default().bg(Color::Blue).fg(Color::White),
+        Role::Caret => Style::default().add_modifier(Modifier::REVERSED),
         Role::Status => Style::default().add_modifier(Modifier::REVERSED),
         Role::StatusAccent => Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
         Role::Hang => Style::default().add_modifier(Modifier::DIM),
@@ -422,7 +423,7 @@ pub fn dispatch_demo(hub: &mut Hub, msgs: Vec<Msg>) -> bool {
 }
 
 /// The editor's frame with the pane below it: the first other view, its caret drawn as a
-/// selected cell (the terminal has one cursor, the person's).
+/// caret cell (the terminal has one cursor, the person's).
 pub fn compose(hub: &Hub, pane_rows: u16) -> Frame {
     compose_state(hub.session.state(), hub.session.views(), pane_rows)
 }
@@ -441,7 +442,7 @@ pub fn compose_state(state: &State, views: &[(u32, caretline::View)], pane_rows:
     if let Some((x, y)) = pane.cursor.take() {
         let i = y as usize * pane.width as usize + x as usize;
         if let Some(cell) = pane.cells.get_mut(i) {
-            cell.role = Role::Selection;
+            cell.role = Role::Caret;
         }
     }
     stack(top, pane)

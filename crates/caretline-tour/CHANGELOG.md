@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Depends on caretline 0.5 and caretline-layers 0.2.
+
 ## 0.1.0 — 2026-10-09
 
 ### Added

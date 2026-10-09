@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- `caretline doctor`: in Ghostty, the keys Ghostty's own bindings take before caretline
+  sees them (by default Cmd-Up and Cmd-Down, Cmd-Home and Cmd-End, Cmd-Z and Cmd-Shift-Z;
+  Cmd-A, which selected the whole terminal screen), compared with caretline's keymap, and
+  the config lines that hand them to caretline.
+
+### Fixed
+
+- Several carets show: the others are drawn as reverse cells beside the terminal's cursor
+  (caretline 0.5), and the pane under the editor draws its view's caret in the same role.
+
 ## 0.4.5 — 2026-10-09
 
 ### Fixed

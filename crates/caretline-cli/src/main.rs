@@ -7,6 +7,7 @@
 mod bench;
 mod client;
 mod demo;
+mod doctor;
 mod hub;
 mod keys;
 mod layers;
@@ -293,6 +294,7 @@ fn run() -> Result<(), String> {
         Some("bench") => return bench::main(&argv[2..]),
         Some("demo") => return demo::main(&argv[2..]),
         Some("keys") => return keys::main(&argv[2..]),
+        Some("doctor") => return doctor::main(&argv[2..]),
         _ => {}
     }
     let args = Args::parse();
