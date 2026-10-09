@@ -236,6 +236,35 @@ fn the_tour_runs_with_keys_from_dev_tty() {
     assert!(pty.exited(), "quit");
 }
 
+/// The welcome the way `install.sh --demo` starts it: one Enter starts a chapter. On macOS
+/// poll(2) can't wait on `/dev/tty`, so the welcome's reader sat in a blocking read when
+/// it stopped, and the chapter started only on the next key.
+#[test]
+fn one_enter_starts_a_chapter_with_keys_from_dev_tty() {
+    let tmp = scratch("devtty-welcome");
+    let dir = tmp.join("files");
+    let mut c = Command::new("sh");
+    c.args([
+        "-c",
+        &format!(
+            "'{}' demo --dir '{}' </dev/tty >/dev/tty",
+            env!("CARGO_BIN_EXE_caretline"),
+            dir.display()
+        ),
+    ])
+    .env("TMPDIR", &*tmp);
+    let mut pty = Pty::spawn(c, ROWS, COLS);
+    pty.wait_for(20, "the page", |s| s.contains("Start here"));
+    pty.send(b"\x1b[B"); // Down: the tour
+    pty.wait_for(20, "the tour chosen", |s| s.contains("Hands on"));
+    pty.send(b"\r"); // once
+    pty.wait_for(10, "the tour, after one Enter", |s| s.contains("1/11 · "));
+    pty.send(b"\x11");
+    pty.wait_for(20, "the page again", |s| s.contains("Start here"));
+    pty.send(b"q");
+    assert!(pty.exited(), "quit");
+}
+
 #[test]
 fn the_agent_demo_types_beside_the_person() {
     let tmp = scratch("agent");

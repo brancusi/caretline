@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- With `install.sh --demo`, Enter on a chapter of the welcome hid the page's overlay but
+  started the chapter only on a second key. On macOS poll(2) can't wait on `/dev/tty`, so
+  the welcome's key reader sat in a blocking read when it stopped; it now waits with
+  select(2). A test starts a chapter with one Enter, keys from `/dev/tty`.
+
 ## 0.4.4 — 2026-10-09
 
 ### Fixed
