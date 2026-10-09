@@ -24,6 +24,8 @@ tiny-skia = "0.11.4"
 unicode-segmentation = "1.13"
 ratatui = "0.30"
 crossterm = { version = "0.29", features = ["use-dev-tty"] }
+# `caretline sim`: the screen a key script draws.
+vt100 = "0.16.2"
 # Insertion-ordered JSON objects for this binary's own output (not the engine's: it is a
 # library, and the feature would apply to every crate in a host's build).
 serde_json = { workspace = true, features = ["preserve_order"] }
@@ -33,4 +35,3 @@ libc = { workspace = true }
 [dev-dependencies]
 # Tests run the layers conformance kit over `demo layers`.
 caretline-layers = { path = "../caretline-layers", version = "0.2.0", features = ["kitty", "conformance"] }
-vt100 = "0.16"

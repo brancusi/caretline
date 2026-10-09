@@ -1,4 +1,4 @@
-//! A headless terminal screen for tests (terminal harness step 3): the bytes the runtime
+//! A headless terminal screen (terminal harness step 3), for the tests and `caretline sim`: the bytes the runtime
 //! writes, fed to an emulator and read back as cells, styles and the cursor. The emulator is
 //! the `vt100` crate behind [`Screen`], so it can be swapped for Ghostty's own
 //! (libghostty-vt, which needs Zig to build) if a test ever needs Ghostty's exact behaviour.
@@ -196,6 +196,42 @@ pub fn term_color(c: Option<ratatui::style::Color>) -> Color {
     }
 }
 
+/// The frame's text, row by row, as the screen shows it.
+pub fn frame_text(f: &Frame) -> String {
+    (0..f.height)
+        .map(|y| {
+            let s: String = (0..f.width).map(|x| f.cell(x, y).symbol.as_str()).collect();
+            s.trim_end().to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// What the frame says each cell looks like, against the screen.
+pub fn assert_screen_is_frame(screen: &impl Screen, f: &Frame) {
+    assert_eq!(screen.text(), frame_text(f), "text");
+    assert_eq!(screen.cursor(), f.cursor, "cursor");
+    for y in 0..f.height {
+        for x in 0..f.width {
+            let fc = f.cell(x, y);
+            if fc.symbol.is_empty() {
+                continue;
+            }
+            let st = crate::runtime::style_in(f, fc.role);
+            let c = screen.cell(x, y);
+            assert_eq!(
+                (c.fg, c.bg),
+                (term_color(st.fg), term_color(st.bg)),
+                "colours of ({x},{y}) {:?} {:?}",
+                fc.symbol,
+                fc.role
+            );
+            let reverse = st.add_modifier.contains(ratatui::style::Modifier::REVERSED);
+            assert_eq!(c.reverse, reverse, "reverse at ({x},{y}) {:?}", fc.role);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,42 +252,6 @@ mod tests {
             update(&mut s, m);
         }
         s
-    }
-
-    /// The frame's text, row by row, as the screen shows it.
-    fn frame_text(f: &Frame) -> String {
-        (0..f.height)
-            .map(|y| {
-                let s: String = (0..f.width).map(|x| f.cell(x, y).symbol.as_str()).collect();
-                s.trim_end().to_string()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    /// What the frame says each cell looks like, against the screen.
-    fn assert_screen_is_frame(screen: &Vt100, f: &Frame) {
-        assert_eq!(screen.text(), frame_text(f), "text");
-        assert_eq!(screen.cursor(), f.cursor, "cursor");
-        for y in 0..f.height {
-            for x in 0..f.width {
-                let fc = f.cell(x, y);
-                if fc.symbol.is_empty() {
-                    continue;
-                }
-                let st = crate::runtime::style_in(f, fc.role);
-                let c = screen.cell(x, y);
-                assert_eq!(
-                    (c.fg, c.bg),
-                    (term_color(st.fg), term_color(st.bg)),
-                    "colours of ({x},{y}) {:?} {:?}",
-                    fc.symbol,
-                    fc.role
-                );
-                let reverse = st.add_modifier.contains(ratatui::style::Modifier::REVERSED);
-                assert_eq!(c.reverse, reverse, "reverse at ({x},{y}) {:?}", fc.role);
-            }
-        }
     }
 
     #[test]

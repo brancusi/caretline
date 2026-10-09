@@ -591,7 +591,11 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
 
 /// Turns a terminal event into messages (none for events the editor ignores). Pure but for
 /// `clipboard`, called only when a paste key asks for the system clipboard's text.
-fn terminal_msgs(state: &State, ev: Event, clipboard: impl FnOnce() -> Option<String>) -> Vec<Msg> {
+pub(crate) fn terminal_msgs(
+    state: &State,
+    ev: Event,
+    clipboard: impl FnOnce() -> Option<String>,
+) -> Vec<Msg> {
     match ev {
         Event::Key(k) if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
             match to_key(&k).and_then(|key| keymap_for(state.doc.outline.is_some(), &key)) {
