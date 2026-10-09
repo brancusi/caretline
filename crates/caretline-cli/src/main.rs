@@ -14,6 +14,8 @@ mod keys;
 mod layers;
 mod rawin;
 mod runtime;
+#[cfg(test)]
+mod screen;
 
 use std::fs;
 use std::io::{self, Read, Write};

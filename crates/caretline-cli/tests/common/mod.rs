@@ -321,54 +321,9 @@ impl Pty {
     }
 }
 
-/// The screen a byte stream draws: cursor moves (`CSI r;c H`), clears and text.
+/// The screen a byte stream draws, row by row, as the `vt100` emulator reads it.
 pub fn screen(out: &[u8], rows: usize, cols: usize) -> Vec<String> {
-    let mut grid = vec![vec![' '; cols]; rows];
-    let (mut r, mut c) = (0usize, 0usize);
-    let s = String::from_utf8_lossy(out);
-    let mut it = s.chars().peekable();
-    while let Some(ch) = it.next() {
-        match ch {
-            '\x1b' => match it.next() {
-                Some('[') => {
-                    let mut params = String::new();
-                    while let Some(&n) = it.peek() {
-                        it.next();
-                        if ('@'..='~').contains(&n) {
-                            if n == 'H' {
-                                let mut p = params
-                                    .trim_start_matches('?')
-                                    .split(';')
-                                    .map(|x| x.parse::<usize>().unwrap_or(1));
-                                r = p.next().unwrap_or(1).saturating_sub(1);
-                                c = p.next().unwrap_or(1).saturating_sub(1);
-                            } else if n == 'J' && params == "2" {
-                                grid = vec![vec![' '; cols]; rows];
-                            }
-                            break;
-                        }
-                        params.push(n);
-                    }
-                }
-                Some(']') => {
-                    while let Some(n) = it.next() {
-                        if n == '\x07' || (n == '\x1b' && it.peek() == Some(&'\\')) {
-                            break;
-                        }
-                    }
-                }
-                _ => {}
-            },
-            '\r' => c = 0,
-            '\n' => r += 1,
-            ch if ch >= ' ' => {
-                if r < rows && c < cols {
-                    grid[r][c] = ch;
-                }
-                c += 1;
-            }
-            _ => {}
-        }
-    }
-    grid.into_iter().map(|l| l.into_iter().collect()).collect()
+    let mut p = vt100::Parser::new(rows as u16, cols as u16, 0);
+    p.process(out);
+    p.screen().rows(0, cols as u16).collect()
 }
