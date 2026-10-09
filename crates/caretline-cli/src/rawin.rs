@@ -336,14 +336,28 @@ pub fn fill(parser: &mut Parser, timeout: Duration) -> bool {
 /// [`fill`], but leaves the bytes unread once `stop` is set: they belong to whoever reads
 /// the terminal next.
 fn fill_unless(parser: &mut Parser, timeout: Duration, stop: &AtomicBool) -> bool {
-    let mut fds = libc::pollfd {
-        fd: 0,
-        events: libc::POLLIN,
-        revents: 0,
+    // select(2), not poll(2): on macOS poll can't wait on a tty device such as /dev/tty
+    // (`install.sh --demo` gives us that as stdin) and says it's ready at once, so the read
+    // below would block until the next key, and a stopping reader would take that key.
+    let micros = timeout.as_micros().min(i32::MAX as u128);
+    let mut tv = libc::timeval {
+        tv_sec: (micros / 1_000_000) as libc::time_t,
+        tv_usec: (micros % 1_000_000) as libc::suseconds_t,
     };
-    let ms = timeout.as_millis().min(i32::MAX as u128) as i32;
-    // SAFETY: one valid pollfd for stdin.
-    if unsafe { libc::poll(&mut fds, 1, ms) } <= 0 || stop.load(Ordering::SeqCst) {
+    // SAFETY: an fd_set zeroed then holding stdin, and a valid timeval.
+    let ready = unsafe {
+        let mut set: libc::fd_set = std::mem::zeroed();
+        libc::FD_ZERO(&mut set);
+        libc::FD_SET(0, &mut set);
+        libc::select(
+            1,
+            &mut set,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut tv,
+        )
+    };
+    if ready <= 0 || stop.load(Ordering::SeqCst) {
         return false;
     }
     let mut b = [0u8; 8192];
