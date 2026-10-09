@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- One input decoder: the editor reads the terminal's bytes with its own parser always, not
+  crossterm's event reader (which only demos without layers used). It decodes the kitty
+  keyboard protocol's `CSI … u` keys with every modifier (Cmd, hyper and meta included,
+  caps and num lock ignored) and the legacy xterm forms, as crossterm did; one startup probe
+  asks for the keyboard protocol, and for pixels when a demo wants them. Demos with layers
+  now get the keyboard protocol too, so Esc no longer waits out the lone-ESC timeout there.
+  Where crossterm dropped a key the parser now reads it: Alt-`[` and Alt-Shift-O at the end
+  of a read, and two ESCs as two Esc presses.
+
 ## 0.5.0 — 2026-10-09
 
 ### Added

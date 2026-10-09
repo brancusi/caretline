@@ -1,7 +1,8 @@
 # Design: the terminal harness
 
-Status: plan. Step 0 shipped in caretline 0.5 (`Role::Caret`, the fuzz suite's screen invariant
-EI13, `caretline doctor`). Steps 1 to 5 are the next work, in order.
+Status: in progress. Step 0 shipped in caretline 0.5 (`Role::Caret`, the fuzz suite's screen
+invariant EI13, `caretline doctor`). Step 1 (one decoder) is done. Steps 2 to 5 are next, in
+order.
 
 ## Why
 
@@ -34,9 +35,8 @@ the terminal layer Helix's own renderer covered and caretline doesn't use.
 |---|---|---|
 | Key notation, keymap as data | `caretline/src/keymap.rs`, `commands.rs` (`default_keymap`, `binding_key`, `key_notation`, `command_for`) | Pure, tested |
 | Engine goldens and fuzz, now with EI13 (screen shows the selection) | `caretline/tests/fuzz.rs` | Checks the `Frame`, not terminal bytes |
-| Byte parser for keys, mouse, paste, replies | `caretline-cli/src/rawin.rs` (`Parser`) | Pure parser, used **only** when the runtime probes for pixels (demos with layers) |
-| crossterm's event reader | `runtime.rs` (`event::read`) | The editor's normal input path: a **second decoder** for the same bytes |
-| `to_key`, `terminal_msgs` | `runtime.rs` | Nearly pure (`terminal_msgs` reads the system clipboard for a paste) |
+| Byte parser for keys (legacy and kitty `CSI … u`), mouse, paste, replies | `caretline-cli/src/rawin.rs` (`Parser`) | Pure; the **only** decoder (step 1), tested as a `bytes → Event → Key` table |
+| `to_key`, `terminal_msgs` | `runtime.rs` | Pure (`terminal_msgs` takes the clipboard read as an argument) |
 | `draw` | `runtime.rs` | ratatui over crossterm: roles to styles, diff, synchronized update |
 | A toy screen model | `caretline-cli/tests/common/mod.rs` (`screen`) | Cursor moves, clears, text; no styles, no cursor, no wide chars |
 | Ghostty bindings parser | `caretline-cli/src/doctor.rs` (`parse_ghostty`, `conflicts`) | Pure, unit tested |
@@ -61,6 +61,19 @@ already does), and `Parser` becomes the one tested decoder.
 
 Done when the editor has one decoder, `cargo test` covers it as a table of `bytes → Event →
 Key`, and the PTY tests still pass.
+
+**Done.** One startup probe asks for the keyboard protocol (`CSI ? u`), and for pixels when a
+demo wants them, fenced by DA1; the reader is always `rawin::spawn`. Before the switch the
+parser ran beside a copy of crossterm 0.29's parser over a generated corpus of about 8,600
+sequences (every control byte and Alt pair, xterm modifier forms 1 to 16 with event types,
+`CSI n ~` keys, kitty keys with modifiers, kinds and alternates, the keypad, mouse reports,
+pastes): it agreed on all but a few, kept on purpose and listed in the table test
+(`rawin::tests::bytes_to_keys`): Alt-`[` and Alt-Shift-O at the end of a read and a double
+ESC (crossterm drops one), `CSI 1;m R` as F3 (crossterm reads a cursor report), and pastes
+with `\r\n` made `\n`. A run in Ghostty, keys sent with its AppleScript `send key`, decoded
+Alt-Left (`ESC b`), Alt-Shift-Left (`CSI 1;4D`), Esc (`CSI 27u`, no timeout) and Alt-Backspace
+(`CSI 127;3u`). Ghostty's `send key` sends no bytes for letter keys, so the harness (step 4),
+not AppleScript, is the way to test those.
 
 ### Step 2. The keyboard model: a simulated Ghostty input
 
@@ -167,5 +180,6 @@ Each step is its own PR with its CHANGELOG line, and the docs-and-site pass afte
   screen app, or are they performable in practice? `+list-keybinds` doesn't show the flag.
   Check once by hand; record the answer in the keyboard model's fixture.
 - vt100 vs libghostty-vt: decide in step 3 on build cost.
-- Does `rawin::Parser` need a timeout for a lone `ESC` (Esc key versus the start of a
-  sequence) that crossterm handles today? Step 1 must keep Esc working.
+- ~~Does `rawin::Parser` need a timeout for a lone `ESC`?~~ It has one: the reader flushes
+  an unfinished escape after 30 ms without bytes. With the keyboard protocol on, Esc is
+  `CSI 27 u` and never waits.

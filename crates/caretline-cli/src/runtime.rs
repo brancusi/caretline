@@ -24,7 +24,7 @@ use crossterm::event::{
 };
 use crossterm::terminal::{
     BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
-    disable_raw_mode, enable_raw_mode, supports_keyboard_enhancement,
+    disable_raw_mode, enable_raw_mode,
 };
 use crossterm::{execute, queue};
 use ratatui::Terminal;
@@ -39,7 +39,7 @@ pub fn now_ms() -> u64 {
 }
 
 /// Converts a crossterm key to the engine's key type.
-fn to_key(ev: &event::KeyEvent) -> Option<Key> {
+pub(crate) fn to_key(ev: &event::KeyEvent) -> Option<Key> {
     use event::KeyCode as C;
     let code = match ev.code {
         C::Char(c) => KeyCode::Char(c),
@@ -314,9 +314,8 @@ pub trait Demo {
     fn generation(&self) -> u64 {
         0
     }
-    /// Whether the demo draws layers that may use pixels: the runtime then reads the
-    /// terminal's input itself (so replies become `Input::Reply`, not keys) and probes it at
-    /// startup.
+    /// Whether the demo draws layers that may use pixels: the runtime's startup probe then
+    /// asks the terminal for them too.
     fn wants_pixels(&self) -> bool {
         false
     }
@@ -363,10 +362,13 @@ fn layers_mode() -> String {
         .to_ascii_lowercase()
 }
 
-/// Probes the terminal for pixels: the graphics query, XTVERSION and the cell size, fenced by
-/// DA1, waiting at most 200 ms. Pixels are on when the query says OK, the cell size came
-/// back, and the terminal is Ghostty or kitty (or `CARETLINE_LAYERS=pixels`).
-fn probe_gfx(parser: &mut crate::rawin::Parser) -> Gfx {
+/// Probes the terminal once at startup, fenced by DA1 and waiting at most 200 ms: the kitty
+/// keyboard query always, and with `pixels` the graphics query, XTVERSION and the cell size.
+/// Returns the pixels and whether the terminal speaks the kitty keyboard protocol. Pixels are
+/// on when the query says OK, the cell size came back, and the terminal is Ghostty or kitty
+/// (or `CARETLINE_LAYERS=pixels`).
+fn probe_terminal(parser: &mut crate::rawin::Parser, pixels: bool) -> (Gfx, bool) {
+    use crate::rawin::Token;
     use caretline_layers::probe::Probe;
     let mode = layers_mode();
     let local =
@@ -377,17 +379,36 @@ fn probe_gfx(parser: &mut crate::rawin::Parser) -> Gfx {
         why: why.to_string(),
         local,
     };
-    if mode == "cells" {
-        return off("CARETLINE_LAYERS=cells");
+    let multiplexer = std::env::var_os("TMUX").is_some() || std::env::var_os("STY").is_some();
+    let skip = if !pixels {
+        Some(Gfx::default())
+    } else if mode == "cells" {
+        Some(off("CARETLINE_LAYERS=cells"))
+    } else if mode != "pixels" && multiplexer {
+        Some(off("inside a multiplexer"))
+    } else {
+        None
+    };
+    let mut request = b"\x1b[?u".to_vec();
+    match skip {
+        Some(_) => request.extend_from_slice(b"\x1b[c"),
+        None => request.extend(caretline_layers::probe::request()),
     }
-    if mode != "pixels" && (std::env::var_os("TMUX").is_some() || std::env::var_os("STY").is_some())
-    {
-        return off("inside a multiplexer");
+    let tokens = crate::rawin::probe(
+        parser,
+        &mut io::stdout(),
+        &request,
+        Duration::from_millis(200),
+    );
+    let kitty = tokens.iter().any(|t| matches!(t, Token::Keyboard(_)));
+    if let Some(gfx) = skip {
+        return (gfx, kitty);
     }
-    let replies = crate::rawin::probe(parser, &mut io::stdout(), Duration::from_millis(200));
     let mut p = Probe::default();
-    for r in &replies {
-        p.add(r);
+    for t in &tokens {
+        if let Token::Reply(r) = t {
+            p.add(r);
+        }
     }
     let terminal = p.version.clone();
     let name = p.terminal().unwrap_or_default();
@@ -407,12 +428,13 @@ fn probe_gfx(parser: &mut crate::rawin::Parser) -> Gfx {
         terminal.clone().unwrap_or_else(|| "pixels".into())
     };
     let on = p.fenced && p.graphics_ok() && trusted;
-    Gfx {
+    let gfx = Gfx {
         cell_px: if on { p.cell } else { None },
         terminal,
         why,
         local,
-    }
+    };
+    (gfx, kitty)
 }
 
 /// Applies messages from a demo, performing their effects (a save, a quit).
@@ -496,16 +518,11 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
 
     let mouse = opts.mouse;
     enable_raw_mode().map_err(|e| format!("terminal: {e}"))?;
-    // A demo with layers reads input itself and probes for pixels. It leaves the keyboard
-    // protocol alone: crossterm's query would read stdin from under the raw reader.
-    let raw = opts.demo.as_ref().is_some_and(|d| d.wants_pixels());
+    // One probe asks for the keyboard protocol, and for pixels when a demo with layers
+    // wants them; the reader below reads its answers.
+    let pixels = opts.demo.as_ref().is_some_and(|d| d.wants_pixels());
     let mut parser = crate::rawin::Parser::default();
-    let gfx = if raw {
-        probe_gfx(&mut parser)
-    } else {
-        Gfx::default()
-    };
-    let kitty = !raw && supports_keyboard_enhancement().unwrap_or(false);
+    let (gfx, kitty) = probe_terminal(&mut parser, pixels);
     let mut out = io::stdout();
     let _ = execute!(
         out,
@@ -533,24 +550,7 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
     // next chapter), not to a reader nobody listens to.
     let term_tx = tx.clone();
     let stop = Arc::new(AtomicBool::new(false));
-    let reader = if raw {
-        crate::rawin::spawn(parser, term_tx, stop.clone())
-    } else {
-        let stop = stop.clone();
-        std::thread::spawn(move || {
-            while !stop.load(Ordering::SeqCst) {
-                match event::poll(Duration::from_millis(100)) {
-                    Ok(true) if !stop.load(Ordering::SeqCst) => {}
-                    Ok(_) => continue,
-                    Err(_) => break,
-                }
-                let Ok(ev) = event::read() else { break };
-                if term_tx.send(Input::Terminal(ev)).is_err() {
-                    break;
-                }
-            }
-        })
-    };
+    let reader = crate::rawin::spawn(parser, term_tx, stop.clone());
     drop(tx);
 
     let status = listening
@@ -587,19 +587,16 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
     result
 }
 
-/// Turns a terminal event into messages (none for events the editor ignores).
-fn terminal_msgs(state: &State, ev: Event) -> Vec<Msg> {
+/// Turns a terminal event into messages (none for events the editor ignores). Pure but for
+/// `clipboard`, called only when a paste key asks for the system clipboard's text.
+fn terminal_msgs(state: &State, ev: Event, clipboard: impl FnOnce() -> Option<String>) -> Vec<Msg> {
     match ev {
         Event::Key(k) if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
             match to_key(&k).and_then(|key| keymap_for(state.doc.outline.is_some(), &key)) {
                 // The keymap is pure, so a paste key carries no text; fill it in here from
-                // the system clipboard so the trace records exactly what was pasted.
-                Some(Msg::Paste { text: None }) => vec![Msg::Paste {
-                    text: read_system_clipboard(),
-                }],
-                Some(Msg::PastePlain { text: None }) => vec![Msg::PastePlain {
-                    text: read_system_clipboard(),
-                }],
+                // the clipboard so the trace records exactly what was pasted.
+                Some(Msg::Paste { text: None }) => vec![Msg::Paste { text: clipboard() }],
+                Some(Msg::PastePlain { text: None }) => vec![Msg::PastePlain { text: clipboard() }],
                 Some(msg) => vec![msg],
                 None => vec![],
             }
@@ -932,7 +929,7 @@ fn event_loop(
                 _ => None,
             };
             let scroll_before = hub.session.state().view.scroll;
-            let msgs = terminal_msgs(hub.session.state(), ev);
+            let msgs = terminal_msgs(hub.session.state(), ev, read_system_clipboard);
             if !msgs.is_empty() {
                 let mut all = vec![Msg::Tick { now_ms: now_ms() }];
                 all.extend(msgs);
