@@ -36,8 +36,8 @@ Use the crates in your host:
 
 ```toml
 [dependencies]
-caretline-tour = "0.1"
-caretline-layers = "0.1"
+caretline-tour = "0.2"
+caretline-layers = "0.2"
 ```
 
 The default feature `caretline` adds what needs the engine: `Editor`, which answers the

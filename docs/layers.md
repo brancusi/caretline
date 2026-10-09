@@ -29,7 +29,7 @@ Use the crate in your host:
 
 ```toml
 [dependencies]
-caretline-layers = "0.1"
+caretline-layers = "0.2"
 ```
 
 The default feature `caretline` adds what needs the engine: `FrameResolver`, `Grid::from_frame`
@@ -477,7 +477,7 @@ Enable `conformance` for your host's tests. It adds pure checks and no runtime I
 
 ```toml
 [dev-dependencies]
-caretline-layers = { version = "0.1", features = ["conformance"] }
+caretline-layers = { version = "0.2", features = ["conformance"] }
 ```
 
 Build a `conformance::Scene` from the same layers, resolver, grid and renderers your host
