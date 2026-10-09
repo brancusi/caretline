@@ -42,7 +42,7 @@ See the [Quickstart](quickstart.md) for what the installer does and what the dem
 | `caretline bench` | Protocol throughput and latency (build with `--release`) |
 | `caretline --outline FILE` | Edit FILE as [Markdown blocks](markdown.md): lists, headings and blocks with their own keys, Markdown in and out (also for `--new-state` and `serve`) |
 | `caretline --layout FILE` | As `--outline`, with the [outline layout](structure.md#the-outline-layout): markers in a hang with plain glyphs, a column per depth (also for `serve`) |
-| `caretline doctor` | In Ghostty: the keys Ghostty's own bindings take before caretline sees them, and the config lines that hand them over (see [Edit a file](#edit-a-file)) |
+| `caretline doctor` | In Ghostty: the keys Ghostty's own bindings take before caretline sees them (derived from a model of Ghostty's keyboard), and the config lines that hand them over (see [Edit a file](#edit-a-file)) |
 | `caretline doctor --keys` | Live key echo: the bytes the terminal sent, the key caretline decoded and the command it runs. Ctrl-C twice stops |
 | `caretline keys [--outline] [--json]` | Every key and the command it runs, from caretline's [command catalog](keys.md). In the editor, F1 or Alt-? shows the same |
 | `… --no-status-bar` | Hide the status bar (`config.status_bar = false`): every row shows text |
@@ -67,10 +67,15 @@ The keys are macOS text-field keys with Ctrl twins (see [messages.md](messages.m
 need a terminal that speaks the kitty keyboard protocol (kitty, WezTerm, Ghostty, iTerm2 with
 the option on). caretline turns it on when the terminal supports it. A terminal's own key
 bindings still come first: Ghostty's defaults keep Cmd-A (it selects the whole terminal
-screen), Cmd-Up and Cmd-Down (jump between prompts), Cmd-Z and Cmd-Shift-Z for themselves.
-`caretline doctor` lists the keys Ghostty takes from caretline's keymap and prints the lines
-that hand them over, such as `keybind = super+a=unbind`. `caretline doctor --keys` echoes each
-key you press (the bytes, the decoded key, the command), to see what a terminal really sends. Copy also writes the
+screen), Cmd-Up and Cmd-Down and their Shift forms (jump between prompts), Cmd-Z and
+Cmd-Shift-Z for themselves. `caretline doctor` runs each of caretline's keys through a model
+of Ghostty's keyboard (its default bindings, and how it encodes the keys it keeps for the
+application), lists the keys Ghostty takes and prints the lines that hand them over, such as
+`keybind = super+a=unbind`. `caretline doctor --keys` echoes each
+key you press (the bytes, the decoded key, the command), to see what a terminal really sends. Without the kitty protocol, the decoder still reads
+xterm's `modifyOtherKeys` form (`CSI 27;m;code ~`, which legacy Ghostty sends for Shift-Enter
+and the like). `CARETLINE_KEYBOARD=legacy` leaves the kitty keyboard protocol off, to test that
+path. Copy also writes the
 system clipboard (`pbcopy`, `wl-copy`, `xclip` or `xsel`, else OSC 52), and paste reads it
 when it can.
 
