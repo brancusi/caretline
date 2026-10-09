@@ -28,7 +28,7 @@ fn check_selection(state: &State, ctx: &str) {
     }
 }
 
-/// EI8: the screen shows the selection. A cell drawing a char is a caret cell exactly when
+/// EI13: the screen shows the selection. A cell drawing a char is a caret cell exactly when
 /// the char is under an empty range other than the primary (the primary is the terminal's
 /// cursor), else a selection cell exactly when a range covers it.
 fn check_screen(state: &State, frame: &caretline::view::Frame, ctx: &str) {
@@ -52,7 +52,7 @@ fn check_screen(state: &State, frame: &caretline::view::Frame, ctx: &str) {
         } else {
             Role::Text
         };
-        assert_eq!(cell.role, want, "{ctx}: EI8 cell ({x}, {y}) char {c}");
+        assert_eq!(cell.role, want, "{ctx}: EI13 cell ({x}, {y}) char {c}");
     }
     // And every other empty range is drawn where the cursor would be if it were the primary.
     if !state.view.focused {
@@ -65,7 +65,7 @@ fn check_screen(state: &State, frame: &caretline::view::Frame, ctx: &str) {
             assert_eq!(
                 frame.cell(x, y).role,
                 Role::Caret,
-                "{ctx}: EI8 caret {k} not drawn at ({x}, {y})"
+                "{ctx}: EI13 caret {k} not drawn at ({x}, {y})"
             );
         }
     }
