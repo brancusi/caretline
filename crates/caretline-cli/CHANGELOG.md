@@ -4,6 +4,16 @@
 
 ### Added
 
+- `caretline sim TEXT KEYS`: runs a key script through a simulated Ghostty (its 1.3.1 default
+  bindings, or yours with `--mine`, with or without the keyboard protocol), the editor and a
+  terminal emulator, in process, and prints what each key did (kept by the terminal, or the
+  bytes it sent and the messages they became), the selection after it, and the screen it
+  left, checked against the editor's state after every key. The same harness runs as tests,
+  in milliseconds, for the bugs found by hand (Cmd-A kept by Ghostty, carets that didn't
+  show).
+
+  Try it: `curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- sim 'hello ▮world' '<d-a>x' --config 'keybind = super+a=unbind'`
+
 - `caretline doctor --keys`: press keys and see, live, the bytes the terminal sent, the key
   caretline read and the command it runs. A key that prints nothing never reached caretline.
   `install.sh` takes `--version X.Y.Z`, `--ref REF` (build a branch or commit from source,

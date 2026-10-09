@@ -8,13 +8,13 @@ mod bench;
 mod client;
 mod demo;
 mod doctor;
+mod harness;
 mod hub;
 mod keyboard;
 mod keys;
 mod layers;
 mod rawin;
 mod runtime;
-#[cfg(test)]
 mod screen;
 
 use std::fs;
@@ -31,7 +31,7 @@ use clap::Parser;
     name = "caretline",
     version,
     about = "A terminal text editor with serializable state and exact replay",
-    after_help = "Try it:\n  caretline demo                       start here: every demo as a chapter (or: demo tour, showcase, agent, layers, scenes)\n  caretline keys [--outline]           every key and what it does (F1 in the editor)\n\nExamples:\n  caretline notes.md\n  caretline --outline notes.md\n  caretline --new-state notes.md > s.json\n  caretline --state s.json --keys 'hello<cr>' --snapshot 80x24\n  caretline --state s.json --msgs m.jsonl --snapshot 80x24 --format ansi\n  caretline notes.md --trace t.jsonl   (then: caretline --replay t.jsonl --snapshot 80x24)\n\nState protocol (see docs/protocol.md):\n  caretline notes.md --listen          serve it from the running editor\n  caretline serve [FILE] [--socket P]  a headless engine on stdio or a socket\n  caretline send --latest state.get    a client (render WxH, keys S, msgs F, set-state F)\n  caretline bench                      protocol benchmarks"
+    after_help = "Try it:\n  caretline demo                       start here: every demo as a chapter (or: demo tour, showcase, agent, layers, scenes)\n  caretline keys [--outline]           every key and what it does (F1 in the editor)\n  caretline doctor [--keys]            the keys your terminal keeps; --keys: press keys, see what arrives\n  caretline sim 'hi \u{25ae}there' '<d-a>'      a key script through a simulated Ghostty to the screen\n\nExamples:\n  caretline notes.md\n  caretline --outline notes.md\n  caretline --new-state notes.md > s.json\n  caretline --state s.json --keys 'hello<cr>' --snapshot 80x24\n  caretline --state s.json --msgs m.jsonl --snapshot 80x24 --format ansi\n  caretline notes.md --trace t.jsonl   (then: caretline --replay t.jsonl --snapshot 80x24)\n\nState protocol (see docs/protocol.md):\n  caretline notes.md --listen          serve it from the running editor\n  caretline serve [FILE] [--socket P]  a headless engine on stdio or a socket\n  caretline send --latest state.get    a client (render WxH, keys S, msgs F, set-state F)\n  caretline bench                      protocol benchmarks"
 )]
 struct Args {
     /// The file to edit (created on first save if it doesn't exist).
@@ -298,6 +298,7 @@ fn run() -> Result<(), String> {
         Some("demo") => return demo::main(&argv[2..]),
         Some("keys") => return keys::main(&argv[2..]),
         Some("doctor") => return doctor::main(&argv[2..]),
+        Some("sim") => return harness::main(&argv[2..]),
         _ => {}
     }
     let args = Args::parse();

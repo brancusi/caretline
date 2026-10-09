@@ -93,7 +93,7 @@ pub fn report(kb: &TermKeyboard) -> String {
 
 /// Ghostty's binary: beside the running terminal (`GHOSTTY_BIN_DIR`), else on the path, else
 /// the macOS app.
-fn ghostty_bin() -> String {
+pub(crate) fn ghostty_bin() -> String {
     if let Some(dir) = std::env::var_os("GHOSTTY_BIN_DIR") {
         let p = std::path::Path::new(&dir).join("ghostty");
         if p.exists() {

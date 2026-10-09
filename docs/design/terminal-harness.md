@@ -1,8 +1,8 @@
 # Design: the terminal harness
 
 Status: in progress. Step 0 shipped in caretline 0.5 (`Role::Caret`, the fuzz suite's screen
-invariant EI13, `caretline doctor`). Steps 1 (one decoder), 2 (keyboard model) and 3 (headless
-screen) are done. Steps 4 and 5 are next.
+invariant EI13, `caretline doctor`). Steps 1 to 4 (one decoder, keyboard model, headless screen,
+harness) are done. Step 5 is next.
 
 ## Why
 
@@ -166,6 +166,17 @@ h.assert_screen_matches_state();   // the screen-truth oracle
 - Clipboard: a fake in the harness (copy and paste go through it), so copy → paste round trips
   are testable end to end, OSC 52 included.
 - Mouse: `TermMouse` encodes clicks and drags as SGR reports, through the same path.
+
+**Done.** `caretline-cli/src/harness.rs`: `Harness::new(notation, TermKeyboard, w, h)`,
+`press(script)`, a fake clipboard (copies land in it, Ghostty's paste reads it) and clock, a
+log of what each key did, and `check()`, run after every key: the screen is the frame cell for
+cell, and it shows the state's selection (other carets reverse, the primary the cursor,
+selected chars in the selection's colours and no others). `the_oracle_catches_an_invisible_caret`
+proves the check fails on the hand-found bug. Tests: Cmd-A kept by default Ghostty and
+selecting all when unbound, three carets typing, Cmd-Left rewritten to Ctrl-A, copy then
+paste, a selection over lines, legacy Shift-Enter, wide graphemes under carets. The same
+harness is `caretline sim TEXT KEYS`, so a case can be tried from the shell before it becomes
+a test. Mouse reports (`TermMouse`) are left for when a mouse case needs them.
 
 ### Step 5. Fuzz, and a corpus of the bugs seen by hand
 
