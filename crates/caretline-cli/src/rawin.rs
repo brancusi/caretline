@@ -6,7 +6,10 @@
 //! Keys, mouse reports and pastes come out as crossterm `Event`s, so the rest of the runtime
 //! is the same either way. Replies are recognised by `caretline_layers::probe::scan`.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use caretline_layers::probe::{self, Reply, Scan};
@@ -327,6 +330,12 @@ fn mouse(params: &str, fin: u8) -> Option<Event> {
 
 /// Reads stdin's bytes (raw mode is on), waiting at most `timeout`. Returns whether any came.
 pub fn fill(parser: &mut Parser, timeout: Duration) -> bool {
+    fill_unless(parser, timeout, &AtomicBool::new(false))
+}
+
+/// [`fill`], but leaves the bytes unread once `stop` is set: they belong to whoever reads
+/// the terminal next.
+fn fill_unless(parser: &mut Parser, timeout: Duration, stop: &AtomicBool) -> bool {
     let mut fds = libc::pollfd {
         fd: 0,
         events: libc::POLLIN,
@@ -334,7 +343,7 @@ pub fn fill(parser: &mut Parser, timeout: Duration) -> bool {
     };
     let ms = timeout.as_millis().min(i32::MAX as u128) as i32;
     // SAFETY: one valid pollfd for stdin.
-    if unsafe { libc::poll(&mut fds, 1, ms) } <= 0 {
+    if unsafe { libc::poll(&mut fds, 1, ms) } <= 0 || stop.load(Ordering::SeqCst) {
         return false;
     }
     let mut b = [0u8; 8192];
@@ -391,7 +400,9 @@ impl Parser {
 
 /// Runs the reader on its own thread: tokens go to the event loop as `Input::Terminal` and
 /// `Input::Reply`; a size change (polled, since the reader owns stdin) as a resize event.
-pub fn spawn(mut parser: Parser, tx: Sender<Input>) {
+/// It stops reading once `stop` is set, within one poll: join it before anything else reads
+/// the terminal, or it takes the next key.
+pub fn spawn(mut parser: Parser, tx: Sender<Input>, stop: Arc<AtomicBool>) -> JoinHandle<()> {
     std::thread::spawn(move || {
         for e in std::mem::take(&mut parser.early) {
             if tx.send(Input::Terminal(e)).is_err() {
@@ -399,13 +410,13 @@ pub fn spawn(mut parser: Parser, tx: Sender<Input>) {
             }
         }
         let mut size = crossterm::terminal::size().ok();
-        loop {
+        while !stop.load(Ordering::SeqCst) {
             let wait = if parser.pending() {
                 Duration::from_millis(30)
             } else {
                 Duration::from_millis(100)
             };
-            let got = fill(&mut parser, wait);
+            let got = fill_unless(&mut parser, wait, &stop);
             while let Some(t) = parser.next(!got) {
                 let input = match t {
                     Token::Event(e) => Input::Terminal(e),
@@ -425,7 +436,7 @@ pub fn spawn(mut parser: Parser, tx: Sender<Input>) {
                 }
             }
         }
-    });
+    })
 }
 
 #[cfg(test)]

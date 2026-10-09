@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- An editor that quits stops reading the terminal before it returns. Its input thread
+  used to stay behind and take the next key, so the first key of a demo chapter started
+  from the welcome (and the first key back on the welcome) could be lost.
+
 ### Added
 
 - `caretline demo` opens a welcome page, where a new user starts: what caretline is, the five

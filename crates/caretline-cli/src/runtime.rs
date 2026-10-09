@@ -5,6 +5,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -525,19 +527,29 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
         previous_hook(info);
     }));
 
-    // Terminal events join socket requests on one queue: one order, one trace.
+    // Terminal events join socket requests on one queue: one order, one trace. The reader
+    // stops when the editor does, so a key typed next goes to whatever runs next (a demo's
+    // next chapter), not to a reader nobody listens to.
     let term_tx = tx.clone();
-    if raw {
-        crate::rawin::spawn(parser, term_tx);
+    let stop = Arc::new(AtomicBool::new(false));
+    let reader = if raw {
+        crate::rawin::spawn(parser, term_tx, stop.clone())
     } else {
+        let stop = stop.clone();
         std::thread::spawn(move || {
-            while let Ok(ev) = event::read() {
+            while !stop.load(Ordering::SeqCst) {
+                match event::poll(Duration::from_millis(100)) {
+                    Ok(true) if !stop.load(Ordering::SeqCst) => {}
+                    Ok(_) => continue,
+                    Err(_) => break,
+                }
+                let Ok(ev) = event::read() else { break };
                 if term_tx.send(Input::Terminal(ev)).is_err() {
                     break;
                 }
             }
-        });
-    }
+        })
+    };
     drop(tx);
 
     let status = listening
@@ -550,6 +562,8 @@ pub fn run_interactive(state: State, opts: Interactive<'_>) -> Result<(), String
         frame_clock: opts.frame_clock,
     };
     let result = event_loop(&mut hub, rx, status, pacing, &mut stats, opts.demo, gfx);
+    stop.store(true, Ordering::SeqCst);
+    let _ = reader.join();
     restore_terminal(kitty, mouse);
     if opts.stats {
         let secs = started.elapsed().as_secs_f64();
