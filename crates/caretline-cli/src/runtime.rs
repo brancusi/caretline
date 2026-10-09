@@ -400,7 +400,9 @@ pub(crate) fn probe_terminal(parser: &mut crate::rawin::Parser, pixels: bool) ->
         &request,
         Duration::from_millis(200),
     );
-    let kitty = tokens.iter().any(|t| matches!(t, Token::Keyboard(_)));
+    // `CARETLINE_KEYBOARD=legacy` leaves the keyboard protocol off, to see the legacy forms.
+    let kitty = tokens.iter().any(|t| matches!(t, Token::Keyboard(_)))
+        && std::env::var("CARETLINE_KEYBOARD").map_or(true, |v| v != "legacy");
     if let Some(gfx) = skip {
         return (gfx, kitty);
     }

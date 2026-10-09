@@ -12,6 +12,21 @@
 
   Try it: `curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- doctor --keys`
 
+### Fixed
+
+- In a terminal without the kitty keyboard protocol, Shift-Enter, Ctrl-Enter, Shift-Esc and
+  the other keys Ghostty sends in xterm's modifyOtherKeys form (`CSI 27;mods;code ~`) were
+  dropped; they now arrive (Shift-Enter is the outline's soft break). `CARETLINE_KEYBOARD=legacy`
+  leaves the keyboard protocol off, to see those forms.
+
+  Try it: `curl -fsSL https://caretline.app/install.sh | CARETLINE_KEYBOARD=legacy sh -s -- --ref main -- doctor --keys`
+  (press Shift-Enter: `⎋[27;2;13~`)
+- `caretline doctor` misses no key Ghostty keeps: it runs each binding through a model of
+  Ghostty's keyboard (its 1.3.1 defaults, its encoding checked against 180 measured key
+  presses), so it now also lists Cmd-Shift-Up and Cmd-Shift-Down (`jump_to_prompt`).
+
+  Try it: `curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- doctor`
+
 ### Changed
 
 - One input decoder: the editor reads the terminal's bytes with its own parser always, not
