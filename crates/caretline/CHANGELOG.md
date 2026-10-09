@@ -4,6 +4,27 @@
 
 ## 0.4.0 — 2026-10-08
 
+### Demo
+
+- `caretline demo showcase` (also `scripts/demo.sh`): twelve timed, interactive slides
+  introducing the engine through real edits, Unicode, multiple carets, overlays with several
+  highlights, shared views, guarded remote writes, folds and stable marks. Arrow keys or
+  numbers select slides, Space pauses, and the local socket accepts updates and subscriptions.
+  `--headless` runs 13 actual invariant checks; snapshot key scripts advance the same timeline
+  without sleeping. `--seconds` sets the slide duration; `--socket` selects the listener.
+- The showcase now follows the public brand's starlight/void/selection palette, sharp
+  neutral panels and rings without glow. Its typography gallery rasterizes bundled,
+  SIL-OFL-licensed Geist and Geist Mono outlines at three sizes; it does not change the
+  terminal font. Existing ASCII scenes lead into fractional-device-pixel motion and the
+  original warp-logo finale. `End`/`0` jumps to that finale; Space pauses it, and
+  `--reduced-motion` freezes continuous motion. Terminal pastes cannot corrupt the deck;
+  socket edits remain allowed. Continuous frame history is bounded to 512 trace lines.
+- Layer demos share one pixel/cell renderer. Switching transport now queues image cleanup,
+  so a rapid transport-then-cells switch or quit cannot leave forgotten images on screen.
+- The layers demo explains its overlay controls inside the hint and keeps the render mode,
+  quit, scroll, spotlight, mode and transport keys visible at 80 columns, ahead of pixel
+  diagnostics. The Quickstart includes a build-from-checkout overlay walkthrough.
+
 ### Added
 
 - Companion crates `caretline-layers` (placement, tracking, pixel transport and host

@@ -1,0 +1,30 @@
+ CARETLINE  04/12  Overlay choreography  [━━━━━━━━━━]
+                   ┌─────────────────────────────────┐
+LATENCY     12 ms◀╮│ Follow the signal               │
+                  ╰┤ A ring, an arrow and a callout, │
+MEMORY      48 MB  │ placed from a text anchor.      │
+                   └─────────────────────────────────┘
+DELIVERY    ready
+       ▲
+   ┌───┴─────────────────────────────┐
+   │ More than one highlight         │
+   │ Independent layers coexist. The │
+   │ spotlight has holes across      │
+   │ several rows.                   │
+   └─────────────────────────────────┘
+
+Three rings. Two callouts. One multi-row spotlight.
+Layers are anchored to text, not fixed screen coordinates.
+Scroll with Up / Down; resize to see placement adapt.
+
+
+
+
+
+
+
+
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause · r replay · a auto · cells

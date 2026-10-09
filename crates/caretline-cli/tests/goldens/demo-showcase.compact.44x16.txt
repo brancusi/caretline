@@ -1,0 +1,16 @@
+ CARETLINE  04/12  Overlay choreography  [━━
+ Follow the signal · A ring, an arrow and a
+LATENCY     12 ms
+ More than one highlight · Independent laye
+MEMORY      48 MB
+
+DELIVERY    ready
+
+
+
+
+
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause ·

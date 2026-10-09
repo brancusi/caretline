@@ -335,7 +335,32 @@ impl Scene for Warp {
         for (k, c) in title.chars().enumerate() {
             g.put(x0 + k as i64, (h / 2) as i64, c, true);
         }
+        // The public wordmark keeps its caret one cell after the selected band.
+        if (t / 0.53) as u64 % 2 == 0 {
+            g.put(
+                x0 + title.chars().count() as i64 + 1,
+                (h / 2) as i64,
+                '▏',
+                true,
+            );
+        }
         g
+    }
+}
+
+/// A reusable instance of the existing ASCII renderer; presentation code doesn't fork it.
+pub(super) struct Animation(Box<dyn Scene>);
+
+impl Animation {
+    pub fn new(name: &str) -> Option<Self> {
+        scene(name).map(Self)
+    }
+    pub fn frame(&mut self, t: f64, w: usize, h: usize) -> (String, Vec<(usize, usize)>) {
+        let (text, ranges) = self.0.frame(t, w, h).parts();
+        (
+            text,
+            ranges.into_iter().map(|[from, to]| (from, to)).collect(),
+        )
     }
 }
 

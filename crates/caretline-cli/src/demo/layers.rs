@@ -6,17 +6,22 @@
 //! Keys: ↑ ↓ PgUp PgDn scroll (the hint follows its word), s spotlight, p pixels or cells,
 //! t the pixel transport (inline or temporary files), q quits. The text is read-only here.
 
+#[cfg(test)]
 use std::time::Instant;
 
 use caretline::{Frame, Key, KeyCode, Msg};
-use caretline_layers::kitty::{KittyState, Options, TempFiles, Transport};
-use caretline_layers::{
-    Anchor, Content, FrameResolver, Grid, HINT, Layer, LayerOp, Layers, Limits, Renderers,
-    Spotlight, apply, plan,
-};
+use caretline_layers::kitty::Transport;
+#[cfg(test)]
+use caretline_layers::kitty::{KittyState, Options};
+use caretline_layers::{Anchor, Content, Layer, LayerOp, Layers, Limits, Spotlight, apply};
+#[cfg(test)]
+use caretline_layers::{FrameResolver, Grid, HINT, Renderers, plan};
 
+use super::canvas::Canvas;
 use crate::hub::Hub;
-use crate::layers::{self, HintRenderer, Rasters, Surface};
+use crate::layers;
+#[cfg(test)]
+use crate::layers::{HintRenderer, Rasters, Surface};
 use crate::runtime::{Decor, Demo, Gfx, KeyAction, dispatch_demo};
 
 /// The word the hint points at, in the tour's "Move" section.
@@ -24,46 +29,20 @@ const SECTION: &str = "## 2 · Move";
 const WORD: &str = "word";
 
 pub(crate) const TITLE: &str = "Jump by word";
-pub(crate) const TEXT: &str = "⌥← and ⌥→ move the caret one word at a time. This box, its arrow, the ring and the spotlight are layers: placed by caretline-layers, drawn by the CLI.";
-
-/// What one pixel frame cost, for the status bar.
-#[derive(Default, Clone, Copy)]
-struct Cost {
-    bytes: usize,
-    sent: usize,
-    micros: u128,
-}
+pub(crate) const TEXT: &str = "This hint, arrow and ring follow the word as you scroll. Try s for the spotlight, p for pixels or cells, and t for pixel transport. The text is read-only; q quits.";
 
 pub(crate) struct LayersDemo {
     spotlight: bool,
-    /// The person's choice; pixels show only when the probe allows them.
-    pixels: bool,
-    kitty: KittyState,
-    rasters: Rasters,
+    canvas: Canvas,
     generation: u64,
-    cost: Cost,
-}
-
-/// `t=t` files in the system temp dir (`$TMPDIR` on macOS, as Ghostty requires).
-struct TmpFiles;
-
-impl TempFiles for TmpFiles {
-    fn write(&mut self, name: &str, data: &[u8]) -> Option<String> {
-        let path = std::env::temp_dir().join(name);
-        std::fs::write(&path, data).ok()?;
-        Some(path.to_string_lossy().into_owned())
-    }
 }
 
 impl LayersDemo {
     pub(crate) fn new() -> LayersDemo {
         LayersDemo {
             spotlight: true,
-            pixels: true,
-            kitty: KittyState::new(Options::default()),
-            rasters: Rasters::default(),
+            canvas: Canvas::new(),
             generation: 0,
-            cost: Cost::default(),
         }
     }
 
@@ -101,39 +80,9 @@ impl LayersDemo {
     /// Draws the layers over `frame`, in pixels when `gfx` allows and the person wants them.
     pub(crate) fn paint(&mut self, text: &str, frame: &mut Frame, gfx: &Gfx) -> Decor {
         let layers = self.layers(text);
-        let grid = Grid::from_frame(frame);
-        let renderers = Renderers::new().register(HINT, HintRenderer);
-        let p = plan(&layers, &FrameResolver::new(frame), &grid, &renderers);
-        let px = gfx.cell_px.filter(|_| self.pixels);
-        let surface = if px.is_some() {
-            Surface::TextOnly
-        } else {
-            Surface::Cells
-        };
-        let dim = layers::draw(frame, &p, &layers, surface);
-        let bytes = match px {
-            Some(cell) => {
-                let t = Instant::now();
-                let made = self.rasters.made;
-                let pics = layers::pictures(&p, cell, grid.area, &self.kitty, &mut self.rasters);
-                let file = self.kitty.options().transport == Transport::File;
-                let mut files = TmpFiles;
-                let out =
-                    self.kitty
-                        .frame(&p, &pics, cell, if file { Some(&mut files) } else { None });
-                if !out.bytes.is_empty() {
-                    self.cost = Cost {
-                        bytes: out.bytes.len(),
-                        sent: (self.rasters.made - made) as usize,
-                        micros: t.elapsed().as_micros(),
-                    };
-                }
-                out.bytes
-            }
-            None => self.kitty.clear(),
-        };
+        let decor = self.canvas.paint(&layers, frame, gfx, None);
         self.status(frame, gfx);
-        Decor { dim, bytes }
+        decor
     }
 
     /// The demo's own status line, over the editor's.
@@ -141,41 +90,44 @@ impl LayersDemo {
         let Some(y) = frame.height.checked_sub(1) else {
             return;
         };
-        let mode = match (gfx.cell_px, self.pixels) {
+        let (mode, detail) = match (gfx.cell_px, self.canvas.pixels) {
             (Some(c), true) => {
-                let via = if self.kitty.options().transport == Transport::File {
+                let via = if self.canvas.kitty.options().transport == Transport::File {
                     "t=t"
                 } else {
                     "t=d"
                 };
-                let last = if self.cost.bytes > 0 {
+                let last = if self.canvas.cost.bytes > 0 {
                     format!(
                         " · last {} B, {} raster, {:.1} ms",
-                        self.cost.bytes,
-                        self.cost.sent,
-                        self.cost.micros as f64 / 1e3
+                        self.canvas.cost.bytes,
+                        self.canvas.cost.sent,
+                        self.canvas.cost.micros as f64 / 1e3
                     )
                 } else {
                     String::new()
                 };
-                format!("pixels {}×{} {via}{last} · p cells", c.w, c.h)
+                ("pixels", format!(" · {}×{} {via}{last}", c.w, c.h))
             }
-            (Some(_), false) => "cells · p pixels".into(),
-            (None, _) => format!(
-                "cells ({})",
-                if gfx.why.is_empty() {
-                    "no pixels"
-                } else {
-                    &gfx.why
-                }
+            (Some(_), false) => ("cells", String::new()),
+            (None, _) => (
+                "cells",
+                format!(
+                    " · {}",
+                    if gfx.why.is_empty() {
+                        "no pixels"
+                    } else {
+                        &gfx.why
+                    }
+                ),
             ),
         };
-        let spot = if self.spotlight {
-            "s spotlight off"
-        } else {
-            "s spotlight"
-        };
-        let text = format!(" layers · {mode} · ↑↓ scroll · {spot} · q quit");
+        // Keep the mode and controls ahead of diagnostics: at 80 columns, pixel costs
+        // used to push even the quit key off the screen.
+        let spot = if self.spotlight { "on" } else { "off" };
+        let text = format!(
+            " layers · {mode} · q quit · ↑↓ scroll · s spot:{spot} · p mode · t transport{detail}"
+        );
         layers::status(frame, y, &text);
     }
 }
@@ -198,20 +150,11 @@ impl Demo for LayersDemo {
                 self.bump()
             }
             KeyCode::Char('p') if plain => {
-                self.pixels = !self.pixels;
+                self.canvas.pixels = !self.canvas.pixels;
                 self.bump()
             }
             KeyCode::Char('t') if plain => {
-                let transport = match self.kitty.options().transport {
-                    Transport::Direct => Transport::File,
-                    Transport::File => Transport::Direct,
-                };
-                self.kitty.set_options(Options {
-                    transport,
-                    ..self.kitty.options()
-                });
-                // Send everything again the new way.
-                self.kitty.reset();
+                self.canvas.toggle_transport();
                 self.bump()
             }
             KeyCode::Char('q') | KeyCode::Esc if plain => KeyAction::Quit,
@@ -236,7 +179,7 @@ impl Demo for LayersDemo {
     }
 
     fn hide(&mut self) -> Vec<u8> {
-        self.kitty.clear()
+        self.canvas.hide()
     }
 }
 
@@ -303,7 +246,7 @@ mod tests {
         assert!(d.dim.is_empty(), "the veil dims, not the cells");
         // The box's cells hold its words and no border.
         let t = f.to_text();
-        assert!(t.contains("Jump by word") && !t.contains('╭'), "{t}");
+        assert!(t.contains("Jump by word") && !t.contains('┌'), "{t}");
         // Nothing changed: nothing sent.
         assert!(frame(&mut demo, &hub, &gfx).1.bytes.is_empty());
         // A scroll: everything moves together, re-placed and re-cropped, no pixels.
@@ -324,7 +267,7 @@ mod tests {
         press(&mut demo, &mut hub, KeyCode::Char('p'));
         let (f, d) = frame(&mut demo, &hub, &gfx);
         assert_eq!(text(&d.bytes).matches("a=d,d=I").count(), 3);
-        assert!(f.to_text().contains('╭'));
+        assert!(f.to_text().contains('┌'));
         assert!(demo.hide().is_empty());
     }
 
@@ -358,6 +301,46 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn controls_stay_visible_in_an_eighty_column_pixel_frame() {
+        let gfx = pixels(CellPx::new(8, 16));
+        let mut demo = LayersDemo::new();
+        let mut hub = hub(80, 24);
+        let (f, _) = frame(&mut demo, &hub, &gfx);
+        let status = f.to_text().lines().last().unwrap().to_owned();
+        for label in [
+            "pixels",
+            "q quit",
+            "↑↓ scroll",
+            "s spot:on",
+            "p mode",
+            "t transport",
+        ] {
+            assert!(status.contains(label), "{label} missing: {status}");
+        }
+
+        press(&mut demo, &mut hub, KeyCode::Char('s'));
+        assert!(
+            frame(&mut demo, &hub, &gfx)
+                .0
+                .to_text()
+                .contains("spot:off")
+        );
+        press(&mut demo, &mut hub, KeyCode::Char('p'));
+        let (f, d) = frame(&mut demo, &hub, &gfx);
+        assert!(
+            f.to_text()
+                .lines()
+                .last()
+                .unwrap()
+                .contains("layers · cells")
+        );
+        assert!(
+            text(&d.bytes).contains("a=d,d=I"),
+            "pixel images are removed"
+        );
     }
 
     #[test]
@@ -535,7 +518,7 @@ mod tests {
             t.elapsed().as_secs_f64() * 1e3
         );
         let mut fresh = LayersDemo::new();
-        fresh.kitty.set_options(Options {
+        fresh.canvas.kitty.set_options(Options {
             transport: Transport::File,
             ..Options::default()
         });

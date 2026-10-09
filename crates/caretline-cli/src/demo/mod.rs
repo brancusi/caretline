@@ -6,11 +6,14 @@
 //! - `scenes`: ASCII animations pushed into the editor with the protocol's `frame` op.
 //! - `agent`: a scripted agent co-editing over the editor's socket, in its own view.
 //! - `layers`: a hint, an arrow and a spotlight over the tour, in pixels (Ghostty) or cells.
+//! - `showcase`: a timed deck of real edits, shared views, overlays and checked invariants.
 
 mod agent;
+mod canvas;
 mod layers;
 mod replay;
 mod scenes;
+mod showcase;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -33,11 +36,11 @@ const AGENT_DOC: &str = include_str!("agent.md");
 #[command(
     name = "caretline demo",
     about = "Built-in demos: no files needed (they write theirs to a temporary directory)",
-    after_help = "Demos:\n  tour     a guided tour of the editor, learned by doing (the default)\n  scenes   ASCII animations (warp, donut, cube, tunnel, plasma, fire) running in the editor\n  agent    co-editing: a scripted agent types beside you over the editor's socket\n  layers   a hint, an arrow and a spotlight over the tour: pixels in Ghostty, cells elsewhere\n\nExamples:\n  caretline demo\n  caretline demo scenes\n  caretline demo agent\n  caretline demo layers\n  caretline demo --snapshot 80x24          the tour's first frame, headless\n  caretline demo scenes --bench            measure frame rates against a live editor"
+    after_help = "Demos:\n  tour     a guided tour of the editor, learned by doing (the default)\n  scenes   ASCII animations (warp, donut, cube, tunnel, plasma, fire) running in the editor\n  agent    co-editing: a scripted agent types beside you over the editor's socket\n  layers   a hint, an arrow and a spotlight over the tour: pixels in Ghostty, cells elsewhere\n  showcase timed, interactive slides: real edits, shared views, overlays and invariant checks\n\nExamples:\n  caretline demo\n  caretline demo scenes\n  caretline demo agent\n  caretline demo layers\n  caretline demo showcase               timed slides, real edits and complex overlays\n  caretline demo --snapshot 80x24          the tour's first frame, headless\n  caretline demo scenes --bench            measure frame rates against a live editor"
 )]
 pub struct DemoArgs {
     /// Which demo.
-    #[arg(default_value = "tour", value_parser = ["tour", "scenes", "agent", "layers"])]
+    #[arg(default_value = "tour", value_parser = ["tour", "scenes", "agent", "layers", "showcase"])]
     demo: String,
 
     /// Print the demo's first frame at WIDTHxHEIGHT and exit (headless).
@@ -61,8 +64,16 @@ pub struct DemoArgs {
     #[arg(long)]
     no_mouse: bool,
 
-    /// agent: run the scripted agent against a headless editor over a real socket, with a
-    /// simulated person typing between its reads and writes, and print a JSON report.
+    /// showcase: print the bundled font copyright notices and SIL Open Font Licenses.
+    #[arg(long)]
+    font_licenses: bool,
+
+    /// showcase: freeze continuous graphics/ASCII motion; timed slides still advance.
+    #[arg(long)]
+    reduced_motion: bool,
+
+    /// agent: run against a headless editor over a socket. showcase: run every timed
+    /// slide without a terminal and report the real invariant checks as JSON.
     #[arg(long)]
     headless: bool,
 
@@ -74,7 +85,7 @@ pub struct DemoArgs {
     #[arg(long, value_name = "FPS")]
     fps: Option<String>,
 
-    /// scenes: seconds per scene before the next (with --bench, per scene and rate).
+    /// Seconds per scene or showcase slide (showcase defaults to 14, range 2..300).
     #[arg(long, value_name = "S")]
     seconds: Option<f64>,
 
@@ -83,7 +94,7 @@ pub struct DemoArgs {
     #[arg(long)]
     bench: bool,
 
-    /// scenes --bench: the editor's socket.
+    /// scenes --bench: the editor's socket. showcase: the listening socket.
     #[arg(long, value_name = "PATH")]
     socket: Option<PathBuf>,
 
@@ -105,6 +116,7 @@ pub fn main(argv: &[String]) -> Result<(), String> {
         "agent" if args.headless => agent::headless(),
         "agent" => editor_demo(&args, Kind::Agent),
         "layers" => layers_demo(&args),
+        "showcase" => showcase::main(&args),
         _ => editor_demo(&args, Kind::Tour),
     }
 }

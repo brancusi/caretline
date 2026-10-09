@@ -186,7 +186,7 @@ fn no_color() -> bool {
 /// The style of a cell's role: built-in roles, and the layer roles the CLI's renderers use
 /// (crate::layers). Other named roles draw plain.
 fn style_in(frame: &Frame, role: Role) -> Style {
-    use crate::layers::{ACCENT, INK, PANEL};
+    use crate::layers::{ACCENT, DIM, INK, PANEL, RULE, VOID};
     let Role::Named(_) = role else {
         return style(role);
     };
@@ -195,25 +195,28 @@ fn style_in(frame: &Frame, role: Role) -> Style {
     match frame.role_name(role) {
         "layer.callout" if !plain => Style::default().fg(rgb(INK)).bg(rgb(PANEL)),
         "layer.border" | "layer.arrow" if plain => Style::default().add_modifier(Modifier::BOLD),
-        "layer.border" => Style::default().fg(rgb(ACCENT)).bg(rgb(PANEL)),
+        "brand.selection" if plain => Style::default().add_modifier(Modifier::REVERSED),
+        "brand.chrome" if plain => style(Role::Status),
+        "brand.text" if !plain => Style::default().fg(rgb(INK)).bg(rgb(VOID)),
+        "brand.selection" if !plain => Style::default().fg(rgb(VOID)).bg(rgb(ACCENT)),
+        "brand.chrome" if !plain => Style::default().fg(rgb(DIM)).bg(rgb(PANEL)),
+        "layer.border" => Style::default().fg(rgb(RULE)).bg(rgb(PANEL)),
         "layer.arrow" => Style::default()
             .fg(rgb(ACCENT))
             .add_modifier(Modifier::BOLD),
         "layer.title" if plain => Style::default().add_modifier(Modifier::BOLD),
         "layer.title" => Style::default()
-            .fg(rgb(ACCENT))
+            .fg(rgb(INK))
             .bg(rgb(PANEL))
             .add_modifier(Modifier::BOLD),
         "layer.title.px" if plain => Style::default().add_modifier(Modifier::BOLD),
-        "layer.title.px" => Style::default()
-            .fg(rgb(ACCENT))
-            .add_modifier(Modifier::BOLD),
+        "layer.title.px" => Style::default().fg(rgb(INK)).add_modifier(Modifier::BOLD),
         "layer.ring" if plain => Style::default().add_modifier(Modifier::UNDERLINED),
-        "layer.ring" => Style::default().bg(Color::Rgb(0x2c, 0x3a, 0x5c)),
+        "layer.ring" => Style::default()
+            .fg(rgb(INK))
+            .bg(Color::Rgb(0x1c, 0x1b, 0x2c)),
         "layer.chip" if plain => Style::default().add_modifier(Modifier::REVERSED),
-        "layer.chip" => Style::default()
-            .fg(rgb(ACCENT))
-            .bg(Color::Rgb(0x33, 0x40, 0x5c)),
+        "layer.chip" => Style::default().fg(rgb(INK)).bg(rgb(PANEL)),
         _ => Style::default(),
     }
 }
@@ -282,6 +285,11 @@ pub enum KeyAction {
 pub trait Demo {
     /// A terminal key, before the keymap.
     fn key(&mut self, _hub: &mut Hub, _key: &Key) -> KeyAction {
+        KeyAction::Pass
+    }
+    /// A terminal paste, before the editor applies it. Read-only presentations can
+    /// consume it without preventing scripted or socket edits to the engine.
+    fn paste(&mut self, _hub: &mut Hub, _text: &str) -> KeyAction {
         KeyAction::Pass
     }
     /// Runs after every batch of input (and once at the start).
@@ -879,6 +887,16 @@ fn event_loop(
                 if demo.is_some() {
                     fit_views(hub, demo, *term, quit);
                     return;
+                }
+            }
+            if let (Some(d), Event::Paste(text)) = (demo.as_mut(), &ev) {
+                match d.paste(hub, text) {
+                    KeyAction::Pass => {}
+                    KeyAction::Consumed => return,
+                    KeyAction::Quit => {
+                        *quit = true;
+                        return;
+                    }
                 }
             }
             if let (Some(d), Event::Key(k)) = (demo.as_mut(), &ev)

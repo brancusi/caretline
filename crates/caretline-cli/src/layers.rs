@@ -1,11 +1,11 @@
 //! The CLI's renderers for `caretline-layers` (the CLI is one host; another draws its own
-//! way). The `hint` kind: a rounded box with a title and wrapped text, an arrow along the
+//! way). The `hint` kind: a crisp box with a title and wrapped text, an arrow along the
 //! route, a ring round the anchor and a spotlight.
 //!
 //! - **Cells** (every terminal, snapshots, goldens): box drawing, `▲▼◀▶` arrow heads, the
 //!   anchor's cells in the ring role, and a dim mask outside the spotlight's holes.
 //! - **Pixels** (Ghostty, probed): the box's cells hold only its words; a panel image with a
-//!   soft shadow goes under them (z below text), and an anti-aliased arrow, ring and a
+//!   crisp panel goes under them (z below text), and an anti-aliased arrow, ring and a
 //!   translucent veil with feathered holes over the text. Rasterised here with tiny-skia;
 //!   `caretline_layers::kitty` turns the images into terminal bytes.
 
@@ -27,11 +27,16 @@ use unicode_segmentation::UnicodeSegmentation;
 pub const TEXT_COLS: usize = 44;
 
 /// Raster version: goes into every shape key, so a change to the drawing re-sends.
-const RASTER: &[u8] = b"cli-raster-1";
+const RASTER: &[u8] = b"cli-brand-raster-2";
 
-pub const ACCENT: (u8, u8, u8) = (138, 164, 255);
-pub const PANEL: (u8, u8, u8) = (31, 36, 48);
-pub const INK: (u8, u8, u8) = (216, 220, 230);
+// The public brand's dark tokens: site/src/styles/tokens.css and pages/brand.astro.
+// Neutral hairlines and starlight; the one colour is reserved for the current focus.
+pub const ACCENT: (u8, u8, u8) = (163, 150, 255);
+pub const VOID: (u8, u8, u8) = (8, 9, 13);
+pub const PANEL: (u8, u8, u8) = (14, 16, 23);
+pub const RULE: (u8, u8, u8) = (54, 59, 78);
+pub const DIM: (u8, u8, u8) = (125, 131, 150);
+pub const INK: (u8, u8, u8) = (220, 223, 232);
 
 /// What the renderer draws in cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -333,10 +338,10 @@ fn draw_box(frame: &mut Frame, l: &Planned, r: Rect, data: &Value, surface: Surf
             put(frame, r.x, y, "│", border);
             put(frame, x1, y, "│", border);
         }
-        put(frame, r.x, r.y, "╭", border);
-        put(frame, x1, r.y, "╮", border);
-        put(frame, r.x, y1, "╰", border);
-        put(frame, x1, y1, "╯", border);
+        put(frame, r.x, r.y, "┌", border);
+        put(frame, x1, r.y, "┐", border);
+        put(frame, r.x, y1, "└", border);
+        put(frame, x1, y1, "┘", border);
         if let Some(rt) = &l.route {
             let j = match rt.attach.edge {
                 Edge::Top => "┴",
@@ -424,7 +429,7 @@ pub fn straight(pm: &Pixmap) -> Image {
 }
 
 /// The callout panel for a box of `w`×`h` cells, in an image one cell wider on each side and
-/// one row taller (for the shadow): a soft shadow, a rounded fill and a 1 px rim.
+/// one row taller: a neutral fill, nearly square corners and a hairline rim. No shadow.
 pub fn raster_panel(w: u16, h: u16, cell: CellPx) -> Pixmap {
     let (cw, ch) = (cell.w as f32, cell.h as f32);
     let (iw, ih) = (
@@ -434,25 +439,15 @@ pub fn raster_panel(w: u16, h: u16, cell: CellPx) -> Pixmap {
     let mut pm = Pixmap::new(iw.max(1), ih.max(1)).expect("a panel size");
     let (x, y) = (cw + cw * 0.15, ch * 0.12);
     let (pw, ph) = (w as f32 * cw - cw * 0.3, h as f32 * ch - ch * 0.24);
-    let rad = (ch * 0.42).min(pw / 2.0);
-    let (blur, off) = (ch * 0.45, ch * 0.18);
-    let rect = (x, y, x + pw, y + ph);
-    let data = pm.data_mut();
-    for py in 0..ih {
-        for px in 0..iw {
-            let d = sd_rrect(px as f32 + 0.5, py as f32 + 0.5 - off, rect, rad);
-            let a = 0.5 * (1.0 - smoothstep(-blur * 0.5, blur, d));
-            data[((py * iw + px) * 4 + 3) as usize] = (a * 255.0) as u8;
-        }
-    }
+    let rad = (cw * 0.12).max(1.0).min(pw / 2.0);
     let id = Transform::identity();
     if let Some(p) = rrect(x, y, pw, ph, rad) {
-        pm.fill_path(&p, &paint(PANEL, 0.97), FillRule::Winding, id, None);
+        pm.fill_path(&p, &paint(PANEL, 1.0), FillRule::Winding, id, None);
     }
     if let Some(p) = rrect(x + 0.5, y + 0.5, pw - 1.0, ph - 1.0, rad - 0.5) {
         pm.stroke_path(
             &p,
-            &paint(ACCENT, 0.7),
+            &paint(RULE, 1.0),
             &stroke(1.0_f32.max(cw / 12.0)),
             id,
             None,
@@ -535,8 +530,7 @@ pub fn raster_arrow(
     pm
 }
 
-/// A ring round each rect (cells, relative to the image, which is one cell larger on every
-/// side): a faint fill, a glow and an anti-aliased outline.
+/// A ring round each rect: a faint selection wash and a crisp anti-aliased outline.
 pub fn raster_ring(cols: u16, rows: u16, rects: &[Rect], cell: CellPx) -> Pixmap {
     let (cw, ch) = (cell.w as f32, cell.h as f32);
     let mut pm =
@@ -546,19 +540,10 @@ pub fn raster_ring(cols: u16, rows: u16, rects: &[Rect], cell: CellPx) -> Pixmap
     for r in rects {
         let (x, y) = (r.x as f32 * cw - cw * 0.35, r.y as f32 * ch + ch * 0.04);
         let (pw, ph) = (r.w as f32 * cw + cw * 0.7, ch * 0.92);
-        let Some(path) = rrect(x, y, pw, ph, ch * 0.25) else {
+        let Some(path) = rrect(x, y, pw, ph, cw * 0.12) else {
             continue;
         };
-        pm.fill_path(&path, &paint(ACCENT, 0.10), FillRule::Winding, id, None);
-        for k in (1..=3).rev() {
-            pm.stroke_path(
-                &path,
-                &paint(ACCENT, 0.08),
-                &stroke(w + k as f32 * w * 1.6),
-                id,
-                None,
-            );
-        }
+        pm.fill_path(&path, &paint(ACCENT, 0.13), FillRule::Winding, id, None);
         pm.stroke_path(&path, &paint(ACCENT, 1.0), &stroke(w), id, None);
     }
     pm
@@ -807,6 +792,30 @@ mod tests {
             .max()
             .unwrap_or(0);
         assert!(worst <= 2, "{name}: a channel differs by {worst}");
+    }
+
+    #[test]
+    fn palette_matches_the_public_brand_tokens() {
+        // The published CLI source package has no site checkout. In the workspace this
+        // check prevents our host-side palette from silently drifting from the brand.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../site/src/styles/tokens.css");
+        let Ok(tokens) = std::fs::read_to_string(path) else {
+            return;
+        };
+        for (name, (r, g, b)) in [
+            ("--void", VOID),
+            ("--panel", PANEL),
+            ("--rule-strong", RULE),
+            ("--dim", DIM),
+            ("--ink", INK),
+            ("--lit", ACCENT),
+        ] {
+            assert!(
+                tokens.contains(&format!("{name}: #{r:02x}{g:02x}{b:02x}")),
+                "{name} drifted from the site"
+            );
+        }
     }
 
     #[test]

@@ -771,9 +771,12 @@ draws the same pixels.
 `caretline demo layers` is a working host: its renderer is
 [`src/layers.rs`](../crates/caretline-cli/src/layers.rs) (tiny-skia rasters for a panel, arrow,
 ring and veil) and its loop [`src/demo/layers.rs`](../crates/caretline-cli/src/demo/layers.rs).
-The status bar shows each pixel frame's bytes, rasters and time; in Ghostty 1.3.1 the first
-frame is 17.2 KB with `t=d` (1.1 KB with `t=t`), a scroll step about 300 bytes and an unchanged
-frame nothing.
+The CLI follows the public site's brand tokens: starlight on void, neutral hairlines,
+sharp panels without shadows, and one selection colour for focus. The status bar shows
+current pixel-frame bytes, rasters and time as room allows. An unchanged frame sends nothing;
+a scroll re-places cached images instead of re-sending them. `caretline demo showcase` also
+uses this host renderer for its overlays and demonstrates licensed Geist typography,
+fractional-pixel motion and live ASCII frames (see the [Quickstart](quickstart.md)).
 
 ## Not built yet
 

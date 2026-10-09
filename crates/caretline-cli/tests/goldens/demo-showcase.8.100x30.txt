@@ -1,0 +1,30 @@
+ CARETLINE  08/12  Save it. Replay it. Prove it.  [━━━━━━━━━━]
+
+Serializable editor state, including undo history. ┌──────────────────────────────────┐
+                                                   │ Not just the text                │
+Evidence: state + messages = reproducible          │ Serialize and load the real      │
+                                                   │ editor state. Compare the entire │
+State round-trip: VERIFIED, undo history included◀─┤ value, history included.         │
+Trace replay: VERIFIED, identical editor state     └──────────────────────────────────┘
+                     ▲
+   ┌─────────────────┴──────────────┐
+   │ Check the promise              │
+   │ Replay the real message trace, │
+   │ then compare states            │
+   │ byte-for-byte. These are live  │
+   │ checks.                        │
+   └────────────────────────────────┘
+Next: caretline notes.md --listen
+Embed: cargo add caretline
+Control: caretline send --latest state.get
+
+2/2 live invariants verified. Home restarts; Left revisits.
+
+
+
+
+
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause · r replay · a auto · cells

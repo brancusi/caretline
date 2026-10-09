@@ -11,6 +11,6 @@
       The caret is already at the end of
       this paragraph, so just start typing,
       and keep going past the edge of the
- Jump by word · ⌥← and ⌥→ move the caret on
+ Jump by word · This hint, arrow and ring f
                                      ↓ here
- layers · cells (snapshot) · ↑↓ scroll · s s
+ layers · cells · q quit · ↑↓ scroll · s spo

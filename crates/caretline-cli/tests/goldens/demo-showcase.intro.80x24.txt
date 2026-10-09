@@ -1,0 +1,24 @@
+ CARETLINE  01/12  Meet Caretline  [··········]
+                                           ┌───────────────────────────────┐
+The editor is a value.◀╮                   │ An editor you can drive       │
+                       ╰───────────────────┤ Embed it. Send messages. Save │
+Text. Carets. History. Marks. Folds. Views.│ its state. Replay exactly.    │
+                                           └───────────────────────────────┘
+
+
+
+
+
+
+
+
+A pure engine, not a terminal widget.
+One state + messages = a replayable editor.
+
+This is a real editor frame, not a slideshow image.
+Everything runs locally. No agent or network service needed.
+
+
+
+
+ AUTO · q quit · ←→ slides · Space pause · r replay · a auto · cells

@@ -33,7 +33,7 @@ fn scratch(name: &str) -> Scratch {
 #[test]
 fn demo_help_lists_the_demos() {
     let help = run(&["demo", "--help"]);
-    for d in ["tour", "scenes", "agent", "layers"] {
+    for d in ["tour", "scenes", "agent", "layers", "showcase"] {
         assert!(help.contains(&format!("  {d} ")), "{d} missing:\n{help}");
     }
 }
@@ -180,6 +180,205 @@ fn the_agent_demo_types_beside_the_person() {
     );
     pty.send(b"\x11\x11");
     assert!(pty.exited(), "quit");
+}
+
+#[test]
+fn the_layers_demo_runs_live_with_visible_controls_and_help() {
+    let tmp = scratch("layers");
+    let mut c = bin();
+    c.args(["demo", "layers"])
+        .env("TMPDIR", tmp.as_ref())
+        .env("CARETLINE_LAYERS", "cells");
+    let mut pty = Pty::spawn(c, 24, 80);
+    let first = pty.wait("the hint and controls", |s| {
+        s.contains("Jump by word") && s.contains("t transport")
+    });
+    assert!(
+        first.contains("q quit") && first.contains("p mode"),
+        "{first}"
+    );
+    assert!(first.contains("spot:on"), "{first}");
+
+    pty.send(b"s");
+    pty.wait("spotlight off", |s| s.contains("spot:off"));
+    pty.send(b"\x1bOP"); // F1: the keys overlay covers the layers.
+    pty.wait("keys overlay", |s| {
+        s.contains("Keys") && s.contains("closes")
+    });
+    pty.send(b"\x1b"); // Esc closes help, not the demo.
+    pty.wait("the layers restored", |s| {
+        s.contains("Jump by word") && s.contains("spot:off") && !s.contains("closes")
+    });
+    pty.send(b"\x1b[B\x1b[B"); // Scroll: the hint follows its anchor.
+    pty.wait("the view scrolled", |s| {
+        !s.contains("Welcome to caretline") && s.contains("Jump by word")
+    });
+    pty.send(b"s");
+    pty.wait("spotlight back on", |s| s.contains("spot:on"));
+    pty.send(b"q");
+    assert!(pty.exited(), "q quits");
+}
+
+#[test]
+fn the_showcase_draws_every_slide_and_checks_its_real_state() {
+    golden(
+        "demo-showcase.intro.80x24.txt",
+        &run(&["demo", "showcase", "--snapshot", "80x24"]),
+    );
+    for slide in 1..=12 {
+        golden(
+            &format!("demo-showcase.{slide}.100x30.txt"),
+            &run(&[
+                "demo",
+                "showcase",
+                "--snapshot",
+                "100x30",
+                "--keys",
+                &format!("1{}<wait:14000>", "<right>".repeat(slide - 1)),
+            ]),
+        );
+    }
+    golden(
+        "demo-showcase.compact.44x16.txt",
+        &run(&[
+            "demo",
+            "showcase",
+            "--snapshot",
+            "44x16",
+            "--keys",
+            "4<wait:7000>",
+        ]),
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&run(&["demo", "showcase", "--headless"])).unwrap();
+    assert_eq!(report["ok"], true, "{report}");
+    assert_eq!(report["slides"], 12);
+    assert_eq!(report["checks"].as_object().unwrap().len(), 13);
+    assert!(
+        report["checks"]
+            .as_object()
+            .unwrap()
+            .values()
+            .all(|v| *v == true)
+    );
+    for seconds in ["0", "nan", "301"] {
+        assert!(
+            !bin()
+                .args(["demo", "showcase", "--seconds", seconds, "--headless"])
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+    }
+}
+
+#[test]
+fn the_showcase_advances_itself_and_holds_the_verified_final_slide() {
+    let tmp = scratch("showcase-auto");
+    let socket = tmp.join("show.sock");
+    let mut c = bin();
+    c.args([
+        "demo",
+        "showcase",
+        "--seconds",
+        "2",
+        "--socket",
+        socket.to_str().unwrap(),
+    ])
+    .env("TMPDIR", tmp.as_ref())
+    .env("CARETLINE_LAYERS", "cells");
+    let mut pty = Pty::spawn(c, 30, 100);
+    pty.wait("the complete timed presentation", |s| {
+        s.contains("DONE") && s.contains("13/13 checks verified") && s.contains("C A R E T L I N E")
+    });
+    pty.send(b"q");
+    assert!(pty.exited());
+}
+
+#[test]
+fn the_showcase_navigates_pauses_and_accepts_real_socket_updates() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+
+    let tmp = scratch("showcase");
+    let socket = tmp.join("show.sock");
+    let mut c = bin();
+    c.args([
+        "demo",
+        "showcase",
+        "--seconds",
+        "2",
+        "--socket",
+        socket.to_str().unwrap(),
+    ])
+    .env("TMPDIR", tmp.as_ref())
+    .env("CARETLINE_LAYERS", "cells");
+    let mut pty = Pty::spawn(c, 30, 100);
+    pty.wait("the intro", |s| {
+        s.contains("Meet Caretline") && s.contains("AUTO")
+    });
+    pty.send(b" ");
+    pty.wait("paused intro", |s| s.contains("PAUSED"));
+    pty.send(b"\x1b[200~\nCORRUPTED SLIDE\n\x1b[201~a");
+    let intact = pty.wait("paste consumed before manual playback resumes", |s| {
+        s.contains("MANUAL")
+    });
+    assert!(!intact.contains("CORRUPTED SLIDE"), "{intact}");
+    let mut stream = UnixStream::connect(&socket).unwrap();
+    stream.set_read_timeout(Some(common::patience(5))).unwrap();
+    stream.write_all(b"{\"op\":\"subscribe\"}\n").unwrap();
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    assert!(line.contains("subscribed"), "{line}");
+
+    pty.send(b"\x1b[C"); // Right: slide 2, manual transitions, live animation.
+    pty.wait("the message stream", |s| {
+        s.contains("Live message stream") && s.contains("Hello")
+    });
+    loop {
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        let event: serde_json::Value = serde_json::from_str(&line).unwrap();
+        if event["state_set"] == true {
+            assert_eq!(event["source"], "showcase");
+            break;
+        }
+    }
+    pty.send(b" ");
+    pty.wait("paused", |s| s.contains("PAUSED"));
+    let reply = bin()
+        .args([
+            "send",
+            "--socket",
+            socket.to_str().unwrap(),
+            "--view",
+            "0",
+            "keys",
+            " + outside",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        reply.status.success(),
+        "{}",
+        String::from_utf8_lossy(&reply.stderr)
+    );
+    pty.wait("a write from the command line", |s| s.contains("outside"));
+    pty.send(b"r");
+    pty.wait("restarted current slide", |s| {
+        s.contains("MANUAL") && !s.contains("outside")
+    });
+    pty.send(b"4");
+    pty.wait("multiple overlays", |s| {
+        s.contains("Overlay choreography") && s.contains("LATENCY")
+    });
+    pty.send(b"\x1b[D");
+    pty.wait("previous slide", |s| s.contains("Many carets, exact undo"));
+    pty.send(b"q");
+    assert!(pty.exited(), "q quits and closes the listener");
+    common::eventually("socket cleanup", || !socket.exists());
 }
 
 #[test]

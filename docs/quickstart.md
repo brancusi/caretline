@@ -18,10 +18,102 @@ Prefer to build it yourself? With a Rust toolchain:
 cargo install caretline-cli
 ```
 
-## Three demos
+## Five demos
 
-Each demo writes its files to a fresh temporary directory, so there is nothing to set up and
-nothing to clean. When it quits, it says where the files are.
+The tour, scenes and agent demos write their files to a fresh temporary directory, so there
+is nothing to set up. Layers and showcase write no document files; showcase opens a local
+editor socket and removes it on exit.
+
+### `caretline demo showcase`: the interactive presentation
+
+Build from the current checkout (not in the installed release yet). Run this in Ghostty for
+pixel overlays, or any terminal for the cell fallback:
+
+```sh
+./scripts/demo.sh
+# Equivalent:
+cargo run -p caretline-cli -- demo showcase
+```
+
+The executable script also works from another directory when invoked by its absolute path;
+it finds the checkout itself. No agent, credentials or network service is needed. The first
+run compiles the binary; after that the command starts immediately.
+
+Twelve timed slides introduce Caretline and demonstrate **real engine operations**, not
+pre-rendered screenshots:
+
+1. **Meet Caretline** — an embeddable, pure editor whose whole state is a value.
+2. **Live input** — timed message chunks, wrapping and Unicode.
+3. **Many carets** — three simultaneous edits, undo and redo with all carets restored.
+4. **Overlay choreography** — multiple rings, two callouts, arrows and a spotlight with
+   holes for every active annotation. Placement preserves the text it explains.
+5. **Shared views** — two panes, one document, independent carets, a live external update.
+6. **Safe co-editing** — an actual stale revision refusal, a guarded retry, and undo that
+   keeps the remote text while removing the local edit.
+7. **Structure** — fold, unfold and move a subtree while verifying its stable mark.
+8. **Proof** — serialize/load the editor and replay its trace, comparing the entire state.
+9. **Typography** — the site's real Geist Mono and Geist outlines, each at three sizes.
+   These are pixel-rendered samples; the terminal's configured font is not changed.
+10. **ASCII art** — the existing donut, cube, tunnel and plasma renderers, pushed as real
+    editor frames with selected highlights.
+11. **Fractional-pixel motion** — an anti-aliased Bezier path and moving caret within the
+    cell grid. This is fractional device-pixel geometry, not RGB/LCD font subpixel hinting.
+12. **The logo finale** — the original warp field, spaced selected wordmark and blinking
+    caret. It keeps animating until you pause or quit.
+
+By default the presentation advances every **14 seconds**, then stays on the animated logo
+finale. Use `--seconds 8` for a faster presentation, or `--reduced-motion` to freeze continuous
+ASCII and pixel animation while retaining timed slide advance. Prefer **100×30** for the full layout; 80×24 also
+works, and smaller windows use compact overlays.
+
+| Key | Action |
+|---|---|
+| `←` / `→`, `1`–`9` | Jump to a slide; its script runs, then holds (manual mode) |
+| `Space` | Pause/resume the current animation |
+| `a` | Toggle automatic slide advance and resume playback |
+| `r` | Replay the current slide from its initial state |
+| `Home` | Restart the whole presentation and clear its check results |
+| `End` / `0` | Jump to the logo finale |
+| `↑` / `↓`, `PgUp` / `PgDn` | Scroll the slide; its overlays follow their anchors |
+| `s`, `p`, `t` | Spotlight, pixels/cells, inline/file pixel transport |
+| `F1` / `Alt-?`, then `Esc` | Open/close the keys overlay |
+| `q`, `Esc`, `Ctrl-C` | Quit (Esc closes help first if it is open) |
+
+The overlay design follows the public [Caretline brand](https://caretline.app/brand/):
+starlight on the void, neutral hairlines, nearly square corners, no panel shadows or ring
+glow, and one selection colour. The pixel typography uses bundled, SIL-OFL-licensed ASCII
+outlines of the site's Geist faces; no fonts are installed or fetched at runtime. Other
+terminals keep the same lesson text but cannot display mixed font sizes in ordinary cells.
+
+The socket stays live throughout. In another terminal, using the same source-built binary:
+
+```sh
+cargo run -p caretline-cli -- send --latest subscribe state
+cargo run -p caretline-cli -- send --latest state.get
+```
+
+To push your own text, navigate to slide 2, let it start typing, press Space, then run:
+
+```sh
+cargo run -p caretline-cli -- send --latest --view 0 keys ' + from another terminal'
+```
+
+Navigation/replay replaces the slide's document and closes secondary views. A subscriber
+sees those state changes as well as the timed edits. The protocol renders the underlying
+editor; the CLI's presentation chrome and graphics are not part of socket render responses.
+The remote actor in slide 6 is a local script using the real protocol, not a live AI model.
+Terminal pastes are consumed so accidental dictation or a paste cannot corrupt the deck.
+Socket edits are deliberately still allowed. Continuous frame history is bounded while the
+finale runs.
+The checks report actual outcomes; outside edits may intentionally change those outcomes.
+
+For repeatable validation or snapshots without a terminal:
+
+```sh
+./scripts/demo.sh --headless                              # JSON: 13 invariant checks
+./scripts/demo.sh --snapshot 100x30 --keys '4<wait:7000>'   # multiple overlays
+./scripts/demo.sh --snapshot 100x30 --keys '<wait:168000>' # the full timed run, no sleeping
+```
 
 ### `caretline demo`: the tour
 
@@ -83,6 +175,39 @@ While it runs, the editor is also reachable from another shell:
 ```sh
 caretline send --latest keys '<d-down>hello from another shell'
 ```
+
+### `caretline demo layers`: visible overlays
+
+Not released yet: run the current checkout rather than the installed release:
+
+```sh
+cargo run -p caretline-cli -- demo layers
+```
+
+The tour's text becomes a read-only backdrop for a hint box, an arrow, a ring round a word
+and a spotlight. In Ghostty or kitty these are pixel graphics; other terminals fall back to
+cells. Use a window of at least **80 columns × 24 rows** to see the full box and controls.
+
+Try this short walkthrough:
+
+1. The **Jump by word** hint is visible immediately, pointing at `word` in the Move section.
+2. Press `s`: the spotlight turns off, then on again. The status bar shows `spot:off/on`.
+3. Press `↓` a few times: the box, arrow and ring follow the word. Scroll it off screen to
+   see an edge chip, then `↑` to bring it back.
+4. In Ghostty, press `p` to compare pixels with the cell fallback, then `p` again. Press `t`
+   to compare inline and temporary-file pixel transport; diagnostics follow the controls.
+5. Press `F1` (or `Alt-?`) for the keys overlay, then `Esc` to return. Press `q` to quit.
+
+For a repeatable preview without a terminal:
+
+```sh
+cargo run -p caretline-cli -- demo layers --snapshot 80x24
+cargo run -p caretline-cli -- demo layers --snapshot 80x24 --keys '<down><down>s'
+```
+
+The status bar reports `pixels` or `cells`. Inside tmux or screen it normally uses cells;
+run directly in Ghostty for pixels. See [Layers over the tour](cli.md#layers-over-the-tour)
+for the probe, overrides and all controls.
 
 ## Then
 

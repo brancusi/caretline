@@ -1,0 +1,30 @@
+ CARETLINE  05/12  One document, two views  [━━━━━━━━━━]
+                                                     ┌──────────────────────────────────┐
+A pane is a view, not a copy.                        │ Write once, see it twice         │
+                                                     │ The second pane has its own      │
+Shared note: hello from view A + an external update◀─┤ caret. No duplicated document or │
+                                                     │ synchronization glue.            │
+                                                     └──────────────────────────────────┘
+
+
+
+
+
+
+
+Both panes see the same underlying text.
+Each view owns its caret, selection, folds and scroll.
+External edits map every view through the change.
+
+
+ [scratch] [+]                                                                                 5:31
+# TWO VIEWS, ONE DOCUMENT
+
+A pane is a view, not a copy.
+
+Shared note: hello from view A + an external update
+
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause · r replay · a auto · cells

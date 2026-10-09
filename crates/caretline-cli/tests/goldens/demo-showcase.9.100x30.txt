@@ -1,0 +1,30 @@
+ CARETLINE  09/12  Typography beyond the grid  [━━━━━━━━━━]
+
+Geist Mono + Geist / three sizes / weight 500
+
+
+GEIST MONO                  GEIST
+State / small               State / small
+
+State / medium              State / medium
+
+State / large               State / large
+
+
+
+
+
+
+
+
+
+
+
+Pixel mode renders the real bundled font outlines.
+Terminal text still uses Ghostty's configured font and size.
+Press p to compare: cells cannot mix arbitrary font sizes.
+
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause · r replay · a auto · cells

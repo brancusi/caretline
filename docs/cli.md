@@ -18,7 +18,7 @@ See the [Quickstart](quickstart.md) for what the installer does and what the dem
 
 | Command | Does |
 |---|---|
-| `caretline demo [tour\|scenes\|agent\|layers]` | Built-in demos, no files needed: see the [Quickstart](quickstart.md) and [Layers over the tour](#layers-over-the-tour). `--snapshot WxH` prints a demo's first frame; `demo agent --headless` runs the agent against a headless editor and prints a JSON report |
+| `caretline demo [tour\|scenes\|agent\|layers\|showcase]` | Built-in demos, no files needed: see the [Quickstart](quickstart.md) and [Layers over the tour](#layers-over-the-tour). `--snapshot WxH` prints a demo's first frame; `demo agent --headless` runs the agent against a headless editor and prints a JSON report |
 | `caretline [FILE]` | Edit FILE interactively (created on first save) |
 | `caretline FILE --trace T.jsonl` | Edit, recording the session to a trace |
 | `caretline FILE --no-mouse` | Edit without capturing the mouse (by default: click, Shift-click, drag, and a drag held on an edge row keeps scrolling, see [messages.md](messages.md#selecting-by-dragging)) |
@@ -314,6 +314,43 @@ caretline demo scenes --bench --fps 120 --scene donut,plasma --seconds 5
 For 120 fps on screen, the terminal must paint that fast too: in WezTerm set
 `config.max_fps = 120`, on a 120 Hz display.
 
+## Timed interactive showcase
+
+`cargo run -p caretline-cli -- demo showcase` (or `./scripts/demo.sh`) runs twelve timed
+slides with real message-driven edits, multiple carets, overlays, a shared-document pane,
+guarded remote writes, structural edits, serialization/replay checks, branded typography,
+ASCII scenes, fractional-pixel motion and a continuous warp-logo finale. No agent is needed.
+The [Quickstart](quickstart.md#caretline-demo-showcase-the-interactive-presentation) has the
+slide sequence, all controls and examples for the live listener.
+
+- Default: 14 seconds per slide, automatic advance, remain on the animated logo finale.
+- `--reduced-motion`: freeze continuous graphics/ASCII animation; slides still advance.
+- `--font-licenses`: print the bundled fonts' copyright notices and full SIL Open Font
+  Licenses without opening the editor (also embedded in the standalone binary).
+- `--seconds 2..300`: seconds per slide.
+- `←`/`→` or `1`–`9`: jump to a slide, run its script and hold. `Space` pauses, `a` toggles
+  automatic advance, `r` replays the slide, `Home` restarts, `End`/`0` jumps to the finale,
+  `q` quits.
+- `s` toggles spotlight; `p` compares pixels and cells; `t` switches pixel transport.
+- `--socket PATH`: listen at this socket instead of the default discoverable editor socket.
+  `send --latest subscribe state` receives real editor events throughout the presentation.
+- `--headless`: run every cue without sleeping, print JSON with 13 measured invariant checks,
+  and exit nonzero if any check fails. No socket or terminal is opened in this mode.
+- `--snapshot WxH --keys '4<wait:7000>'`: preview the fourth slide at seven seconds, in cells.
+  `<wait:MS>` advances this demo's actual timeline, including automatic slide transitions.
+
+The deck is read-only to ordinary printable keys; presentation shortcuts drive it. Socket
+clients can edit the underlying state. Slide navigation resets the document and closes its
+secondary views. Use a direct Ghostty terminal at 100×30 for the best pixel presentation;
+small windows and unsupported terminals use the same content with adaptive cell overlays.
+Terminal pastes are consumed, while explicit socket edits remain allowed. Typography samples
+use the site's licensed Geist/Geist Mono outlines at three raster sizes, not terminal font
+escape sequences. The pixel motion is anti-aliased fractional-device-pixel geometry (not
+RGB/LCD subpixel text rendering), targeted at 24 updates/s. The ASCII section reuses the
+existing scene renderers; the finale loops until paused or quit. `--reduced-motion` freezes
+that continuous motion. The showcase keeps at most 512 trace lines to bound continuous-frame
+history; subscribers can still collect the full stream.
+
 ## Layers over the tour
 
 `caretline demo layers` (not in a release yet: build from a checkout) shows a hint with an
@@ -321,11 +358,12 @@ arrow, a ring and a spotlight over the tour's text, placed by
 [`caretline-layers`](layers.md). The hint points at a word in the "Move" section and follows it
 as the view scrolls; the text is read-only here.
 
-- **In Ghostty** (and kitty) it draws in pixels: a panel with a soft shadow under the box's
-  words, an anti-aliased arrow and ring, and a veil with feathered holes over the text, sent
+- **In Ghostty** (and kitty) it draws in pixels: a sharp, neutral panel under the box's
+  words, an anti-aliased arrow and ring without glow, and a veil with feathered holes, sent
   with the kitty graphics protocol inside each frame's synchronized update. The status bar
-  shows the last pixel frame's bytes, rasters and time.
-- **Elsewhere**, inside tmux or screen, and with `--snapshot`, it draws in cells: a rounded
+  shows the mode and controls first, then the cell size, transport and last pixel frame's
+  bytes, rasters and time as space allows.
+- **Elsewhere**, inside tmux or screen, and with `--snapshot`, it draws in cells: a crisp
   box, the arrow in box-drawing glyphs, the anchor in a ring style and everything else dimmed.
   The status bar says why pixels are off.
 
@@ -345,11 +383,17 @@ and the terminal is Ghostty or kitty. `CARETLINE_LAYERS=auto|pixels|cells` overr
 change it asks for the cell size again.
 
 ```sh
-caretline demo layers
+cargo run -p caretline-cli -- demo layers              # from the current checkout
+caretline demo layers                                # if built and on PATH
 CARETLINE_LAYERS=cells caretline demo layers
 caretline demo layers --snapshot 80x24                 # the first frame, in cells
 caretline demo layers --snapshot 60x20 --keys '<down><down>s'   # scrolled, spotlight off
 ```
+
+An 80×24 or larger window gives the hint and controls room. For a short presentation, toggle
+`s`, scroll with `↓`/`↑`, compare modes with `p`, try `t` in pixel mode, and quit with `q`.
+`F1` or `Alt-?` covers the demo with the keys overlay (including its images); `Esc` closes
+that overlay and restores the demo. With no keys overlay open, `Esc` quits the layers demo.
 
 ## Errors
 

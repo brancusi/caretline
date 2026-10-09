@@ -1,0 +1,30 @@
+ CARETLINE  06/12  Safe co-editing  [━━━━━━━━━━]
+
+Person: my local edit                                   ┌──────────────────────────────────┐
+                                                        │ No silent overwrite              │
+Agent: remote text survives undo                        │ The script tries a genuinely     │
+                                                        │ stale protocol write. It must be │
+Guard: stale write refused; fresh revision accepted◀────┤ refused before retrying.         │
+Undo: VERIFIED, local only; redo restored the local text└──────────────────────────────────┘
+   ┌─────────────────────────────────┐
+   │ Undo stays yours                │
+   │ The remote text is an External  │
+   │ change. Undo must keep it while │
+   │ removing the local edit.        │
+   └─────────────────────────────────┘
+
+Guard writes with if_rev. Refuse stale work, then retry.
+Undo removes your edits, not someone else's.
+A real socket is listening throughout this showcase.
+
+
+
+
+
+
+
+
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause · r replay · a auto · cells

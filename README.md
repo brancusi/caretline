@@ -11,6 +11,18 @@ and replayed exactly.
 curl -fsSL https://caretline.app/install.sh | sh && caretline demo
 ```
 
+From a checkout, try the **self-running interactive showcase** (not released yet):
+
+```sh
+./scripts/demo.sh
+```
+
+Twelve timed slides demonstrate real edits, multi-carets, shared views, branded overlays,
+checked state/replay invariants, Geist typography, live ASCII scenes and fractional-pixel
+motion, ending with the original animated warp logo. `←`/`→` choose slides, `Space` pauses, `q` quits. Best in
+Ghostty at 100×30; other terminals use cell overlays. See the
+[showcase walkthrough](docs/quickstart.md#caretline-demo-showcase-the-interactive-presentation).
+
 Website and docs: **[caretline.app](https://caretline.app)** · crate: [`caretline`](https://crates.io/crates/caretline) · editor: [`caretline-cli`](https://crates.io/crates/caretline-cli)
 
 ## What's here

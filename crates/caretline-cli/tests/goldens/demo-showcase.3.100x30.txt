@@ -1,0 +1,30 @@
+ CARETLINE  03/12  Many carets, exact undo  [━━━━━━━━━━]
+
+Three independent insertion points.
+               ┌─────────────────────────────────┐
+- ready alpha◀╮│ An edit is one transaction      │
+- ready beta  ╰┤ Watch three carets insert ready │
+- ready gamma  │ at once. Then undo. Then redo,  │
+               │ with every caret restored.      │
+               └─────────────────────────────────┘
+
+
+
+
+
+
+One InsertText edits all three rows atomically.
+Undo and redo restore text AND the selection.
+
+
+
+
+
+
+
+
+
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause · r replay · a auto · cells

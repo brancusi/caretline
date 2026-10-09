@@ -1,0 +1,30 @@
+ CARETLINE  11/12  Motion between the cells  [━━━━━━━━━━]
+
+A device-pixel layer, composited over the terminal.
+
+
+A moving caret and a Bezier path.
+Fractional coordinates, anti-aliasing, one selection colour.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Pixels: continuous movement inside a fixed cell grid.
+Cells: the explanatory text remains available.
+Space freezes motion. p compares renderers. t changes transport.
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause · r replay · a auto · cells

@@ -1,20 +1,20 @@
-╭───────────────────╮
+┌───────────────────┐
 │ Jump by word      │ ╭╮
-│ ⌥← and ⌥→ move    ├─╯▼
-│ the caret one     │a word at a time. ↑ and ↓ move by the
-│ word at a time.   │ot by lines, and keep their column: go
-│ This box, its     │is paragraph and watch the caret hold
-│ arrow, the ring   │s wrapped rows and short ones.
-│ and the spotlight │
-│ are layers:       │again, so the column has somewhere to
-│ placed by         │ you keep going down past the short
-│ caretline-layers, │
-│ drawn by the CLI. │
-╰───────────────────╯
-
+│ This hint, arrow  ├─╯▼
+│ and ring follow   │a word at a time. ↑ and ↓ move by the
+│ the word as you   │ot by lines, and keep their column: go
+│ scroll. Try s for │is paragraph and watch the caret hold
+│ the spotlight, p  │s wrapped rows and short ones.
+│ for pixels or     │
+│ cells, and t for  │again, so the column has somewhere to
+│ pixel transport.  │ you keep going down past the short
+│ The text is       │
+│ read-only; q      │
+│ quits.            │
+└───────────────────┘
       Hold ⇧ with any arrow to select, and ⇧⌥ to select by
       words. As in a macOS text field, ← on a selection
       goes to its start, → to its end, and Esc collapses it.
 
 
- layers · cells (snapshot) · ↑↓ scroll · s spotlight · q qui
+ layers · cells · q quit · ↑↓ scroll · s spot:off · p mode ·

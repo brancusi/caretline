@@ -1,0 +1,30 @@
+ CARETLINE  07/12  Structure with identity  [━━━━━━━━━━]
+
+      A block is more than a row number.
+
+  •   Embed it in your host
+  •   Explore the engine◀────────────────────────────────────────────╮
+      •   Carets and selections                                      │
+      •   Undo and redo                                             ┌┴─────────────────────────────┐
+      •   Views and layouts                                         │ Identity survives movement   │
+                                                                    │ This item's children fold    │
+      Fold children. Reopen. Move the whole subtree.                │ together and move together.  │
+      Mark #2: VERIFIED across fold, unfold and subtree move.       │ Watch the mark verification. │
+                                                                    └──────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause · r replay · a auto · cells

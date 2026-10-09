@@ -1,0 +1,30 @@
+ CARETLINE  02/12  Live message stream  [━━━━━━━━━━]
+
+Messages become edits, immediately.
+
+Message stream: Hello, Caretline. Messages arrive while the UI stays live. Unicode too: café, 東京,
+🦀.
+ ▲
+┌┴───────────────────────────┐
+│ Updates, not screenshots   │
+│ Each timed chunk is a real │
+│ editor message. The caret  │
+│ follows the incoming text. │
+└────────────────────────────┘
+
+
+The script sends InsertText through the real session.
+Wrapping, carets and undo use the same engine as your app.
+Resize this window while the demo runs.
+
+
+
+
+
+
+
+
+
+
+
+ MANUAL · q quit · ←→ slides · Space pause · r replay · a auto · cells

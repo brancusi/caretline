@@ -3,13 +3,13 @@
       A terminal editor where the whole editor is one value you can save, send
       and replay. Work down this page with ↓: the status bar names the keys
       for the section the caret is in.
-                    ╭──────────────────────────────────────────────╮
+                    ┌──────────────────────────────────────────────┐
   ##  1 · Type      │ Jump by word                                 │
-                    │ ⌥← and ⌥→ move the caret one word at a time. │
-      The caret is a│ This box, its arrow, the ring and the        │rt typing,
-      and keep going│ spotlight are layers: placed by              │
-                    │ caretline-layers, drawn by the CLI.          │
-  ##  2 · Move      ╰──┬───────────────────────────────────────────╯
+                    │ This hint, arrow and ring follow the word as │
+      The caret is a│ you scroll. Try s for the spotlight, p for   │rt typing,
+      and keep going│ pixels or cells, and t for pixel transport.  │
+                    │ The text is read-only; q quits.              │
+  ##  2 · Move      └──┬───────────────────────────────────────────┘
                        ▼
       ⌥← and ⌥→ jump a word at a time. ↑ and ↓ move by the rows you see, not
       by lines, and keep their column: go down through this paragraph and
@@ -21,4 +21,4 @@
   ##  3 · Select
 
       Hold ⇧ with any arrow to select, and ⇧⌥ to select by words. As in a
- layers · cells (snapshot) · ↑↓ scroll · s spotlight off · q quit
+ layers · cells · q quit · ↑↓ scroll · s spot:on · p mode · t transport · snapsh

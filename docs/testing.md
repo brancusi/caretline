@@ -28,6 +28,7 @@ keys or messages, and the expected result. No terminal, no timing, no mocks.
 | [`caretline-tour/tests/conformance.rs`](../crates/caretline-tour/tests/conformance.rs) | Every example walkthrough step checked on the host's scenes at several sizes (feature `caretline-layers/conformance`) |
 | `caretline/src/helix/**` | Helix's own unit tests, vendored with the code |
 | [`caretline-cli/tests/cli.rs`](../crates/caretline-cli/tests/cli.rs) | The binary: fixtures render to their saved snapshots, traces replay, `--keys` and `--dump-state` round-trip, effects are reported and never performed |
+| [`caretline-cli/tests/demo.rs`](../crates/caretline-cli/tests/demo.rs) | Demo frames against `tests/goldens`, live PTY controls, socket subscriptions and command-line edits. The showcase's `--headless` report verifies all 13 invariants |
 | [`caretline-cli/tests/common/mod.rs`](../crates/caretline-cli/tests/common/mod.rs) | Shared by the binary's and the MCP server's tests: child processes and scratch directories that clean up after themselves, a pseudo-terminal, deadlines (see [Tests that start processes](#tests-that-start-processes)) |
 
 Run them:
@@ -95,6 +96,19 @@ arrives, and requests wait for their response. Each wait still has a deadline, s
 fails with the screen it got to. Deadlines are nominal times multiplied by
 `CARETLINE_TEST_TIMEOUT_SCALE` (default 6, so a nominal 10 s is a minute), which leaves room
 for a loaded machine; set it to 1 to find a slow wait, or higher on a slow CI runner.
+
+The showcase can also validate itself directly, without a terminal or real-time waits:
+
+```sh
+cargo run -p caretline-cli -- demo showcase --headless
+cargo run -p caretline-cli -- demo showcase --snapshot 100x30 --keys '4<wait:7000>'
+```
+
+Its unit tests compare frequent and delayed polling, verify pause/navigation clocks,
+check text-preserving overlay placement, rapid pixel cleanup, live paste suppression,
+bounded/paused finale frames, distinct bundled font outlines and small windows. The CLI
+palette is checked against the site's design tokens, and pixel panels/arrows/rings have PNG
+goldens.
 
 ## Caret notation
 
