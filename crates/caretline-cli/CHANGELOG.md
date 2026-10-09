@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1 — 2026-10-09
+
 ### Fixed
 
 - An editor that quits stops reading the terminal before it returns. Its input thread
