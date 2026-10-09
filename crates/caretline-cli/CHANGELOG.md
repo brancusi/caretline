@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 — 2026-10-09
+
 ### Added
 
 - `caretline doctor`: in Ghostty, the keys Ghostty's own bindings take before caretline
