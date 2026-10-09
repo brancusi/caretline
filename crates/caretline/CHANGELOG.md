@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 — 2026-10-09
+
 ### Breaking
 
 - `Role::Caret`: every caret with no selection, other than the primary, is drawn as a cell
