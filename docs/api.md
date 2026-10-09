@@ -307,6 +307,7 @@ print!("{}", frame.to_text());                     // or frame.to_ansi()
 |---|---|
 | `Text` | Document text |
 | `Selection` | Selected text |
+| `Caret` | A caret with no selection other than the primary, drawn as a cell (the primary is `frame.cursor`, the terminal's cursor). Only a focused view draws them |
 | `Status` | The status bar |
 | `StatusAccent` | The dirty marker `[+]` in the status bar |
 | `Hang` | A block's hang, with the [outline layout](structure.md#the-outline-layout) |

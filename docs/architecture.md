@@ -55,7 +55,7 @@ halves' fields side by side, the shape every earlier state has.
 | `word_drag` | view | The word a `select_word_at` selected, while a shift-click may extend it by words |
 | `folds` | view | Folded blocks, by mark id. Left out while empty |
 | `read_only` | view | Editing messages are refused. Left out while false |
-| `focused` | view | Only a focused view draws its caret. Left out while true |
+| `focused` | view | Only a focused view draws its carets (the primary as the cursor, the others as `Caret` cells). Left out while true |
 | `free` | view | Scrolled freely (`scroll_view`): the view doesn't follow the caret until it moves. Left out while false |
 | `layout` | view | The [outline layout](structure.md#the-outline-layout). Left out when unset |
 | `ext` | view | The host's own values for this view, by key: any JSON, changed by `ext` messages through the host's [reducers](embedding.md#view-values-and-ext-reducers), never read by the engine. Left out when empty |
