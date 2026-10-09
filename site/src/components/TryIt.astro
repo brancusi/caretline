@@ -1,15 +1,16 @@
 ---
-// "Try it in one line": the installer one-liner, then the demos, each with a copy button.
+// "Try it in one line": the installer one-liner (it opens the welcome), then the demos, each with a copy button.
 const ONE = 'curl -fsSL https://caretline.app/install.sh | sh -s -- --demo';
 const demos = [
-  { cmd: 'caretline demo', what: 'the tour' },
-  { cmd: 'caretline demo scenes', what: 'ASCII scenes' },
+  { cmd: 'caretline demo', what: 'start here' },
+  { cmd: 'caretline demo showcase', what: 'timed slides' },
+  { cmd: 'caretline demo tour', what: 'the editor, hands on' },
   { cmd: 'caretline demo agent', what: 'an agent beside you' },
 ];
 ---
 <div class="try">
   <p class="try__label"><span class="label">try it in one line</span><span class="try__os">macOS · Linux</span></p>
-  <div class="install install--try"><code>{ONE}</code><button type="button" data-copy-text={ONE} aria-label="Copy the one-line install and tour">copy</button></div>
+  <div class="install install--try"><code>{ONE}</code><button type="button" data-copy-text={ONE} aria-label="Copy the one-line install and demo">copy</button></div>
   <ul class="try__demos">
     {demos.map((d) => (
       <li><button type="button" class="try__demo" data-copy-text={d.cmd} aria-label={`Copy ${d.cmd}`}>{d.cmd}</button><span class="dim">{d.what}</span></li>

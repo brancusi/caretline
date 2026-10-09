@@ -24,9 +24,10 @@ curl -fsSL https://caretline.app/install.sh | sh -s -- --demo
 ```
 
 A prebuilt binary for macOS or Linux, checked against its sha256 and installed to
-`~/.local/bin`, then a guided tour that teaches by doing. Two more demos:
-`caretline demo scenes` (ASCII animations running inside the editor) and `caretline demo agent`
-(a scripted agent co-editing beside you over the editor's socket). With Rust instead:
+`~/.local/bin`, then `caretline demo`, the welcome (in `caretline-cli` 0.4.1): what caretline
+is, each demo as a chapter (a timed showcase, a hands-on tour, an agent co-editing beside you,
+layers over the text, animated scenes) and the commands to take away. Each demo also runs on
+its own: `caretline demo showcase`, `tour`, `agent`, `layers` or `scenes`. With Rust instead:
 `cargo install caretline-cli`.
 See the [Quickstart](quickstart.md).
 
@@ -119,8 +120,8 @@ caretline is published on crates.io as [`caretline`](https://crates.io/crates/ca
 | [`caretline`](../crates/caretline) | caretline: plain text on Helix's model, in the Elm architecture. **This documentation is about it.** | `caretline-cli`, `thc-tui` |
 | [`caretline-cli`](../crates/caretline-cli) | The `caretline` binary: the interactive editor and the headless tools | |
 | [`caretline-mcp`](../crates/caretline-mcp) | The `caretline-mcp` binary: an [MCP server](mcp.md) for agents | |
-| [`caretline-layers`](../crates/caretline-layers) | New, not released yet: placement, tracking and lifecycle for hints, arrows and spotlights over a host's screen; the host draws them. See [layers.md](layers.md) | |
-| [`caretline-tour`](../crates/caretline-tour) | New, not released yet: walkthroughs as data (steps of layers, narration and the host's own scene), a pure reducer, predicates the host answers, and protocol ops. See [tour.md](tour.md) | |
+| [`caretline-layers`](../crates/caretline-layers) | New in 0.4 (crates.io 0.1): placement, tracking and lifecycle for hints, arrows and spotlights over a host's screen; the host draws them. See [layers.md](layers.md) | |
+| [`caretline-tour`](../crates/caretline-tour) | New in 0.4 (crates.io 0.1): walkthroughs as data (steps of layers, narration and the host's own scene), a pure reducer, predicates the host answers, and protocol ops. See [tour.md](tour.md) | |
 
 thc's TUI is one host: it opens each of its documents as one caretline document of blocks,
 keys its own per-block data by mark, sends changes from its own store as `external` changes, and
