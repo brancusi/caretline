@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.5 — 2026-10-09
+
 ### Fixed
 
 - With `install.sh --demo`, Enter on a chapter of the welcome hid the page's overlay but
