@@ -298,7 +298,8 @@ caretline sim TEXT KEYS [--legacy] [--mine] [--config LINE]... [--size WxH]
 Runs KEYS through a simulated Ghostty, the editor and a terminal emulator, in process,
 and shows what each key did and the screen it left, checked against the editor's state.
 
-  TEXT    the document, with \u{25ae} for each caret and \u{27e6}\u{2026}\u{27e7} around a selection
+  TEXT    the document, with \u{25ae} for each caret and \u{27e6}\u{2026}\u{27e7} around a selection;
+          \\n, \\t and \\u{200b} escapes
   KEYS    a key script: letters, and <d-a> (Cmd-A), <s-left>, <c-a-bs>, <cr>, <wait:500>...
   --legacy       without the kitty keyboard protocol
   --mine         your Ghostty's bindings (ghostty +list-keybinds), not 1.3.1's defaults
@@ -309,6 +310,36 @@ and shows what each key did and the screen it left, checked against the editor's
   caretline sim 'hello \u{25ae}world' '<d-a>' --config 'keybind = super+a=unbind'
   caretline sim '\u{25ae}one\n\u{25ae}two' 'x<s-right>'
 ";
+
+/// `\n`, `\t`, `\\` and `\u{…}` in a `caretline sim` argument.
+fn unescape(s: &str) -> String {
+    let mut out = String::new();
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match it.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('\\') => out.push('\\'),
+            Some('u') if it.peek() == Some(&'{') => {
+                it.next();
+                let hex: String = it.by_ref().take_while(|&c| c != '}').collect();
+                if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    out.push(ch);
+                }
+            }
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
 
 /// `caretline sim`.
 pub fn main(args: &[String]) -> Result<(), String> {
@@ -332,7 +363,7 @@ pub fn main(args: &[String]) -> Result<(), String> {
                 w = a.parse().map_err(|_| "bad --size")?;
                 h = b.parse().map_err(|_| "bad --size")?;
             }
-            _ => pos.push(a.replace("\\n", "\n")),
+            _ => pos.push(unescape(a)),
         }
     }
     let [text, keys] = &pos[..] else {

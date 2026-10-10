@@ -1,8 +1,8 @@
 # Design: the terminal harness
 
-Status: in progress. Step 0 shipped in caretline 0.5 (`Role::Caret`, the fuzz suite's screen
-invariant EI13, `caretline doctor`). Steps 1 to 4 (one decoder, keyboard model, headless screen,
-harness) are done. Step 5 is next.
+Status: done. Step 0 shipped in caretline 0.5 (`Role::Caret`, the fuzz suite's screen
+invariant EI13, `caretline doctor`). Steps 1 to 5 (one decoder, keyboard model, headless screen,
+harness, fuzz and goldens) are done.
 
 ## Why
 
@@ -190,6 +190,16 @@ a test. Mouse reports (`TermMouse`) are left for when a mouse case needs them.
   plus the expected screen (`text` and `ansi` snapshots, as `--snapshot` prints them). Start
   with: Cmd-A on default Ghostty (taken), Cmd-A unbound (selects all), three carets visible,
   a multi-line selection's colours, wide graphemes under a caret.
+
+Done in `caretline-cli/src/harness_fuzz.rs` (32 seeds per `cargo test`, about a second; 20,000
+pass) and `caretline-cli/tests/harness.rs`. Each golden's first line is the `caretline sim`
+command that shows it; the oracle checks every cell's colours after every key, so the goldens
+keep `sim`'s text output rather than raw ANSI. The fuzz leaves out text `vt100` draws
+differently from Ghostty (ZWJ sequences, skin tones, flags, VS16 emoji, U+FFFD), since a
+failure there is the emulator's. It found one bug: writing over a wide char's first cell makes
+the terminal blank its second cell in the current colours, and ratatui's diff skipped that cell
+when it stayed blank, so a selection ending where カ had been left its colour behind (`draw`
+now always writes a blank plain cell after a styled one).
 
 ### Later, not in this plan
 

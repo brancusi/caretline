@@ -1,0 +1,13 @@
+caretline sim '▮漢字\n▮かな' '<right>' --size 20x4
+Ghostty (1.3.1 defaults), kitty keyboard protocol, 20x4
+  ▮漢字⏎▮かな
+<right>: sent ⎋[C → Move { dir: Forward, by: Grapheme, extend: false }
+  漢▮字⏎か▮な
+
+┌────────────────────┐
+│漢字                │
+│かな                │
+│                    │
+│ test.txt       2:2 │
+└────────────────────┘
+the screen shows the state after every key

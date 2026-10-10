@@ -1,0 +1,15 @@
+caretline sim 'ab▮' '<s-cr>x' --size 20x4 --legacy
+Ghostty (1.3.1 defaults), legacy keys, 20x4
+  ab▮
+<s-cr>: sent ⎋[27;2;13~ → InsertNewline
+  ab⏎▮
+<x>: sent x → InsertText { text: "x" }
+  ab⏎x▮
+
+┌────────────────────┐
+│ab                  │
+│x                   │
+│                    │
+│ test.txt [+]   2:2 │
+└────────────────────┘
+the screen shows the state after every key

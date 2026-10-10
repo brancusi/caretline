@@ -24,6 +24,16 @@
 
 ### Fixed
 
+- A selection (or a caret) ending where a wide character such as カ or 漢 had been left its
+  colour on the next cell: writing over a wide character's first cell makes the terminal blank
+  its second cell in the current colours, and the screen diff never repainted it. Found by the
+  harness fuzz, which now runs random documents, sizes and physical key presses through the
+  simulated Ghostty (default and as `caretline doctor` fixes it, with and without the keyboard
+  protocol), checks the screen after every key, and prints a failure as the shortest
+  `caretline sim` command that shows it. The bugs found by hand and by the fuzz are goldens in
+  `tests/goldens/harness/`, each opening with its `caretline sim` command.
+
+  Try it: `curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- sim 'a▮\nカナ\nb' '<s-down><s-down>' --size 10x3`
 - In a terminal without the kitty keyboard protocol, Shift-Enter, Ctrl-Enter, Shift-Esc and
   the other keys Ghostty sends in xterm's modifyOtherKeys form (`CSI 27;mods;code ~`) were
   dropped; they now arrive (Shift-Enter is the outline's soft break). `CARETLINE_KEYBOARD=legacy`
