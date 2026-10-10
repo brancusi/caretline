@@ -142,7 +142,13 @@ from_source() { # ref args...
 		*) pick="--rev" ;;
 	esac
 	say "caretline at $ref (built from source into $cache; the first build takes a few minutes)"
-	CARGO_TARGET_DIR="$cache/target" cargo install --quiet --locked --force \
+	# One compiler for the whole build: a version manager's `rustc` shim can pick a different
+	# toolchain in each crate's directory, and crates built by two compilers don't link. Its
+	# own build dir too, since two installs of one Rust version can't share artifacts.
+	rustc=$(rustc --print sysroot)/bin/rustc
+	[ -x "$rustc" ] || err "--ref couldn't find rustc (rustc --print sysroot)"
+	toolchain=$("$rustc" -vV | { cat; echo "$rustc"; } | cksum | cut -d' ' -f1)
+	RUSTC="$rustc" CARGO_TARGET_DIR="$cache/target-$toolchain" cargo install --quiet --locked --force \
 		--git "https://github.com/$REPO" "$pick" "$ref" --root "$cache" caretline-cli ||
 		err "couldn't build caretline at $ref"
 	say "  built      $cache/bin/caretline"

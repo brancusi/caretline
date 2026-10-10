@@ -24,6 +24,12 @@
 
 ### Fixed
 
+- `install.sh --ref` failed to build (`E0514: found crate compiled by an incompatible
+  version of rustc`) when a version manager's `rustc` shim, such as mise's, resolved to
+  different toolchains in different crates' directories. It now pins one compiler for the
+  whole build, with a build cache per compiler.
+
+  Try it: `curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- sim 'a▮\nカナ\nb' '<s-down><s-down>' --size 10x3`
 - A selection (or a caret) ending where a wide character such as カ or 漢 had been left its
   colour on the next cell: writing over a wide character's first cell makes the terminal blank
   its second cell in the current colours, and the screen diff never repainted it. Found by the
