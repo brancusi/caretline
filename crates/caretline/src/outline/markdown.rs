@@ -8,13 +8,6 @@ use crate::outline::{
 };
 use crate::state::{State, Viewport};
 
-/// Markdown read as blocks: paragraphs (their lines joined), `-` `*` `+` bullets nested by
-/// their first indent, numbered items, tagged bullets `- [c] ` when `c` is one of the config's
-/// tags (a bare `[c] ` line too), headings, quotes
-/// and rules as one-line paragraphs, and fences, tables and front matter as one paragraph
-/// with its line breaks. Images are left out and counted. `plain`: a paragraph per block of
-/// lines, line breaks kept, nothing read as a list.
-
 /// A bullet's tag at the start of `rest` (`[c] `, with `c` in `cfg.tags`; GFM's `[X]` reads as
 /// `[x]` when only `x` is a tag): the tag and the chars it takes.
 fn tag_at(rest: &str, cfg: &OutlineConfig) -> Option<char> {
@@ -35,6 +28,12 @@ fn tag_at(rest: &str, cfg: &OutlineConfig) -> Option<char> {
     }
 }
 
+/// Markdown read as blocks: paragraphs (their lines joined), `-` `*` `+` bullets nested by
+/// their first indent, numbered items, tagged bullets `- [c] ` when `c` is one of the config's
+/// tags (a bare `[c] ` line too), headings, quotes
+/// and rules as one-line paragraphs, and fences, tables and front matter as one paragraph
+/// with its line breaks. Images are left out and counted. `plain`: a paragraph per block of
+/// lines, line breaks kept, nothing read as a list.
 pub fn parse_markdown(input: &str, plain: bool, cfg: &OutlineConfig) -> (Vec<NewBlock>, usize) {
     let text = input.replace("\r\n", "\n").replace('\r', "\n");
     let mut raw: Vec<String> = text.split('\n').map(|l| l.replace('\t', "    ")).collect();

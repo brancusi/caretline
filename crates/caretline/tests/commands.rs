@@ -251,10 +251,11 @@ fn old_outline_keymap(key: &Key) -> Option<Msg> {
         }
         KeyCode::BackTab => return Some(Msg::Outdent),
         KeyCode::Enter if m.shift && !(m.ctrl || m.alt || m.cmd) => return Some(Msg::SoftBreak),
-        KeyCode::Char(c) if m.ctrl && !m.cmd && !m.alt => match c.to_ascii_lowercase() {
-            'j' => return Some(Msg::SoftBreak),
-            _ => {}
-        },
+        KeyCode::Char(c) if m.ctrl && !m.cmd && !m.alt => {
+            if c.eq_ignore_ascii_case(&'j') {
+                return Some(Msg::SoftBreak);
+            }
+        }
         KeyCode::Char(c) if m.alt && !m.ctrl && !m.cmd && c.eq_ignore_ascii_case(&'v') => {
             return Some(Msg::PastePlain { text: None });
         }

@@ -336,7 +336,7 @@ impl Scene for Warp {
             g.put(x0 + k as i64, (h / 2) as i64, c, true);
         }
         // The public wordmark keeps its caret one cell after the selected band.
-        if (t / 0.53) as u64 % 2 == 0 {
+        if ((t / 0.53) as u64).is_multiple_of(2) {
             g.put(
                 x0 + title.chars().count() as i64 + 1,
                 (h / 2) as i64,

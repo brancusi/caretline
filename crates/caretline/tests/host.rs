@@ -5,7 +5,7 @@
 use caretline::helix::Selection;
 use caretline::outline::markdown;
 use caretline::protocol::{Format, RenderedFrame};
-use caretline::trace::{replay_trace_with, TraceLine};
+use caretline::trace::replay_trace_with;
 use caretline::view::{hit, Hit};
 use caretline::{
     update, view, Deco, Decoration, Edit, Effect, ExtChange, Host, MarkAttrs, MarkId, MarkOp, Msg,

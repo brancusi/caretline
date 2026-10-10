@@ -134,8 +134,8 @@ fn line(pm: &mut Pixmap, from: (f32, f32), to: (f32, f32), colour: (u8, u8, u8),
 
 /// Deliberately bounded: a very large terminal doesn't allocate a full-screen 4K raster.
 fn area(frame: &Frame) -> Rect {
-    let w = frame.width.saturating_sub(4).min(96).max(1);
-    let h = frame.height.saturating_sub(8).min(20).max(1);
+    let w = frame.width.saturating_sub(4).clamp(1, 96);
+    let h = frame.height.saturating_sub(8).clamp(1, 20);
     Rect::new(
         frame.width.saturating_sub(w) / 2,
         4.min(frame.height.saturating_sub(1)),

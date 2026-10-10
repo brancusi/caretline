@@ -765,9 +765,11 @@ pub fn hit(doc: &Document, view: &View, col: u16, row: u16) -> Hit {
             let c = col as usize;
             if c < lf.x {
                 // Only a block's first row carries its decoration.
-                let deco = (at.row == lf.before && b.first_line == at.line)
-                    .then(|| decoration(doc, view, g, b))
-                    .unwrap_or_default();
+                let deco = if at.row == lf.before && b.first_line == at.line {
+                    decoration(doc, view, g, b)
+                } else {
+                    Default::default()
+                };
                 if c < g.gutter as usize {
                     return Hit::Gutter {
                         block: b.id,
