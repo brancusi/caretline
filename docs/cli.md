@@ -111,6 +111,10 @@ The first prints `<d-a>: sent ⎋[97;9u → SelectAll` and `⟦hello world▮⟧
 unbound, Cmd-A reaches the editor. Without the `--config` line Ghostty keeps the key, and the
 path says so.
 
+The same harness runs as tests: `caretline-cli`'s harness fuzz prints any failure as a
+`caretline sim` command, and each file in `tests/goldens/harness/` opens with the command that
+shows it (see [Testing](testing.md#the-harness-fuzz)).
+
 ## The state, snapshot and replay workflow
 
 This walks through every headless flag on a small file.
