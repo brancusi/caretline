@@ -1122,6 +1122,36 @@ fn event_loop(
 /// update, so text and pixels change together.
 /// Paints a frame: roles to styles, ratatui's diff against the last paint, inside a
 /// synchronized update. Any writer works, so tests capture the exact bytes.
+/// Writing a char over a wide one's first cell makes the terminal blank the wide one's second
+/// cell in the current colours (vt100, xterm and Ghostty all do), so a char with a visible
+/// background can leave that background on the cell after it. ratatui's diff skips that cell
+/// when it was a wide char's tail and stays blank, so a blank plain cell after a styled char is
+/// always written (found by the harness fuzz: selections ending over カナ and 漢字).
+fn repaint_orphaned_tails(buf: &mut ratatui::buffer::Buffer) {
+    use ratatui::buffer::CellDiffOption;
+    use ratatui::style::Color as R;
+    let visible = Modifier::REVERSED | Modifier::UNDERLINED | Modifier::CROSSED_OUT;
+    let area = buf.area;
+    for y in area.top()..area.bottom() {
+        let mut x = area.left();
+        while x < area.right() {
+            let (w, styled) = {
+                let c = &buf[(x, y)];
+                let w = caretline::view::display_width(c.symbol()).max(1) as u16;
+                (w, c.bg != R::Reset || c.modifier.intersects(visible))
+            };
+            x += w;
+            if styled && x < area.right() {
+                let next = &mut buf[(x, y)];
+                if next.symbol() == " " && next.bg == R::Reset && !next.modifier.intersects(visible)
+                {
+                    next.set_diff_option(CellDiffOption::AlwaysUpdate);
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn draw<W: Write>(
     terminal: &mut Terminal<CrosstermBackend<W>>,
     frame: &Frame,
@@ -1150,6 +1180,7 @@ pub(crate) fn draw<W: Write>(
                     buf.set_stringn(x, y, &cell.symbol, w, st);
                 }
             }
+            repaint_orphaned_tails(buf);
             if let Some((x, y)) = frame.cursor
                 && x < area.width
                 && y < area.height

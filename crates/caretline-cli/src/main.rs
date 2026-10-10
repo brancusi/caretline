@@ -9,6 +9,8 @@ mod client;
 mod demo;
 mod doctor;
 mod harness;
+#[cfg(test)]
+mod harness_fuzz;
 mod hub;
 mod keyboard;
 mod keys;

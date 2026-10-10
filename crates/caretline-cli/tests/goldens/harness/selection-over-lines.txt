@@ -1,0 +1,18 @@
+caretline sim 'one t▮wo\nthree\nfour' '<s-down><s-down><s-left>' --size 20x5
+Ghostty (1.3.1 defaults), kitty keyboard protocol, 20x5
+  one t▮wo⏎three⏎four
+<s-down>: sent ⎋[1;2B → Move { dir: Forward, by: VisualLine, extend: true }
+  one t⟦wo⏎three▮⟧⏎four
+<s-down>: sent ⎋[1;2B → Move { dir: Forward, by: VisualLine, extend: true }
+  one t⟦wo⏎three⏎four▮⟧
+<s-left>: sent ⎋[1;2D → Move { dir: Backward, by: Grapheme, extend: true }
+  one t⟦wo⏎three⏎fou▮⟧r
+
+┌────────────────────┐
+│one two             │
+│three               │
+│four                │
+│                    │
+│ test.t 12 sel  3:4 │
+└────────────────────┘
+the screen shows the state after every key

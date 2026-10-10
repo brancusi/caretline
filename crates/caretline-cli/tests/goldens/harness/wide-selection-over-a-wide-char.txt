@@ -1,0 +1,14 @@
+caretline sim 'Hellob▮é▮\t é  -Hello▮漢字é word\t.\nbthetheé漢字' '<a-s-right><s-pgdn>' --size 11x3 --legacy
+Ghostty (1.3.1 defaults), legacy keys, 11x3
+  Hellob▮é▮	 é  -Hello▮漢字é word	.⏎bthetheé漢字
+<a-s-right>: sent ⎋[1;4C → Move { dir: Forward, by: Word, extend: true }
+  Hellob⟦é▮⟧⟦	 é▮⟧  -Hello⟦漢字é▮⟧ word	.⏎bthetheé漢字
+<s-pgdn>: sent ⎋[6;2~ → Move { dir: Forward, by: Page, extend: true }
+  Hellob⟦é	 é  -Hello漢字é word	.⏎bthetheé漢▮⟧字
+
+┌───────────┐
+│bthetheé漢 │
+│字         │
+│32 sel  2:1│
+└───────────┘
+the screen shows the state after every key

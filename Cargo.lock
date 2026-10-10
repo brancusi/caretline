@@ -215,6 +215,7 @@ dependencies = [
  "clap",
  "crossterm",
  "libc",
+ "rand 0.9.5",
  "ratatui",
  "serde_json",
  "tiny-skia",

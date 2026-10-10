@@ -1,0 +1,14 @@
+caretline sim 'a▮\nカナ\nb' '<s-down><s-down>' --size 10x3
+Ghostty (1.3.1 defaults), kitty keyboard protocol, 10x3
+  a▮⏎カナ⏎b
+<s-down>: sent ⎋[1;2B → Move { dir: Forward, by: VisualLine, extend: true }
+  a⟦⏎▮⟧カナ⏎b
+<s-down>: sent ⎋[1;2B → Move { dir: Forward, by: VisualLine, extend: true }
+  a⟦⏎カナ⏎b▮⟧
+
+┌──────────┐
+│カナ      │
+│b         │
+│5 sel  3:2│
+└──────────┘
+the screen shows the state after every key
