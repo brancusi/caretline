@@ -31,6 +31,8 @@ keys or messages, and the expected result. No terminal, no timing, no mocks.
 | [`caretline-cli/tests/demo.rs`](../crates/caretline-cli/tests/demo.rs) | Demo frames against `tests/goldens`, live PTY controls, socket subscriptions and command-line edits. The showcase's `--headless` report verifies all 13 invariants |
 | [`caretline-cli/src/screen.rs`](../crates/caretline-cli/src/screen.rs) | In-process screen tests, test-only: the runtime's real `draw` writes into memory (`Painter`) and a `vt100` emulator reads the cells back (`Screen`), so a test asserts what the screen shows (the frame, other carets as reverse cells) with no process or pseudo-terminal |
 | [`caretline-cli/src/harness.rs`](../crates/caretline-cli/src/harness.rs) | Key-to-screen tests, test-only (`Harness::new`, `press`, `check`): a key goes through the simulated Ghostty, the decoder, `update` and `draw` into `vt100`, and the screen-truth check runs after every key. `caretline sim` tries a case from the shell before it becomes a test |
+| [`caretline-cli/src/harness_fuzz.rs`](../crates/caretline-cli/src/harness_fuzz.rs) | The harness fuzz, test-only: random documents (wide graphemes, tabs, blank lines), sizes and physical key presses through the simulated Ghostty (its defaults and as `caretline doctor` fixes it, with and without the keyboard protocol), the screen-truth check after every key. A failure is shrunk to the fewest keys and printed as a `caretline sim` command (see [The harness fuzz](#the-harness-fuzz)). `CARETLINE_HARNESS_SEEDS` runs more seeds than the default 32 |
+| [`caretline-cli/tests/harness.rs`](../crates/caretline-cli/tests/harness.rs) | Every golden in [`tests/goldens/harness/`](../crates/caretline-cli/tests/goldens/harness) replays: a golden's first line is the `caretline sim` command that shows it, the rest is what that command prints. The bugs found by hand and by the harness fuzz. `CARETLINE_GOLDENS=update` rewrites them |
 | [`caretline-cli/tests/common/mod.rs`](../crates/caretline-cli/tests/common/mod.rs) | Shared by the binary's and the MCP server's tests: child processes and scratch directories that clean up after themselves, a pseudo-terminal, deadlines (see [Tests that start processes](#tests-that-start-processes)) |
 
 Run them:
@@ -211,6 +213,37 @@ identities) and EI12 (select all, delete, one undo restores everything).
 A failure names its seed and step (`seed 7 step 312: …`). The generator is seeded, so the same
 seed fails the same way every time. To focus on it, temporarily run only that seed in
 `random_sessions_keep_every_invariant`.
+
+## The harness fuzz
+
+`harness_fuzz.rs` does for the screen what `fuzz.rs` does for the state: each seed builds a
+random document, terminal size and run of physical key presses, sends them through the
+simulated Ghostty, the decoder, `update` and `draw` into a terminal emulator, and checks after
+every key that the screen shows the state. It runs 32 seeds; `CARETLINE_HARNESS_SEEDS` runs
+more:
+
+```sh
+CARETLINE_HARNESS_SEEDS=500 cargo test -p caretline-cli harness_fuzz
+```
+
+A failure is shrunk to the fewest keys that still fail and printed as a `caretline sim`
+command, so it replays from the shell:
+
+```text
+seed 7: the screen doesn't show the state.
+…
+replay (2 keys):
+  caretline sim 'a▮\nカナ\nb' '<s-down><s-down>' --size 10x3
+```
+
+Once fixed, the case becomes a golden: add a file to `crates/caretline-cli/tests/goldens/harness/`
+whose first line is that command, and write the rest of it from the command's output:
+
+```sh
+CARETLINE_GOLDENS=update cargo test -p caretline-cli --test harness
+```
+
+`tests/harness.rs` replays every golden from then on.
 
 ## Snapshot fixtures
 
