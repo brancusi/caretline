@@ -128,8 +128,7 @@ pub fn overlay(frame: &mut Frame, outline: bool, offset: usize) {
     let y0 = (h.saturating_sub(rows + 3)) / 2;
     let offset = offset.min(body.len().saturating_sub(rows));
     let put = |frame: &mut Frame, x: usize, y: usize, s: &str, role: Role| {
-        let mut cx = x;
-        for ch in s.chars() {
+        for (cx, ch) in (x..).zip(s.chars()) {
             if cx >= w || y >= h {
                 break;
             }
@@ -139,7 +138,6 @@ pub fn overlay(frame: &mut Frame, outline: bool, offset: usize) {
                 char_idx: None,
                 flags: CellFlags::NONE,
             };
-            cx += 1;
         }
     };
     let blank = " ".repeat(inner + 4);

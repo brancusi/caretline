@@ -494,13 +494,17 @@ pub fn is_image(content: RopeSlice) -> bool {
 #[derive(Default)]
 pub struct OutlineCache(Mutex<Memo>);
 
+/// An outline of an earlier text, its length in chars, and the chars of the current text that
+/// differ from it (`[from, to)`: the text before and after is the same).
+type Before = (Arc<Outline>, usize, Option<(usize, usize)>);
+
 #[derive(Clone, Default)]
 struct Memo {
     /// The outline of the current text and marks.
     now: Option<Arc<Outline>>,
     /// An outline of an earlier text, its length in chars, and the chars of the current text
     /// that differ from it (`[from, to)`: the text before and after is the same).
-    before: Option<(Arc<Outline>, usize, Option<(usize, usize)>)>,
+    before: Option<Before>,
     /// The length of the text `now` was derived from.
     len: usize,
 }
@@ -558,7 +562,7 @@ impl OutlineCache {
         self.0.lock().ok().and_then(|g| g.now.clone())
     }
 
-    fn before(&self) -> Option<(Arc<Outline>, usize, Option<(usize, usize)>)> {
+    fn before(&self) -> Option<Before> {
         self.0.lock().ok().and_then(|g| g.before.clone())
     }
 
@@ -640,10 +644,8 @@ pub fn derive_from(
     let mut in_fence = false;
     let mut line_start = first.start;
     let mut tail: Option<(usize, usize)> = None;
-    let mut i = first.first_line;
-    let mut lines = text.lines_at(i);
     let derived_from = j;
-    while let Some(line) = lines.next() {
+    for (i, line) in (first.first_line..).zip(text.lines_at(first.first_line)) {
         let len_l = line.len_chars();
         let content_end = line_start + len_l - line_ending_len(line);
         let prefix = if in_fence {
@@ -703,7 +705,6 @@ pub fn derive_from(
         }
         line_block.push((blocks.len() - 1) as u32);
         line_start += len_l;
-        i += 1;
     }
     let derived_to = blocks.len();
     if let Some((k, old_line)) = tail {

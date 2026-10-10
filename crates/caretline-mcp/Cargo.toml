@@ -25,4 +25,5 @@ clap = { workspace = true }
 libc = { workspace = true }
 
 [dev-dependencies]
+vt100 = "0.16.2"
 rmcp = { version = "3.5", default-features = false, features = ["client", "transport-child-process"] }

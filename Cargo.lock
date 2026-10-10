@@ -245,6 +245,7 @@ dependencies = [
  "rmcp",
  "serde_json",
  "tokio",
+ "vt100",
 ]
 
 [[package]]
