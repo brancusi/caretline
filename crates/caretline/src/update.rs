@@ -629,7 +629,7 @@ pub(crate) fn commit_with(
     let tracked = !marks_before.is_empty() || !state.doc.marks.is_empty();
 
     let now = state.doc.now_ms;
-    let changed = changed_chars(&txn);
+    let changed = step.kind.map_or(0, |kind| run_chars(kind, &txn));
     let continues = step.merge
         || std::mem::take(&mut state.doc.merge_next)
         || match (step.kind, state.doc.run) {
@@ -828,14 +828,17 @@ pub(crate) fn paste_text(state: &mut State, text: &str, carried: &[ClipMark]) {
 }
 
 /// Characters a transaction inserts or deletes.
-fn changed_chars(txn: &Transaction) -> usize {
+/// The chars `txn` adds to a run of `kind`: a typing run counts what it typed, a delete run
+/// what it deleted. Text a keystroke replaces (a selection typed over) isn't the run's own
+/// work, so it never splits the run.
+fn run_chars(kind: RunKind, txn: &Transaction) -> usize {
     txn.changes()
         .changes()
         .iter()
-        .map(|op| match op {
-            Operation::Retain(_) => 0,
-            Operation::Delete(n) => *n,
-            Operation::Insert(s) => s.chars().count(),
+        .map(|op| match (kind, op) {
+            (RunKind::Typing, Operation::Insert(s)) => s.chars().count(),
+            (RunKind::DeleteBackward | RunKind::DeleteForward, Operation::Delete(n)) => *n,
+            _ => 0,
         })
         .sum()
 }
