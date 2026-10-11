@@ -211,3 +211,40 @@ fn counting_5000_outline_rows_at_a_new_width() {
         }
     }
 }
+
+/// Typing over a selection is one undo step however large the selection: the chars it
+/// replaced don't count toward the run's word break or its cap (thc's fuzz: `word ` over
+/// sixteen lines took two undos, the space a step of its own).
+#[test]
+fn typing_over_a_large_selection_is_one_undo_step() {
+    for lines in [3, 16, 40] {
+        let text: String = (0..lines).map(|i| format!("line {i:02} text\n")).collect();
+        let mut s = Session::new(State::new(
+            &text,
+            None,
+            Viewport {
+                width: 80,
+                height: 24,
+            },
+        ));
+        s.apply(Msg::SelectAll);
+        let selected = s.state().view.selection.clone();
+        for c in "word ".chars() {
+            s.apply(Msg::InsertText {
+                text: c.to_string(),
+            });
+        }
+        assert_eq!(s.state().doc.text.to_string(), "word ", "{lines} lines");
+        s.apply(Msg::Undo);
+        assert_eq!(
+            s.state().doc.text.to_string(),
+            text,
+            "{lines} lines: one undo"
+        );
+        assert_eq!(
+            s.state().view.selection,
+            selected,
+            "{lines} lines: selection back"
+        );
+    }
+}

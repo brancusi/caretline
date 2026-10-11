@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- Typing over a selection of more than 128 characters (sixteen short lines, say) took two
+  undos: the replaced text counted toward the typing run's word break, so the next word's
+  space started a new undo step (and past 256 characters, the next character did). A run
+  now counts its own work, chars typed for a typing run and chars deleted for a delete run,
+  so one undo restores the text and the selection however large the selection was.
+
+  Try it: `curl -fsSL https://caretline.app/install.sh | sh -s -- --ref main -- sim '⟦line 00 text\nline 01 text\nline 02 text\nline 03 text\nline 04 text\nline 05 text\nline 06 text\nline 07 text\nline 08 text\nline 09 text\nline 10 text\nline 11 text\nline 12 text\nline 13 text\nline 14 text\nline 15 text\n▮⟧' 'word <c-z>' --size 30x6`
+
 ## 0.5.0 — 2026-10-09
 
 ### Breaking

@@ -237,7 +237,7 @@ pub struct EditRun {
     pub kind: RunKind,
     pub revision: usize,
     pub at_ms: u64,
-    /// Characters inserted or deleted so far in this run.
+    /// Characters typed (a typing run) or deleted (a delete run) so far in this run.
     #[serde(default)]
     pub chars: usize,
     /// The view it is typed in (its index in `update_doc`'s views): an edit through another

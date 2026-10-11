@@ -16,7 +16,7 @@ name = "caretline"
 path = "src/main.rs"
 
 [dependencies]
-caretline = { path = "../caretline", version = "0.5.0" }
+caretline = { path = "../caretline", version = "0.5.1" }
 # Hints, arrows and spotlights (`caretline demo layers`), and the kitty pixel plumbing.
 caretline-layers = { path = "../caretline-layers", version = "0.2.0", features = ["kitty"] }
 # The CLI's pixel renderers (panels, arrows, rings, veils) in Ghostty.
