@@ -278,9 +278,12 @@ same history revision if:
 
 `tick`, `resize`, `saved` and `save_failed` are *passive*: they never end a run.
 
-A run is **full**, and the next edit starts a new undo step, once it has inserted or deleted
-256 characters (`RUN_MAX_CHARS`). A typing run also breaks earlier at a word: once it holds
-128 characters (`RUN_WORD_BREAK_CHARS`), text that starts with whitespace begins a new step.
+A run counts its own work: the characters typed in a typing run, the characters deleted in a
+delete run. Text a keystroke replaces (a selection typed over) doesn't count, so typing over a
+selection of any size is one undo step. A run is **full**, and the next edit starts a new undo
+step, once it has counted 256 characters (`RUN_MAX_CHARS`). A typing run also breaks earlier
+at a word: once it has typed 128 characters (`RUN_WORD_BREAK_CHARS`), text that starts with
+whitespace begins a new step.
 So text streamed one character per message (an agent typing, or a fast typist who never
 pauses) undoes a phrase of 128 to 256 characters at a time, each step starting at the space
 before a word, instead of all at once. The cap also keeps every edit's cost bounded: amending
